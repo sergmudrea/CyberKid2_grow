@@ -1,29 +1,25 @@
+// src/modules/CommandPanel.ts
 import { Scene } from 'phaser';
 
 export type Command = 'up' | 'down' | 'left' | 'right';
 
 export class CommandPanel {
-  private scene: Scene;
   private commands: Command[] = [];
   private container: HTMLDivElement;
   private programListDiv: HTMLDivElement;
   private onRunCallback: (commands: Command[]) => void;
   private onClearCallback: () => void;
-  private onSaveCallback: () => void;
-  private onLoadCallback: () => void;
+  private onAddCommandCallback: (commands: Command[]) => void;
 
   constructor(
     scene: Scene,
     onRun: (commands: Command[]) => void,
     onClear: () => void,
-    onSave: () => void,
-    onLoad: () => void
+    onAddCommand: (commands: Command[]) => void
   ) {
-    this.scene = scene;
     this.onRunCallback = onRun;
     this.onClearCallback = onClear;
-    this.onSaveCallback = onSave;
-    this.onLoadCallback = onLoad;
+    this.onAddCommandCallback = onAddCommand;
     this.createPanel();
   }
 
@@ -31,7 +27,7 @@ export class CommandPanel {
     return [...this.commands];
   }
 
-  public loadProgram(commands: Command[]): void {
+  public setCommands(commands: Command[]): void {
     this.commands = [...commands];
     this.updateProgramList();
   }
@@ -52,6 +48,7 @@ export class CommandPanel {
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
+    // Кнопки команд
     const buttonsRow = document.createElement('div');
     buttonsRow.style.display = 'flex';
     buttonsRow.style.gap = '10px';
@@ -68,7 +65,9 @@ export class CommandPanel {
       btn.style.borderRadius = '6px';
       btn.style.cursor = 'pointer';
       btn.onclick = () => {
-        this.addCommand(cmd);
+        this.commands.push(cmd);
+        this.updateProgramList();
+        this.onAddCommandCallback(this.commands);
       };
       buttonsRow.appendChild(btn);
     };
@@ -77,9 +76,9 @@ export class CommandPanel {
     addButton('↓ Down', 'down');
     addButton('← Left', 'left');
     addButton('→ Right', 'right');
-
     this.container.appendChild(buttonsRow);
 
+    // Список команд
     this.programListDiv = document.createElement('div');
     this.programListDiv.style.backgroundColor = '#1e1e1e';
     this.programListDiv.style.borderRadius = '8px';
@@ -90,6 +89,7 @@ export class CommandPanel {
     this.programListDiv.style.gap = '8px';
     this.container.appendChild(this.programListDiv);
 
+    // Кнопки действий
     const actionsRow = document.createElement('div');
     actionsRow.style.display = 'flex';
     actionsRow.style.gap = '10px';
@@ -123,36 +123,7 @@ export class CommandPanel {
     };
     actionsRow.appendChild(clearBtn);
 
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = '💾 SAVE';
-    saveBtn.style.padding = '8px 24px';
-    saveBtn.style.fontSize = '18px';
-    saveBtn.style.backgroundColor = '#4444aa';
-    saveBtn.style.color = 'white';
-    saveBtn.style.border = 'none';
-    saveBtn.style.borderRadius = '6px';
-    saveBtn.style.cursor = 'pointer';
-    saveBtn.onclick = () => this.onSaveCallback();
-    actionsRow.appendChild(saveBtn);
-
-    const loadBtn = document.createElement('button');
-    loadBtn.textContent = '📂 LOAD';
-    loadBtn.style.padding = '8px 24px';
-    loadBtn.style.fontSize = '18px';
-    loadBtn.style.backgroundColor = '#aa8844';
-    loadBtn.style.color = 'white';
-    loadBtn.style.border = 'none';
-    loadBtn.style.borderRadius = '6px';
-    loadBtn.style.cursor = 'pointer';
-    loadBtn.onclick = () => this.onLoadCallback();
-    actionsRow.appendChild(loadBtn);
-
     this.container.appendChild(actionsRow);
-  }
-
-  private addCommand(cmd: Command): void {
-    this.commands.push(cmd);
-    this.updateProgramList();
   }
 
   private updateProgramList(): void {
@@ -188,9 +159,7 @@ export class CommandPanel {
       removeBtn.onclick = () => {
         this.commands.splice(index, 1);
         this.updateProgramList();
-        this.onClearCallback(); // сброс робота домой и очистка стрелок
-        // Перерисовываем стрелки для оставшихся команд
-        setTimeout(() => this.onLoadCallback(), 10);
+        this.onAddCommandCallback(this.commands);
       };
 
       cmdDiv.appendChild(cmdText);
@@ -202,4 +171,4 @@ export class CommandPanel {
   public destroy(): void {
     if (this.container) this.container.remove();
   }
-}
+}s
