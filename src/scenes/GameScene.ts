@@ -99,3 +99,10 @@ export class GameScene extends Scene {
     }
   }
 }
+create(): void {
+  console.log('GameScene create');
+  this.drawGrid();
+  this.drawPlayer();
+  this.drawCoin();
+  this.createUI();
+}
