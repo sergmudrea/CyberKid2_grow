@@ -23,28 +23,30 @@ export class GameScene extends Scene {
   private isRunning: boolean = false;
   private isBroken: boolean = false;
   private isVictory: boolean = false;
-  private cameraFollow: Phaser.Cameras.Scene2D.Camera;
+  private camera: Phaser.Cameras.Scene2D.Camera;
   private gameContainer: Phaser.GameObjects.Container;
   private gameBounds: { width: number; height: number };
   private gameOffsetX: number = 0;
   private gameOffsetY: number = 0;
+  private lastInputTime: number = 0;
+  private isPlayerControlled: boolean = false;
 
   constructor() {
     super('GameScene');
   }
 
   init(data: { levelId: string }): void {
-    // Генерируем карту 50x50 (все платформы)
     this.levelData.map = Array(50).fill(null).map(() => Array(50).fill(0));
     this.playerPos = { ...this.levelData.startPos };
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
     this.isBroken = false;
     this.isVictory = false;
+    this.lastInputTime = 0;
+    this.isPlayerControlled = false;
   }
 
   create(): void {
-    // Создаём контейнер для игрового поля
     this.gameContainer = this.add.container(0, 0);
     
     this.gameBounds = {
@@ -52,26 +54,67 @@ export class GameScene extends Scene {
       height: this.levelData.height * this.gridSize
     };
     
-    // Вычисляем смещение для центрирования поля
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
-    // Смещаем контейнер для центрирования
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
     
     this.drawGrid();
     this.drawPlayer();
     this.drawCoin();
 
-    // Настройка камеры для следования за игроком
-    this.cameraFollow = this.cameras.main;
-    this.cameraFollow.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
-    this.cameraFollow.startFollow(this.playerSprite, true, 0.05, 0.05);
-    this.cameraFollow.setZoom(1);
-    this.cameraFollow.centerOn(
-      this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
-      this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
-    );
+    this.camera = this.cameras.main;
+    this.camera.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
+    this.camera.setZoom(1);
+    this.centerCameraOnPlayer();
+
+    // Обработка скролла мыши
+    this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number, deltaZ: number) => {
+      this.isPlayerControlled = true;
+      this.lastInputTime = Date.now();
+      const newX = this.camera.scrollX + deltaX;
+      const newY = this.camera.scrollY + deltaY;
+      this.camera.setScroll(newX, newY);
+      this.camera.clampBounds();
+    });
+
+    // Обработка клавиш со стрелками для перемещения камеры
+    this.input.keyboard?.on('keydown-LEFT', () => {
+      this.isPlayerControlled = true;
+      this.lastInputTime = Date.now();
+      this.camera.scrollX -= 30;
+      this.camera.clampBounds();
+    });
+    this.input.keyboard?.on('keydown-RIGHT', () => {
+      this.isPlayerControlled = true;
+      this.lastInputTime = Date.now();
+      this.camera.scrollX += 30;
+      this.camera.clampBounds();
+    });
+    this.input.keyboard?.on('keydown-UP', () => {
+      this.isPlayerControlled = true;
+      this.lastInputTime = Date.now();
+      this.camera.scrollY -= 30;
+      this.camera.clampBounds();
+    });
+    this.input.keyboard?.on('keydown-DOWN', () => {
+      this.isPlayerControlled = true;
+      this.lastInputTime = Date.now();
+      this.camera.scrollY += 30;
+      this.camera.clampBounds();
+    });
+
+    // Таймер для возврата камеры к игроку
+    this.time.addEvent({
+      delay: 100,
+      callback: () => {
+        if (this.isPlayerControlled && Date.now() - this.lastInputTime > 5000) {
+          this.isPlayerControlled = false;
+          this.centerCameraOnPlayer();
+        }
+      },
+      loop: true
+    });
 
     this.commandPanel = new CommandPanel(
       this,
@@ -83,10 +126,7 @@ export class GameScene extends Scene {
         this.isVictory = false;
         this.drawPlayer();
         this.updateVisualizer();
-        this.cameraFollow.centerOn(
-          this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
-          this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
-        );
+        this.centerCameraOnPlayer();
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -109,6 +149,16 @@ export class GameScene extends Scene {
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
+  }
+
+  private centerCameraOnPlayer(): void {
+    if (!this.playerSprite) return;
+    const targetX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.width/2;
+    const targetY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.height/2;
+    this.camera.setScroll(
+      Math.max(this.gameOffsetX, Math.min(targetX, this.gameBounds.width - this.camera.width + this.gameOffsetX)),
+      Math.max(this.gameOffsetY, Math.min(targetY, this.gameBounds.height - this.camera.height + this.gameOffsetY))
+    );
   }
 
   private updateVisualizer(): void {
@@ -141,10 +191,7 @@ export class GameScene extends Scene {
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
-    this.cameraFollow.centerOn(
-      this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
-      this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
-    );
+    this.centerCameraOnPlayer();
     this.executeCommands(commands, 0);
   }
 
@@ -180,10 +227,20 @@ export class GameScene extends Scene {
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      this.cameraFollow.centerOn(
-        this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
-        this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
-      );
+      
+      // Проверяем, нужно ли центрировать камеру (если игрок у края экрана)
+      if (!this.isPlayerControlled) {
+        this.centerCameraOnPlayer();
+      } else {
+        // Даже в ручном режиме, если игрок выходит за пределы видимости, возвращаем камеру
+        const playerScreenX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.scrollX;
+        const playerScreenY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.scrollY;
+        if (playerScreenX < 50 || playerScreenX > this.camera.width - 50 ||
+            playerScreenY < 50 || playerScreenY > this.camera.height - 50) {
+          this.centerCameraOnPlayer();
+        }
+      }
+      
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
