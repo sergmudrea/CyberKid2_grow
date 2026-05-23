@@ -7,21 +7,15 @@ export class GameScene extends Scene {
     id: 'test_001',
     name: 'Test Level',
     worldId: 'meadow',
-    width: 5,
-    height: 5,
-    map: [
-      [0, 0, 0, 0, 0],
-      [0, 1, 0, 0, 0],
-      [0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0],
-    ],
+    width: 20,
+    height: 20,
+    map: [] as number[][],
     startPos: { col: 0, row: 0 },
-    coinPos: { col: 4, row: 4 },
+    coinPos: { col: 19, row: 19 },
   };
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
-  private gridSize: number = 64;
+  private gridSize: number = 32;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
@@ -35,6 +29,8 @@ export class GameScene extends Scene {
   }
 
   init(data: { levelId: string }): void {
+    // Генерируем карту 20x20 (все платформы, без стен)
+    this.levelData.map = Array(20).fill(null).map(() => Array(20).fill(0));
     this.playerPos = { ...this.levelData.startPos };
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
@@ -43,15 +39,16 @@ export class GameScene extends Scene {
   }
 
   create(): void {
-    // Позиционируем игровое поле по центру, со сдвигом влево
-    const gameFieldX = 250;
-    const gameFieldY = 50;
+    // Динамическое центрирование игрового поля
+    const gameWidth = this.levelData.width * this.gridSize;
+    const gameHeight = this.levelData.height * this.gridSize;
+    const offsetX = (this.cameras.main.width - gameWidth) / 2;
+    const offsetY = (this.cameras.main.height - gameHeight) / 2;
     
-    this.drawGrid(gameFieldX, gameFieldY);
-    this.drawPlayer(gameFieldX, gameFieldY);
-    this.drawCoin(gameFieldX, gameFieldY);
+    this.drawGrid(offsetX, offsetY);
+    this.drawPlayer(offsetX, offsetY);
+    this.drawCoin(offsetX, offsetY);
 
-    // Создаём панель команд (слева)
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -60,18 +57,17 @@ export class GameScene extends Scene {
         this.visualizer.clear();
         this.isBroken = false;
         this.isVictory = false;
-        this.drawPlayer(gameFieldX, gameFieldY);
-        this.updateVisualizer(gameFieldX, gameFieldY);
+        this.drawPlayer(offsetX, offsetY);
+        this.updateVisualizer(offsetX, offsetY);
       },
       (commands: Command[]) => {
-        this.updateVisualizer(gameFieldX, gameFieldY);
+        this.updateVisualizer(offsetX, offsetY);
       }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.updateVisualizer(gameFieldX, gameFieldY);
+    this.updateVisualizer(offsetX, offsetY);
 
-    // Кнопка назад (в левом верхнем углу экрана)
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -112,11 +108,12 @@ export class GameScene extends Scene {
     this.isRunning = true;
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
-    // Обновляем позицию игрока визуально
-    const gameFieldX = 250;
-    const gameFieldY = 50;
-    this.drawPlayer(gameFieldX, gameFieldY);
-    this.executeCommands(commands, 0, gameFieldX, gameFieldY);
+    const gameWidth = this.levelData.width * this.gridSize;
+    const gameHeight = this.levelData.height * this.gridSize;
+    const offsetX = (this.cameras.main.width - gameWidth) / 2;
+    const offsetY = (this.cameras.main.height - gameHeight) / 2;
+    this.drawPlayer(offsetX, offsetY);
+    this.executeCommands(commands, 0, offsetX, offsetY);
   }
 
   private executeCommands(commands: Command[], index: number, offsetX: number, offsetY: number): void {
@@ -157,7 +154,7 @@ export class GameScene extends Scene {
         this.showVictoryMessage();
         return;
       }
-      this.time.delayedCall(200, () => this.executeCommands(commands, index + 1, offsetX, offsetY));
+      this.time.delayedCall(100, () => this.executeCommands(commands, index + 1, offsetX, offsetY));
     } else {
       this.isBroken = true;
       this.showGhostAt(collisionCell, offsetX, offsetY);
