@@ -58,20 +58,7 @@ export class GameScene extends Scene {
         this.drawPlayer();
       },
       () => this.saveProgram(),
-      () => {
-        const commands = this.commandPanel.getCommands();
-        this.visualizer.updateVisuals(
-          commands,
-          this.levelData.startPos.col,
-          this.levelData.startPos.row,
-          this.levelData.width,
-          this.levelData.height
-        );
-        this.resetRobot();
-        this.isBroken = false;
-        this.isVictory = false;
-        this.drawPlayer();
-      }
+      () => this.loadProgram()  // ← Теперь loadProgram вызывается напрямую
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
@@ -108,6 +95,25 @@ export class GameScene extends Scene {
     alert('Program saved!');
   }
 
+  private loadProgram(): void {
+    const saved = localStorage.getItem('saved_program');
+    if (saved) {
+      const commands = JSON.parse(saved) as Command[];
+      this.commandPanel.loadProgram(commands);
+      this.visualizer.updateVisuals(
+        commands,
+        this.levelData.startPos.col,
+        this.levelData.startPos.row,
+        this.levelData.width,
+        this.levelData.height
+      );
+      this.resetRobot();
+      alert('Program loaded!');
+    } else {
+      alert('No saved program found');
+    }
+  }
+
   private runProgram(commands: Command[]): void {
     if (this.isRunning) return;
     if (this.isVictory) {
@@ -122,7 +128,6 @@ export class GameScene extends Scene {
   }
 
   private executeCommands(commands: Command[], index: number): void {
-    // Если уже победили, останавливаем выполнение
     if (this.isVictory) {
       this.isRunning = false;
       return;
@@ -157,11 +162,9 @@ export class GameScene extends Scene {
     const isOutOfBounds = targetCol < 0 || targetCol >= this.levelData.width || targetRow < 0 || targetRow >= this.levelData.height;
 
     if (!isWall && !isOutOfBounds) {
-      // Нормальное движение
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
-      // Проверяем победу после каждого шага
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
@@ -173,24 +176,16 @@ export class GameScene extends Scene {
         this.executeCommands(commands, index + 1);
       });
     } else {
-      // Столкновение — робот сломан
       this.isBroken = true;
-      
-      // Показываем призрака на клетке столкновения
       this.showGhostAt(collisionCell);
       
-      // Визуальный эффект столкновения
       const collisionX = collisionCell.col * this.gridSize;
       const collisionY = collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       
-      // Меняем цвет игрока на красный
       this.playerSprite.setFillStyle(0xff0000);
-      
-      // Показываем сообщение о поломке
       this.showBrokenMessage();
-      
       this.isRunning = false;
     }
   }
@@ -223,7 +218,6 @@ export class GameScene extends Scene {
     }).setOrigin(0.5);
     this.time.delayedCall(2000, () => msg.destroy());
     
-    // Небольшая задержка перед показом alert
     this.time.delayedCall(500, () => {
       alert('Victory!');
       this.commandPanel.destroy();
