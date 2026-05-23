@@ -1,21 +1,15 @@
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
+import { LevelData, TileType } from '../types/index';
+import { levelManager } from '../managers/LevelManager';
 
 export class GameScene extends Scene {
-  private levelData = {
-    id: 'test_001',
-    name: 'Test Level',
-    worldId: 'meadow',
-    width: 50,
-    height: 50,
-    map: [] as number[][],
-    startPos: { col: 0, row: 0 },
-    coinPos: { col: 49, row: 49 },
-  };
+  private level: LevelData | null = null;
+  private levelId: string = '';
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
-  private gridSize: number = 32;
+  private gridSize: number = 40;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
@@ -30,39 +24,43 @@ export class GameScene extends Scene {
   private gameOffsetY: number = 0;
   private lastInputTime: number = 0;
   private isPlayerControlled: boolean = false;
-  private visibleWidth: number;
-  private visibleHeight: number;
+  private currentCommandIndex: number = -1;
+  private failedCommandIndex: number = -1;
 
   constructor() {
     super('GameScene');
   }
 
-  init(data: { levelId: string }): void {
-    this.levelData.map = Array(50).fill(null).map(() => Array(50).fill(0));
-    this.playerPos = { ...this.levelData.startPos };
-    this.coinPos = { ...this.levelData.coinPos };
+  async init(data: { levelId: string }): Promise<void> {
+    this.levelId = data.levelId;
+    this.level = await levelManager.loadLevel(this.levelId);
+    if (!this.level) {
+      console.error('Level not found');
+      this.scene.start('MainMenu');
+      return;
+    }
+    this.playerPos = { ...this.level.startPos };
+    this.coinPos = { ...this.level.coinPos };
     this.isRunning = false;
     this.isBroken = false;
     this.isVictory = false;
     this.lastInputTime = 0;
     this.isPlayerControlled = false;
+    this.currentCommandIndex = -1;
+    this.failedCommandIndex = -1;
   }
 
   create(): void {
+    if (!this.level) return;
+    
     this.gameContainer = this.add.container(0, 0);
     
     this.gameBounds = {
-      width: this.levelData.width * this.gridSize,
-      height: this.levelData.height * this.gridSize
+      width: this.level.width * this.gridSize,
+      height: this.level.height * this.gridSize
     };
     
-    // Рассчитываем видимую область в клетках
-    this.visibleWidth = Math.floor(this.cameras.main.width / this.gridSize);
-    this.visibleHeight = Math.floor(this.cameras.main.height / this.gridSize);
-    
-    // Смещение: на 7 клеток левее и центрирование по вертикали
-    const targetCol = 7;
-    this.gameOffsetX = this.cameras.main.width / 2 - (targetCol + this.visibleWidth / 2) * this.gridSize;
+    this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
@@ -76,17 +74,14 @@ export class GameScene extends Scene {
     this.camera.setZoom(1);
     this.centerCameraOnPlayer();
 
-    // Обработка скролла мыши
-    this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number, deltaZ: number) => {
+    this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.isPlayerControlled = true;
       this.lastInputTime = Date.now();
-      const newX = this.camera.scrollX + deltaX;
-      const newY = this.camera.scrollY + deltaY;
-      this.camera.setScroll(newX, newY);
+      this.camera.scrollX += deltaX;
+      this.camera.scrollY += deltaY;
       this.camera.clampBounds();
     });
 
-    // Обработка клавиш со стрелками для перемещения камеры
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.isPlayerControlled = true;
       this.lastInputTime = Date.now();
@@ -112,7 +107,6 @@ export class GameScene extends Scene {
       this.camera.clampBounds();
     });
 
-    // Таймер для возврата камеры к игроку
     this.time.addEvent({
       delay: 100,
       callback: () => {
@@ -132,6 +126,9 @@ export class GameScene extends Scene {
         this.visualizer.clear();
         this.isBroken = false;
         this.isVictory = false;
+        this.currentCommandIndex = -1;
+        this.failedCommandIndex = -1;
+        this.commandPanel.clearHighlight();
         this.drawPlayer();
         this.updateVisualizer();
         this.centerCameraOnPlayer();
@@ -170,13 +167,14 @@ export class GameScene extends Scene {
   }
 
   private updateVisualizer(): void {
+    if (!this.level) return;
     const commands = this.commandPanel.getCommands();
     this.visualizer.updateVisuals(
       commands,
-      this.levelData.startPos.col,
-      this.levelData.startPos.row,
-      this.levelData.width,
-      this.levelData.height,
+      this.level.startPos.col,
+      this.level.startPos.row,
+      this.level.width,
+      this.level.height,
       this.gridSize,
       this.gameOffsetX,
       this.gameOffsetY
@@ -184,7 +182,8 @@ export class GameScene extends Scene {
   }
 
   private resetRobot(): void {
-    this.playerPos = { ...this.levelData.startPos };
+    if (!this.level) return;
+    this.playerPos = { ...this.level.startPos };
     this.isBroken = false;
     this.isVictory = false;
   }
@@ -197,27 +196,37 @@ export class GameScene extends Scene {
     }
     this.isRunning = true;
     this.isBroken = false;
-    this.playerPos = { ...this.levelData.startPos };
+    this.currentCommandIndex = -1;
+    this.failedCommandIndex = -1;
+    this.commandPanel.clearHighlight();
+    this.playerPos = { ...this.level!.startPos };
     this.drawPlayer();
     this.centerCameraOnPlayer();
     this.executeCommands(commands, 0);
   }
 
-  private executeCommands(commands: Command[], index: number): void {
+  private async executeCommands(commands: Command[], index: number): Promise<void> {
+    if (!this.level) return;
+    
     if (this.isVictory) {
       this.isRunning = false;
       return;
     }
     if (this.isBroken) {
       this.isRunning = false;
+      this.commandPanel.highlightCommand(this.failedCommandIndex, 'error');
       this.showBrokenMessage();
       return;
     }
     if (index >= commands.length) {
       this.isRunning = false;
+      this.commandPanel.clearHighlight();
       if (!this.isVictory && !this.isBroken) this.checkVictory();
       return;
     }
+
+    this.currentCommandIndex = index;
+    this.commandPanel.highlightCommand(index, 'running');
 
     const cmd = commands[index];
     let dx = 0, dy = 0;
@@ -229,10 +238,13 @@ export class GameScene extends Scene {
     const targetCol = this.playerPos.col + dx;
     const targetRow = this.playerPos.row + dy;
     const collisionCell = { col: targetCol, row: targetRow };
-    const isWall = this.levelData.map[targetRow]?.[targetCol] === 1;
-    const isOutOfBounds = targetCol < 0 || targetCol >= this.levelData.width || targetRow < 0 || targetRow >= this.levelData.height;
+    
+    const tile = this.level.map[targetRow]?.[targetCol];
+    const isWall = tile === TileType.WALL;
+    const isHole = tile === TileType.HOLE;
+    const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
-    if (!isWall && !isOutOfBounds) {
+    if (!isWall && !isHole && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
@@ -250,21 +262,30 @@ export class GameScene extends Scene {
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
+        this.commandPanel.clearHighlight();
         this.showVictoryMessage();
         return;
       }
-      this.time.delayedCall(80, () => this.executeCommands(commands, index + 1));
+      
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
     } else {
       this.isBroken = true;
+      this.failedCommandIndex = index;
       this.showGhostAt(collisionCell);
       const collisionX = this.gameOffsetX + collisionCell.col * this.gridSize;
       const collisionY = this.gameOffsetY + collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       this.playerSprite.setFillStyle(0xff0000);
+      this.commandPanel.highlightCommand(index, 'error');
       this.showBrokenMessage();
       this.isRunning = false;
     }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => this.time.delayedCall(ms, resolve));
   }
 
   private showGhostAt(cell: { col: number; row: number }): void {
@@ -302,12 +323,16 @@ export class GameScene extends Scene {
   }
 
   private drawGrid(): void {
-    const { width, height, map } = this.levelData;
+    if (!this.level) return;
+    const { width, height, map } = this.level;
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        const color = map[row][col] === 1 ? 0x555555 : 0x8B5A2B;
+        let color = 0x8B5A2B;
+        if (map[row][col] === TileType.WALL) color = 0x555555;
+        if (map[row][col] === TileType.HOLE) color = 0x000000;
+        if (map[row][col] === TileType.GOAL) color = 0xffcc00;
         const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
         this.gameContainer.add(cell);
       }
@@ -324,7 +349,7 @@ export class GameScene extends Scene {
   }
 
   private drawCoin(): void {
-    if (this.coinSprite) this.coinSprite.destroy();
+    if (!this.level) return;
     const x = this.coinPos.col * this.gridSize;
     const y = this.coinPos.row * this.gridSize;
     this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00).setOrigin(0, 0);
