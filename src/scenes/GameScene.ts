@@ -15,7 +15,6 @@ export class GameScene extends Scene {
   }
 
   init(data: { levelId: string }): void {
-    // Создаём тестовый уровень 5x5
     this.level = {
       id: 'test_001',
       name: 'Test Level',
@@ -49,8 +48,8 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        const color = this.level.map[row][col] === TileType.WALL ? '#555' : '#8B5A2B';
-        this.add.rectangle(x, y, this.gridSize, this.gridSize, parseInt(color.replace('#', '0x'), 16))
+        const color = this.level.map[row][col] === TileType.WALL ? 0x555555 : 0x8B5A2B;
+        this.add.rectangle(x, y, this.gridSize, this.gridSize, color)
           .setOrigin(0, 0)
           .setStrokeStyle(1, 0xaaaaaa);
       }
@@ -61,16 +60,14 @@ export class GameScene extends Scene {
     if (this.playerSprite) this.playerSprite.destroy();
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
-    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00)
-      .setOrigin(0, 0);
+    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00).setOrigin(0, 0);
   }
 
   private drawCoin(): void {
     if (this.coinSprite) this.coinSprite.destroy();
     const x = this.coinPos.col * this.gridSize;
     const y = this.coinPos.row * this.gridSize;
-    this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00)
-      .setOrigin(0, 0);
+    this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00).setOrigin(0, 0);
   }
 
   private createUI(): void {
@@ -98,11 +95,4 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     }
   }
-}
-create(): void {
-  console.log('GameScene create');
-  this.drawGrid();
-  this.drawPlayer();
-  this.drawCoin();
-  this.createUI();
 }
