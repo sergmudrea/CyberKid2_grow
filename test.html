@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Test</title></head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+<script>
+const game = new Phaser.Game({
+  type: Phaser.CANVAS,
+  width: 800,
+  height: 600,
+  scene: {
+    create: function() {
+      this.add.text(400, 300, 'Phaser Works!', { fontSize: '32px', color: '#fff' }).setOrigin(0.5);
+    }
+  }
+});
+</script>
+</body>
+</html>
