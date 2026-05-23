@@ -1,4 +1,3 @@
-// src/modules/CommandPanel.ts
 import { Scene } from 'phaser';
 
 export type Command = 'up' | 'down' | 'left' | 'right';
@@ -10,6 +9,8 @@ export class CommandPanel {
   private onRunCallback: (commands: Command[]) => void;
   private onClearCallback: () => void;
   private onAddCommandCallback: (commands: Command[]) => void;
+  private saveCallback: () => void;
+  private loadCallback: () => void;
 
   constructor(
     scene: Scene,
@@ -35,9 +36,10 @@ export class CommandPanel {
   private createPanel(): void {
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
-    this.container.style.bottom = '20px';
+    this.container.style.top = '50%';
     this.container.style.left = '20px';
-    this.container.style.right = '20px';
+    this.container.style.transform = 'translateY(-50%)';
+    this.container.style.width = '180px';
     this.container.style.backgroundColor = 'rgba(0,0,0,0.85)';
     this.container.style.borderRadius = '12px';
     this.container.style.padding = '10px';
@@ -48,82 +50,151 @@ export class CommandPanel {
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
-    // Ряд кнопок команд
-    const buttonsRow = document.createElement('div');
-    buttonsRow.style.display = 'flex';
-    buttonsRow.style.gap = '10px';
-    buttonsRow.style.justifyContent = 'center';
+    // Заголовок
+    const title = document.createElement('div');
+    title.textContent = 'COMMANDS';
+    title.style.color = '#00ffcc';
+    title.style.fontSize = '14px';
+    title.style.fontWeight = 'bold';
+    title.style.textAlign = 'center';
+    title.style.marginBottom = '5px';
+    this.container.appendChild(title);
 
+    // Кнопки команд (вертикально)
     const addButton = (label: string, cmd: Command) => {
       const btn = document.createElement('button');
       btn.textContent = label;
-      btn.style.padding = '8px 16px';
+      btn.style.padding = '8px';
       btn.style.fontSize = '18px';
       btn.style.backgroundColor = '#2a2a4a';
       btn.style.color = 'white';
       btn.style.border = 'none';
       btn.style.borderRadius = '6px';
       btn.style.cursor = 'pointer';
+      btn.style.marginBottom = '5px';
       btn.onclick = () => {
         this.commands.push(cmd);
         this.updateProgramList();
         this.onAddCommandCallback(this.commands);
       };
-      buttonsRow.appendChild(btn);
+      this.container.appendChild(btn);
     };
 
     addButton('↑ Up', 'up');
     addButton('↓ Down', 'down');
     addButton('← Left', 'left');
     addButton('→ Right', 'right');
-    this.container.appendChild(buttonsRow);
-
-    // Список команд
-    this.programListDiv = document.createElement('div');
-    this.programListDiv.style.backgroundColor = '#1e1e1e';
-    this.programListDiv.style.borderRadius = '8px';
-    this.programListDiv.style.minHeight = '60px';
-    this.programListDiv.style.padding = '8px';
-    this.programListDiv.style.display = 'flex';
-    this.programListDiv.style.flexWrap = 'wrap';
-    this.programListDiv.style.gap = '8px';
-    this.container.appendChild(this.programListDiv);
 
     // Кнопки действий
-    const actionsRow = document.createElement('div');
-    actionsRow.style.display = 'flex';
-    actionsRow.style.gap = '10px';
-    actionsRow.style.justifyContent = 'center';
-
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
-    runBtn.style.padding = '8px 24px';
-    runBtn.style.fontSize = '18px';
+    runBtn.style.padding = '8px';
+    runBtn.style.fontSize = '16px';
     runBtn.style.backgroundColor = '#00aa44';
     runBtn.style.color = 'white';
     runBtn.style.border = 'none';
     runBtn.style.borderRadius = '6px';
     runBtn.style.cursor = 'pointer';
+    runBtn.style.marginTop = '10px';
     runBtn.onclick = () => this.onRunCallback(this.commands);
-    actionsRow.appendChild(runBtn);
+    this.container.appendChild(runBtn);
 
     const clearBtn = document.createElement('button');
     clearBtn.textContent = '🗑 CLEAR';
-    clearBtn.style.padding = '8px 24px';
-    clearBtn.style.fontSize = '18px';
+    clearBtn.style.padding = '8px';
+    clearBtn.style.fontSize = '16px';
     clearBtn.style.backgroundColor = '#aa4444';
     clearBtn.style.color = 'white';
     clearBtn.style.border = 'none';
     clearBtn.style.borderRadius = '6px';
     clearBtn.style.cursor = 'pointer';
+    clearBtn.style.marginTop = '5px';
     clearBtn.onclick = () => {
       this.commands = [];
       this.updateProgramList();
       this.onClearCallback();
     };
-    actionsRow.appendChild(clearBtn);
+    this.container.appendChild(clearBtn);
 
-    this.container.appendChild(actionsRow);
+    // Панель программы (справа)
+    this.createProgramPanel();
+  }
+
+  private createProgramPanel(): void {
+    const programContainer = document.createElement('div');
+    programContainer.style.position = 'absolute';
+    programContainer.style.top = '50%';
+    programContainer.style.right = '20px';
+    programContainer.style.transform = 'translateY(-50%)';
+    programContainer.style.width = '200px';
+    programContainer.style.backgroundColor = 'rgba(0,0,0,0.85)';
+    programContainer.style.borderRadius = '12px';
+    programContainer.style.padding = '10px';
+    programContainer.style.display = 'flex';
+    programContainer.style.flexDirection = 'column';
+    programContainer.style.gap = '10px';
+    programContainer.style.fontFamily = 'monospace';
+    programContainer.style.zIndex = '1000';
+    document.body.appendChild(programContainer);
+
+    const title = document.createElement('div');
+    title.textContent = 'PROGRAM';
+    title.style.color = '#ffcc00';
+    title.style.fontSize = '14px';
+    title.style.fontWeight = 'bold';
+    title.style.textAlign = 'center';
+    title.style.marginBottom = '5px';
+    programContainer.appendChild(title);
+
+    this.programListDiv = document.createElement('div');
+    this.programListDiv.style.backgroundColor = '#1e1e1e';
+    this.programListDiv.style.borderRadius = '8px';
+    this.programListDiv.style.minHeight = '200px';
+    this.programListDiv.style.maxHeight = '400px';
+    this.programListDiv.style.overflowY = 'auto';
+    this.programListDiv.style.padding = '8px';
+    this.programListDiv.style.display = 'flex';
+    this.programListDiv.style.flexDirection = 'column';
+    this.programListDiv.style.gap = '8px';
+    programContainer.appendChild(this.programListDiv);
+
+    // Кнопки SAVE и LOAD
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '💾 SAVE';
+    saveBtn.style.padding = '8px';
+    saveBtn.style.fontSize = '14px';
+    saveBtn.style.backgroundColor = '#4444aa';
+    saveBtn.style.color = 'white';
+    saveBtn.style.border = 'none';
+    saveBtn.style.borderRadius = '6px';
+    saveBtn.style.cursor = 'pointer';
+    saveBtn.onclick = () => {
+      localStorage.setItem('saved_program', JSON.stringify(this.commands));
+      alert('Program saved!');
+    };
+    programContainer.appendChild(saveBtn);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = '📂 LOAD';
+    loadBtn.style.padding = '8px';
+    loadBtn.style.fontSize = '14px';
+    loadBtn.style.backgroundColor = '#aa8844';
+    loadBtn.style.color = 'white';
+    loadBtn.style.border = 'none';
+    loadBtn.style.borderRadius = '6px';
+    loadBtn.style.cursor = 'pointer';
+    loadBtn.onclick = () => {
+      const saved = localStorage.getItem('saved_program');
+      if (saved) {
+        this.commands = JSON.parse(saved);
+        this.updateProgramList();
+        this.onAddCommandCallback(this.commands);
+        alert('Program loaded!');
+      } else {
+        alert('No saved program found');
+      }
+    };
+    programContainer.appendChild(loadBtn);
   }
 
   private updateProgramList(): void {
@@ -136,7 +207,7 @@ export class CommandPanel {
       cmdDiv.style.borderRadius = '6px';
       cmdDiv.style.display = 'flex';
       cmdDiv.style.alignItems = 'center';
-      cmdDiv.style.gap = '8px';
+      cmdDiv.style.justifyContent = 'space-between';
 
       const cmdText = document.createElement('span');
       let icon = '';
@@ -145,7 +216,7 @@ export class CommandPanel {
       if (cmd === 'left') icon = '←';
       if (cmd === 'right') icon = '→';
       cmdText.textContent = `${icon} ${cmd}`;
-      cmdText.style.fontSize = '16px';
+      cmdText.style.fontSize = '14px';
       cmdText.style.color = '#fff';
 
       const removeBtn = document.createElement('button');
@@ -170,5 +241,7 @@ export class CommandPanel {
 
   public destroy(): void {
     if (this.container) this.container.remove();
+    const rightPanel = document.querySelector('div[style*="right: 20px"]');
+    if (rightPanel) rightPanel.remove();
   }
 }
