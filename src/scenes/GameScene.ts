@@ -28,6 +28,7 @@ export class GameScene extends Scene {
   private visualizer: ProgramVisualizer;
   private isRunning: boolean = false;
   private isBroken: boolean = false;
+  private isVictory: boolean = false;
 
   constructor() {
     super('GameScene');
@@ -38,6 +39,7 @@ export class GameScene extends Scene {
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
     this.isBroken = false;
+    this.isVictory = false;
   }
 
   create(): void {
@@ -49,10 +51,10 @@ export class GameScene extends Scene {
       this,
       (commands: Command[]) => this.runProgram(commands),
       () => {
-        // CLEAR: сбрасываем робота домой и очищаем визуализатор
         this.resetRobot();
         this.visualizer.clear();
         this.isBroken = false;
+        this.isVictory = false;
         this.drawPlayer();
       },
       () => this.saveProgram(),
@@ -65,6 +67,10 @@ export class GameScene extends Scene {
           this.levelData.width,
           this.levelData.height
         );
+        this.resetRobot();
+        this.isBroken = false;
+        this.isVictory = false;
+        this.drawPlayer();
       }
     );
 
@@ -92,6 +98,7 @@ export class GameScene extends Scene {
   private resetRobot(): void {
     this.playerPos = { ...this.levelData.startPos };
     this.isBroken = false;
+    this.isVictory = false;
     this.drawPlayer();
   }
 
@@ -101,27 +108,12 @@ export class GameScene extends Scene {
     alert('Program saved!');
   }
 
-  private loadProgram(): void {
-    const saved = localStorage.getItem('saved_program');
-    if (saved) {
-      const commands = JSON.parse(saved) as Command[];
-      this.commandPanel.loadProgram(commands);
-      this.visualizer.updateVisuals(
-        commands,
-        this.levelData.startPos.col,
-        this.levelData.startPos.row,
-        this.levelData.width,
-        this.levelData.height
-      );
-      this.resetRobot();
-      alert('Program loaded!');
-    } else {
-      alert('No saved program found');
-    }
-  }
-
   private runProgram(commands: Command[]): void {
     if (this.isRunning) return;
+    if (this.isVictory) {
+      alert('You already won! Start a new game.');
+      return;
+    }
     this.isRunning = true;
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
@@ -130,6 +122,12 @@ export class GameScene extends Scene {
   }
 
   private executeCommands(commands: Command[], index: number): void {
+    // Если уже победили, останавливаем выполнение
+    if (this.isVictory) {
+      this.isRunning = false;
+      return;
+    }
+
     if (this.isBroken) {
       this.isRunning = false;
       this.showBrokenMessage();
@@ -138,7 +136,7 @@ export class GameScene extends Scene {
 
     if (index >= commands.length) {
       this.isRunning = false;
-      if (!this.isBroken) {
+      if (!this.isVictory && !this.isBroken) {
         this.checkVictory();
       }
       return;
@@ -162,6 +160,15 @@ export class GameScene extends Scene {
       // Нормальное движение
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
+      
+      // Проверяем победу после каждого шага
+      if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
+        this.isVictory = true;
+        this.isRunning = false;
+        this.showVictoryMessage();
+        return;
+      }
+      
       this.time.delayedCall(200, () => {
         this.executeCommands(commands, index + 1);
       });
@@ -172,7 +179,7 @@ export class GameScene extends Scene {
       // Показываем призрака на клетке столкновения
       this.showGhostAt(collisionCell);
       
-      // Визуальный эффект столкновения на клетке столкновения
+      // Визуальный эффект столкновения
       const collisionX = collisionCell.col * this.gridSize;
       const collisionY = collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
@@ -185,7 +192,6 @@ export class GameScene extends Scene {
       this.showBrokenMessage();
       
       this.isRunning = false;
-      // Дальнейшие команды не выполняются
     }
   }
 
@@ -207,6 +213,24 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
+  private showVictoryMessage(): void {
+    const width = this.cameras.main.width;
+    const msg = this.add.text(width / 2, 100, '🏆 VICTORY! 🏆', {
+      fontSize: '28px',
+      color: '#ffcc00',
+      backgroundColor: '#000000aa',
+      padding: { x: 20, y: 10 },
+    }).setOrigin(0.5);
+    this.time.delayedCall(2000, () => msg.destroy());
+    
+    // Небольшая задержка перед показом alert
+    this.time.delayedCall(500, () => {
+      alert('Victory!');
+      this.commandPanel.destroy();
+      this.scene.start('MainMenu');
+    });
+  }
+
   private drawGrid(): void {
     const { width, height, map } = this.levelData;
     for (let row = 0; row < height; row++) {
@@ -225,7 +249,8 @@ export class GameScene extends Scene {
     if (this.playerSprite) this.playerSprite.destroy();
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
-    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, this.isBroken ? 0xff0000 : 0x00ff00).setOrigin(0, 0);
+    const color = this.isBroken ? 0xff0000 : (this.isVictory ? 0xffcc00 : 0x00ff00);
+    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
   }
 
   private drawCoin(): void {
@@ -237,9 +262,8 @@ export class GameScene extends Scene {
 
   private checkVictory(): void {
     if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
-      alert('Victory!');
-      this.commandPanel.destroy();
-      this.scene.start('MainMenu');
+      this.isVictory = true;
+      this.showVictoryMessage();
     }
   }
 }
