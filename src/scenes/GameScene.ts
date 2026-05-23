@@ -7,15 +7,15 @@ export class GameScene extends Scene {
     id: 'test_001',
     name: 'Test Level',
     worldId: 'meadow',
-    width: 15,
-    height: 15,
+    width: 50,
+    height: 50,
     map: [] as number[][],
     startPos: { col: 0, row: 0 },
-    coinPos: { col: 14, row: 14 },
+    coinPos: { col: 49, row: 49 },
   };
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
-  private gridSize: number = 40;
+  private gridSize: number = 32;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
@@ -34,8 +34,8 @@ export class GameScene extends Scene {
   }
 
   init(data: { levelId: string }): void {
-    // Генерируем карту 15x15 (все платформы)
-    this.levelData.map = Array(15).fill(null).map(() => Array(15).fill(0));
+    // Генерируем карту 50x50 (все платформы)
+    this.levelData.map = Array(50).fill(null).map(() => Array(50).fill(0));
     this.playerPos = { ...this.levelData.startPos };
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
@@ -63,10 +63,10 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.drawCoin();
 
-    // Настройка камеры для следования за игроком (относительно контейнера)
+    // Настройка камеры для следования за игроком
     this.cameraFollow = this.cameras.main;
     this.cameraFollow.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
-    this.cameraFollow.startFollow(this.playerSprite, true, 0.1, 0.1);
+    this.cameraFollow.startFollow(this.playerSprite, true, 0.05, 0.05);
     this.cameraFollow.setZoom(1);
     this.cameraFollow.centerOn(
       this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
@@ -190,7 +190,7 @@ export class GameScene extends Scene {
         this.showVictoryMessage();
         return;
       }
-      this.time.delayedCall(100, () => this.executeCommands(commands, index + 1));
+      this.time.delayedCall(80, () => this.executeCommands(commands, index + 1));
     } else {
       this.isBroken = true;
       this.showGhostAt(collisionCell);
