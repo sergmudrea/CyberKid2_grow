@@ -27,6 +27,7 @@ export class GameScene extends Scene {
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
   private isRunning: boolean = false;
+  private isBroken: boolean = false;
 
   constructor() {
     super('GameScene');
@@ -36,6 +37,7 @@ export class GameScene extends Scene {
     this.playerPos = { ...this.levelData.startPos };
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
+    this.isBroken = false;
   }
 
   create(): void {
@@ -63,8 +65,6 @@ export class GameScene extends Scene {
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-
-    // Изначально показываем стрелки для текущей программы
     this.visualizer.updateVisuals(
       this.commandPanel.getCommands(),
       this.levelData.startPos.col,
@@ -112,12 +112,20 @@ export class GameScene extends Scene {
   private runProgram(commands: Command[]): void {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
     this.executeCommands(commands, 0);
   }
 
   private executeCommands(commands: Command[], index: number): void {
+    // Если робот сломан, останавливаем выполнение
+    if (this.isBroken) {
+      this.isRunning = false;
+      this.showBrokenMessage();
+      return;
+    }
+
     if (index >= commands.length) {
       this.isRunning = false;
       this.checkVictory();
@@ -140,22 +148,40 @@ export class GameScene extends Scene {
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: newCol, row: newRow };
       this.drawPlayer();
+      // Продолжаем выполнение следующей команды
+      this.time.delayedCall(200, () => {
+        this.executeCommands(commands, index + 1);
+      });
     } else {
-      // Визуальный эффект столкновения (красная вспышка)
-      const flash = this.add.rectangle(
-        (this.playerPos.col + (dx || 0)) * this.gridSize,
-        (this.playerPos.row + (dy || 0)) * this.gridSize,
-        this.gridSize,
-        this.gridSize,
-        0xff0000,
-        0.7
-      ).setOrigin(0, 0);
-      this.time.delayedCall(150, () => flash.destroy());
+      // Столкновение — робот сломан
+      this.isBroken = true;
+      
+      // Визуальный эффект столкновения
+      const collisionX = (this.playerPos.col + dx) * this.gridSize;
+      const collisionY = (this.playerPos.row + dy) * this.gridSize;
+      const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
+      this.time.delayedCall(300, () => flash.destroy());
+      
+      // Меняем цвет игрока на красный
+      this.playerSprite.setFillStyle(0xff0000);
+      
+      // Показываем сообщение о поломке
+      this.showBrokenMessage();
+      
+      this.isRunning = false;
+      // Дальнейшие команды не выполняются
     }
+  }
 
-    this.time.delayedCall(200, () => {
-      this.executeCommands(commands, index + 1);
-    });
+  private showBrokenMessage(): void {
+    const width = this.cameras.main.width;
+    const msg = this.add.text(width / 2, 100, '💥 ROBOT BROKEN! 💥', {
+      fontSize: '24px',
+      color: '#ff0000',
+      backgroundColor: '#000000aa',
+      padding: { x: 16, y: 8 },
+    }).setOrigin(0.5);
+    this.time.delayedCall(2000, () => msg.destroy());
   }
 
   private drawGrid(): void {
@@ -176,7 +202,7 @@ export class GameScene extends Scene {
     if (this.playerSprite) this.playerSprite.destroy();
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
-    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00).setOrigin(0, 0);
+    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, this.isBroken ? 0xff0000 : 0x00ff00).setOrigin(0, 0);
   }
 
   private drawCoin(): void {
@@ -187,7 +213,7 @@ export class GameScene extends Scene {
   }
 
   private checkVictory(): void {
-    if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
+    if (!this.isBroken && this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
       alert('Victory!');
       this.commandPanel.destroy();
       this.scene.start('MainMenu');
