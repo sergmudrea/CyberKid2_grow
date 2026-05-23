@@ -48,7 +48,7 @@ export class CommandPanel {
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
-    // Кнопки команд
+    // Ряд кнопок команд
     const buttonsRow = document.createElement('div');
     buttonsRow.style.display = 'flex';
     buttonsRow.style.gap = '10px';
@@ -171,4 +171,4 @@ export class CommandPanel {
   public destroy(): void {
     if (this.container) this.container.remove();
   }
-}s
+}
