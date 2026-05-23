@@ -26,6 +26,8 @@ export class GameScene extends Scene {
   private cameraFollow: Phaser.Cameras.Scene2D.Camera;
   private gameContainer: Phaser.GameObjects.Container;
   private gameBounds: { width: number; height: number };
+  private gameOffsetX: number = 0;
+  private gameOffsetY: number = 0;
 
   constructor() {
     super('GameScene');
@@ -50,16 +52,26 @@ export class GameScene extends Scene {
       height: this.levelData.height * this.gridSize
     };
     
+    // Вычисляем смещение для центрирования поля
+    this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
+    this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
+    
+    // Смещаем контейнер для центрирования
+    this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
+    
     this.drawGrid();
     this.drawPlayer();
     this.drawCoin();
 
-    // Настройка камеры для следования за игроком
+    // Настройка камеры для следования за игроком (относительно контейнера)
     this.cameraFollow = this.cameras.main;
-    this.cameraFollow.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
+    this.cameraFollow.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
     this.cameraFollow.startFollow(this.playerSprite, true, 0.1, 0.1);
     this.cameraFollow.setZoom(1);
-    this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
+    this.cameraFollow.centerOn(
+      this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
+      this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
+    );
 
     this.commandPanel = new CommandPanel(
       this,
@@ -71,7 +83,10 @@ export class GameScene extends Scene {
         this.isVictory = false;
         this.drawPlayer();
         this.updateVisualizer();
-        this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
+        this.cameraFollow.centerOn(
+          this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
+          this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
+        );
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -104,7 +119,9 @@ export class GameScene extends Scene {
       this.levelData.startPos.row,
       this.levelData.width,
       this.levelData.height,
-      this.gridSize
+      this.gridSize,
+      this.gameOffsetX,
+      this.gameOffsetY
     );
   }
 
@@ -124,7 +141,10 @@ export class GameScene extends Scene {
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
-    this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
+    this.cameraFollow.centerOn(
+      this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
+      this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
+    );
     this.executeCommands(commands, 0);
   }
 
@@ -160,7 +180,10 @@ export class GameScene extends Scene {
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
+      this.cameraFollow.centerOn(
+        this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2,
+        this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2
+      );
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
@@ -171,8 +194,8 @@ export class GameScene extends Scene {
     } else {
       this.isBroken = true;
       this.showGhostAt(collisionCell);
-      const collisionX = collisionCell.col * this.gridSize;
-      const collisionY = collisionCell.row * this.gridSize;
+      const collisionX = this.gameOffsetX + collisionCell.col * this.gridSize;
+      const collisionY = this.gameOffsetY + collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       this.playerSprite.setFillStyle(0xff0000);
@@ -182,14 +205,14 @@ export class GameScene extends Scene {
   }
 
   private showGhostAt(cell: { col: number; row: number }): void {
-    const x = cell.col * this.gridSize;
-    const y = cell.row * this.gridSize;
+    const x = this.gameOffsetX + cell.col * this.gridSize;
+    const y = this.gameOffsetY + cell.row * this.gridSize;
     const ghost = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00, 0.3).setOrigin(0, 0);
     this.time.delayedCall(500, () => ghost.destroy());
   }
 
   private showBrokenMessage(): void {
-    const msg = this.add.text(this.cameraFollow.midPoint.x, 100, '💥 ROBOT BROKEN! 💥', {
+    const msg = this.add.text(this.cameras.main.width / 2, 100, '💥 ROBOT BROKEN! 💥', {
       fontSize: '24px',
       color: '#ff0000',
       backgroundColor: '#000000aa',
@@ -200,7 +223,7 @@ export class GameScene extends Scene {
   }
 
   private showVictoryMessage(): void {
-    const msg = this.add.text(this.cameraFollow.midPoint.x, 100, '🏆 VICTORY! 🏆', {
+    const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
       fontSize: '28px',
       color: '#ffcc00',
       backgroundColor: '#000000aa',
