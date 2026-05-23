@@ -1,6 +1,5 @@
 import { Scene } from 'phaser';
-
-export type Command = 'up' | 'down' | 'left' | 'right';
+import { Command } from '../types/index';
 
 export class CommandPanel {
   private commands: Command[] = [];
@@ -9,6 +8,7 @@ export class CommandPanel {
   private onRunCallback: (commands: Command[]) => void;
   private onClearCallback: () => void;
   private onAddCommandCallback: (commands: Command[]) => void;
+  private commandElements: Map<number, HTMLDivElement> = new Map();
 
   constructor(
     scene: Scene,
@@ -29,6 +29,23 @@ export class CommandPanel {
   public setCommands(commands: Command[]): void {
     this.commands = [...commands];
     this.updateProgramList();
+  }
+
+  public highlightCommand(index: number, type: 'running' | 'error'): void {
+    this.commandElements.forEach((element, idx) => {
+      if (idx === index) {
+        element.style.backgroundColor = type === 'running' ? '#00aa44' : '#ff0000';
+        element.style.transition = 'background-color 0.1s';
+      } else {
+        element.style.backgroundColor = '#3a3a5a';
+      }
+    });
+  }
+
+  public clearHighlight(): void {
+    this.commandElements.forEach((element) => {
+      element.style.backgroundColor = '#3a3a5a';
+    });
   }
 
   private createPanel(): void {
@@ -103,7 +120,6 @@ export class CommandPanel {
     clearBtn.style.border = 'none';
     clearBtn.style.borderRadius = '6px';
     clearBtn.style.cursor = 'pointer';
-    clearBtn.style.marginTop = '5px';
     clearBtn.onclick = () => {
       this.commands = [];
       this.updateProgramList();
@@ -193,6 +209,7 @@ export class CommandPanel {
   private updateProgramList(): void {
     if (!this.programListDiv) return;
     this.programListDiv.innerHTML = '';
+    this.commandElements.clear();
     this.commands.forEach((cmd, index) => {
       const cmdDiv = document.createElement('div');
       cmdDiv.style.backgroundColor = '#3a3a5a';
@@ -229,6 +246,7 @@ export class CommandPanel {
       cmdDiv.appendChild(cmdText);
       cmdDiv.appendChild(removeBtn);
       this.programListDiv.appendChild(cmdDiv);
+      this.commandElements.set(index, cmdDiv);
     });
   }
 
