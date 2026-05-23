@@ -30,6 +30,8 @@ export class GameScene extends Scene {
   private gameOffsetY: number = 0;
   private lastInputTime: number = 0;
   private isPlayerControlled: boolean = false;
+  private visibleWidth: number;
+  private visibleHeight: number;
 
   constructor() {
     super('GameScene');
@@ -54,7 +56,13 @@ export class GameScene extends Scene {
       height: this.levelData.height * this.gridSize
     };
     
-    this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
+    // Рассчитываем видимую область в клетках
+    this.visibleWidth = Math.floor(this.cameras.main.width / this.gridSize);
+    this.visibleHeight = Math.floor(this.cameras.main.height / this.gridSize);
+    
+    // Смещение: на 7 клеток левее и центрирование по вертикали
+    const targetCol = 7;
+    this.gameOffsetX = this.cameras.main.width / 2 - (targetCol + this.visibleWidth / 2) * this.gridSize;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
@@ -228,11 +236,9 @@ export class GameScene extends Scene {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
-      // Проверяем, нужно ли центрировать камеру (если игрок у края экрана)
       if (!this.isPlayerControlled) {
         this.centerCameraOnPlayer();
       } else {
-        // Даже в ручном режиме, если игрок выходит за пределы видимости, возвращаем камеру
         const playerScreenX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.scrollX;
         const playerScreenY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.scrollY;
         if (playerScreenX < 50 || playerScreenX > this.camera.width - 50 ||
