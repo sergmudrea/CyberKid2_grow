@@ -1,4 +1,3 @@
-// src/scenes/GameScene.ts
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
@@ -44,10 +43,15 @@ export class GameScene extends Scene {
   }
 
   create(): void {
-    this.drawGrid();
-    this.drawPlayer();
-    this.drawCoin();
+    // Позиционируем игровое поле по центру, со сдвигом влево
+    const gameFieldX = 250;
+    const gameFieldY = 50;
+    
+    this.drawGrid(gameFieldX, gameFieldY);
+    this.drawPlayer(gameFieldX, gameFieldY);
+    this.drawCoin(gameFieldX, gameFieldY);
 
+    // Создаём панель команд (слева)
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -56,36 +60,20 @@ export class GameScene extends Scene {
         this.visualizer.clear();
         this.isBroken = false;
         this.isVictory = false;
-        this.drawPlayer();
-        this.updateVisualizer();
+        this.drawPlayer(gameFieldX, gameFieldY);
+        this.updateVisualizer(gameFieldX, gameFieldY);
       },
       (commands: Command[]) => {
-        this.updateVisualizer();
+        this.updateVisualizer(gameFieldX, gameFieldY);
       }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.updateVisualizer();
+    this.updateVisualizer(gameFieldX, gameFieldY);
 
-    // Кнопки управления (вне панели)
-    const saveButton = this.add.text(10, 80, '💾 SAVE', {
-      fontSize: '18px',
-      color: '#ffffff',
-      backgroundColor: '#4444aa',
-      padding: { x: 12, y: 6 },
-    }).setInteractive({ useHandCursor: true });
-    saveButton.on('pointerdown', () => this.saveProgram());
-
-    const loadButton = this.add.text(80, 80, '📂 LOAD', {
-      fontSize: '18px',
-      color: '#ffffff',
-      backgroundColor: '#aa8844',
-      padding: { x: 12, y: 6 },
-    }).setInteractive({ useHandCursor: true });
-    loadButton.on('pointerdown', () => this.loadProgram());
-
+    // Кнопка назад (в левом верхнем углу экрана)
     const backButton = this.add.text(10, 10, '← BACK', {
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 12, y: 6 },
@@ -96,14 +84,16 @@ export class GameScene extends Scene {
     });
   }
 
-  private updateVisualizer(): void {
+  private updateVisualizer(offsetX: number, offsetY: number): void {
     const commands = this.commandPanel.getCommands();
     this.visualizer.updateVisuals(
       commands,
       this.levelData.startPos.col,
       this.levelData.startPos.row,
       this.levelData.width,
-      this.levelData.height
+      this.levelData.height,
+      offsetX,
+      offsetY
     );
   }
 
@@ -111,26 +101,6 @@ export class GameScene extends Scene {
     this.playerPos = { ...this.levelData.startPos };
     this.isBroken = false;
     this.isVictory = false;
-    this.drawPlayer();
-  }
-
-  private saveProgram(): void {
-    const commands = this.commandPanel.getCommands();
-    localStorage.setItem('saved_program', JSON.stringify(commands));
-    alert('Program saved!');
-  }
-
-  private loadProgram(): void {
-    const saved = localStorage.getItem('saved_program');
-    if (saved) {
-      const commands = JSON.parse(saved) as Command[];
-      this.commandPanel.setCommands(commands);
-      this.updateVisualizer();
-      this.resetRobot();
-      alert('Program loaded!');
-    } else {
-      alert('No saved program found');
-    }
   }
 
   private runProgram(commands: Command[]): void {
@@ -142,11 +112,14 @@ export class GameScene extends Scene {
     this.isRunning = true;
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
-    this.drawPlayer();
-    this.executeCommands(commands, 0);
+    // Обновляем позицию игрока визуально
+    const gameFieldX = 250;
+    const gameFieldY = 50;
+    this.drawPlayer(gameFieldX, gameFieldY);
+    this.executeCommands(commands, 0, gameFieldX, gameFieldY);
   }
 
-  private executeCommands(commands: Command[], index: number): void {
+  private executeCommands(commands: Command[], index: number, offsetX: number, offsetY: number): void {
     if (this.isVictory) {
       this.isRunning = false;
       return;
@@ -177,19 +150,19 @@ export class GameScene extends Scene {
 
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
-      this.drawPlayer();
+      this.drawPlayer(offsetX, offsetY);
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
         this.showVictoryMessage();
         return;
       }
-      this.time.delayedCall(200, () => this.executeCommands(commands, index + 1));
+      this.time.delayedCall(200, () => this.executeCommands(commands, index + 1, offsetX, offsetY));
     } else {
       this.isBroken = true;
-      this.showGhostAt(collisionCell);
-      const collisionX = collisionCell.col * this.gridSize;
-      const collisionY = collisionCell.row * this.gridSize;
+      this.showGhostAt(collisionCell, offsetX, offsetY);
+      const collisionX = offsetX + collisionCell.col * this.gridSize;
+      const collisionY = offsetY + collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       this.playerSprite.setFillStyle(0xff0000);
@@ -198,9 +171,9 @@ export class GameScene extends Scene {
     }
   }
 
-  private showGhostAt(cell: { col: number; row: number }): void {
-    const x = cell.col * this.gridSize;
-    const y = cell.row * this.gridSize;
+  private showGhostAt(cell: { col: number; row: number }, offsetX: number, offsetY: number): void {
+    const x = offsetX + cell.col * this.gridSize;
+    const y = offsetY + cell.row * this.gridSize;
     const ghost = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00, 0.3).setOrigin(0, 0);
     this.time.delayedCall(500, () => ghost.destroy());
   }
@@ -232,30 +205,30 @@ export class GameScene extends Scene {
     });
   }
 
-  private drawGrid(): void {
+  private drawGrid(offsetX: number, offsetY: number): void {
     const { width, height, map } = this.levelData;
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
-        const x = col * this.gridSize;
-        const y = row * this.gridSize;
+        const x = offsetX + col * this.gridSize;
+        const y = offsetY + row * this.gridSize;
         const color = map[row][col] === 1 ? 0x555555 : 0x8B5A2B;
         this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
       }
     }
   }
 
-  private drawPlayer(): void {
+  private drawPlayer(offsetX: number, offsetY: number): void {
     if (this.playerSprite) this.playerSprite.destroy();
-    const x = this.playerPos.col * this.gridSize;
-    const y = this.playerPos.row * this.gridSize;
+    const x = offsetX + this.playerPos.col * this.gridSize;
+    const y = offsetY + this.playerPos.row * this.gridSize;
     const color = this.isBroken ? 0xff0000 : (this.isVictory ? 0xffcc00 : 0x00ff00);
     this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
   }
 
-  private drawCoin(): void {
+  private drawCoin(offsetX: number, offsetY: number): void {
     if (this.coinSprite) this.coinSprite.destroy();
-    const x = this.coinPos.col * this.gridSize;
-    const y = this.coinPos.row * this.gridSize;
+    const x = offsetX + this.coinPos.col * this.gridSize;
+    const y = offsetY + this.coinPos.row * this.gridSize;
     this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00).setOrigin(0, 0);
   }
 
