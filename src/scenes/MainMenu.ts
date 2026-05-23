@@ -29,7 +29,9 @@ export class MainMenu extends Scene {
 
     startButton.on('pointerdown', () => {
       // Пока просто выведем в консоль, позже добавим переход на выбор мира
-      console.log('Start game clicked');
+      startButton.on('pointerdown', () => {
+      this.scene.start('GameScene', { levelId: 'test_001' });
+      });
     });
 
     startButton.on('pointerover', () => startButton.setColor('#00ffcc'));
