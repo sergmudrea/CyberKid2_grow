@@ -69,7 +69,6 @@ export class CommandPanel {
       btn.style.cursor = 'pointer';
       btn.onclick = () => {
         this.addCommand(cmd);
-        this.onLoadCallback(); // перерисовка стрелок
       };
       buttonsRow.appendChild(btn);
     };
@@ -120,7 +119,7 @@ export class CommandPanel {
     clearBtn.onclick = () => {
       this.commands = [];
       this.updateProgramList();
-      this.onClearCallback(); // сброс робота домой и очистка стрелок
+      this.onClearCallback();
     };
     actionsRow.appendChild(clearBtn);
 
@@ -189,8 +188,9 @@ export class CommandPanel {
       removeBtn.onclick = () => {
         this.commands.splice(index, 1);
         this.updateProgramList();
-        this.onClearCallback(); // сброс стрелок и робота домой
-        this.onLoadCallback(); // перерисовка стрелок
+        this.onClearCallback(); // сброс робота домой и очистка стрелок
+        // Перерисовываем стрелки для оставшихся команд
+        setTimeout(() => this.onLoadCallback(), 10);
       };
 
       cmdDiv.appendChild(cmdText);
