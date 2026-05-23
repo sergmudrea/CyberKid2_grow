@@ -58,7 +58,20 @@ export class GameScene extends Scene {
         this.drawPlayer();
       },
       () => this.saveProgram(),
-      () => this.loadProgram()  // ← Теперь loadProgram вызывается напрямую
+      () => {
+        const commands = this.commandPanel.getCommands();
+        this.visualizer.updateVisuals(
+          commands,
+          this.levelData.startPos.col,
+          this.levelData.startPos.row,
+          this.levelData.width,
+          this.levelData.height
+        );
+        this.resetRobot();
+        this.isBroken = false;
+        this.isVictory = false;
+        this.drawPlayer();
+      }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
