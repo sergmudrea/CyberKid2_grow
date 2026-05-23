@@ -12,11 +12,10 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: window.innerWidth,
+    height: window.innerHeight,
   },
-  audio: {
-    noAudio: true,          // Отключает всю звуковую подсистему, устраняя ошибки AudioContext
-    disableWebAudio: true,
-  },
+  audio: { noAudio: true },
 };
 
 new Game(config);
