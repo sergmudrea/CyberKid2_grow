@@ -27,6 +27,15 @@ export class CommandPanel {
     this.createPanel();
   }
 
+  public getCommands(): Command[] {
+    return [...this.commands];
+  }
+
+  public loadProgram(commands: Command[]): void {
+    this.commands = [...commands];
+    this.updateProgramList();
+  }
+
   private createPanel(): void {
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
@@ -43,7 +52,6 @@ export class CommandPanel {
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
-    // Ряд кнопок команд
     const buttonsRow = document.createElement('div');
     buttonsRow.style.display = 'flex';
     buttonsRow.style.gap = '10px';
@@ -70,9 +78,7 @@ export class CommandPanel {
 
     this.container.appendChild(buttonsRow);
 
-    // Список команд программы
     this.programListDiv = document.createElement('div');
-    this.programListDiv.id = 'command-list';
     this.programListDiv.style.backgroundColor = '#1e1e1e';
     this.programListDiv.style.borderRadius = '8px';
     this.programListDiv.style.minHeight = '60px';
@@ -82,7 +88,6 @@ export class CommandPanel {
     this.programListDiv.style.gap = '8px';
     this.container.appendChild(this.programListDiv);
 
-    // Кнопки управления
     const actionsRow = document.createElement('div');
     actionsRow.style.display = 'flex';
     actionsRow.style.gap = '10px';
@@ -142,21 +147,15 @@ export class CommandPanel {
   private addCommand(cmd: Command): void {
     this.commands.push(cmd);
     this.updateProgramList();
+    // Обновляем визуализацию стрелок
+    this.onClearCallback(); // хак: триггерим обновление визуализации
+    this.onLoadCallback();  // перерисовка стрелок
   }
 
-  public clearProgram(): void {
+  private clearProgram(): void {
     this.commands = [];
     this.updateProgramList();
     if (this.onClearCallback) this.onClearCallback();
-  }
-
-  public loadProgram(commands: Command[]): void {
-    this.commands = [...commands];
-    this.updateProgramList();
-  }
-
-  public getCommands(): Command[] {
-    return [...this.commands];
   }
 
   private updateProgramList(): void {
@@ -192,6 +191,8 @@ export class CommandPanel {
       removeBtn.onclick = () => {
         this.commands.splice(index, 1);
         this.updateProgramList();
+        this.onClearCallback();
+        this.onLoadCallback();
       };
 
       cmdDiv.appendChild(cmdText);
