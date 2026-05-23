@@ -1,3 +1,4 @@
+// src/scenes/GameScene.ts
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
@@ -56,32 +57,32 @@ export class GameScene extends Scene {
         this.isBroken = false;
         this.isVictory = false;
         this.drawPlayer();
+        this.updateVisualizer();
       },
-      () => this.saveProgram(),
-      () => {
-        const commands = this.commandPanel.getCommands();
-        this.visualizer.updateVisuals(
-          commands,
-          this.levelData.startPos.col,
-          this.levelData.startPos.row,
-          this.levelData.width,
-          this.levelData.height
-        );
-        this.resetRobot();
-        this.isBroken = false;
-        this.isVictory = false;
-        this.drawPlayer();
+      (commands: Command[]) => {
+        this.updateVisualizer();
       }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.visualizer.updateVisuals(
-      this.commandPanel.getCommands(),
-      this.levelData.startPos.col,
-      this.levelData.startPos.row,
-      this.levelData.width,
-      this.levelData.height
-    );
+    this.updateVisualizer();
+
+    // Кнопки управления (вне панели)
+    const saveButton = this.add.text(10, 80, '💾 SAVE', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#4444aa',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    saveButton.on('pointerdown', () => this.saveProgram());
+
+    const loadButton = this.add.text(80, 80, '📂 LOAD', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#aa8844',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    loadButton.on('pointerdown', () => this.loadProgram());
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
@@ -93,6 +94,17 @@ export class GameScene extends Scene {
       this.commandPanel.destroy();
       this.scene.start('MainMenu');
     });
+  }
+
+  private updateVisualizer(): void {
+    const commands = this.commandPanel.getCommands();
+    this.visualizer.updateVisuals(
+      commands,
+      this.levelData.startPos.col,
+      this.levelData.startPos.row,
+      this.levelData.width,
+      this.levelData.height
+    );
   }
 
   private resetRobot(): void {
@@ -112,14 +124,8 @@ export class GameScene extends Scene {
     const saved = localStorage.getItem('saved_program');
     if (saved) {
       const commands = JSON.parse(saved) as Command[];
-      this.commandPanel.loadProgram(commands);
-      this.visualizer.updateVisuals(
-        commands,
-        this.levelData.startPos.col,
-        this.levelData.startPos.row,
-        this.levelData.width,
-        this.levelData.height
-      );
+      this.commandPanel.setCommands(commands);
+      this.updateVisualizer();
       this.resetRobot();
       alert('Program loaded!');
     } else {
@@ -145,18 +151,14 @@ export class GameScene extends Scene {
       this.isRunning = false;
       return;
     }
-
     if (this.isBroken) {
       this.isRunning = false;
       this.showBrokenMessage();
       return;
     }
-
     if (index >= commands.length) {
       this.isRunning = false;
-      if (!this.isVictory && !this.isBroken) {
-        this.checkVictory();
-      }
+      if (!this.isVictory && !this.isBroken) this.checkVictory();
       return;
     }
 
@@ -170,33 +172,26 @@ export class GameScene extends Scene {
     const targetCol = this.playerPos.col + dx;
     const targetRow = this.playerPos.row + dy;
     const collisionCell = { col: targetCol, row: targetRow };
-
     const isWall = this.levelData.map[targetRow]?.[targetCol] === 1;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.levelData.width || targetRow < 0 || targetRow >= this.levelData.height;
 
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
         this.showVictoryMessage();
         return;
       }
-      
-      this.time.delayedCall(200, () => {
-        this.executeCommands(commands, index + 1);
-      });
+      this.time.delayedCall(200, () => this.executeCommands(commands, index + 1));
     } else {
       this.isBroken = true;
       this.showGhostAt(collisionCell);
-      
       const collisionX = collisionCell.col * this.gridSize;
       const collisionY = collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
-      
       this.playerSprite.setFillStyle(0xff0000);
       this.showBrokenMessage();
       this.isRunning = false;
@@ -230,7 +225,6 @@ export class GameScene extends Scene {
       padding: { x: 20, y: 10 },
     }).setOrigin(0.5);
     this.time.delayedCall(2000, () => msg.destroy());
-    
     this.time.delayedCall(500, () => {
       alert('Victory!');
       this.commandPanel.destroy();
@@ -245,9 +239,7 @@ export class GameScene extends Scene {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
         const color = map[row][col] === 1 ? 0x555555 : 0x8B5A2B;
-        this.add.rectangle(x, y, this.gridSize, this.gridSize, color)
-          .setOrigin(0, 0)
-          .setStrokeStyle(1, 0xaaaaaa);
+        this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
       }
     }
   }
