@@ -1,5 +1,4 @@
 import { Scene } from 'phaser';
-import { TileType, Point } from '../types/index';
 
 export class GameScene extends Scene {
   private levelData = {
@@ -15,12 +14,11 @@ export class GameScene extends Scene {
     startPos: { col: 0, row: 0 },
     coinPos: { col: 4, row: 4 },
   };
-  private playerPos: Point;
-  private coinPos: Point;
+  private playerPos: { col: number; row: number };
+  private coinPos: { col: number; row: number };
   private gridSize: number = 64;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
-  private moveButton: Phaser.GameObjects.Text;
 
   constructor() {
     super('GameScene');
@@ -36,17 +34,6 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.drawCoin();
     this.createUI();
-
-    // Добавляем кнопку возврата (как было)
-    const backButton = this.add.text(10, 60, '← BACK', {
-      fontSize: '18px',
-      color: '#ffffff',
-      backgroundColor: '#2a2a4a',
-      padding: { x: 12, y: 6 },
-    }).setInteractive({ useHandCursor: true });
-    backButton.on('pointerdown', () => {
-      this.scene.start('MainMenu');
-    });
   }
 
   private drawGrid(): void {
@@ -78,19 +65,56 @@ export class GameScene extends Scene {
   }
 
   private createUI(): void {
-    this.moveButton = this.add.text(10, 10, '→ Move Right', {
-      fontSize: '20px',
+    // Кнопки движения
+    const btnUp = this.add.text(10, 10, '↑ Up', {
+      fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
-      padding: { x: 16, y: 8 },
+      padding: { x: 12, y: 6 },
     }).setInteractive({ useHandCursor: true });
-    this.moveButton.on('pointerdown', () => this.movePlayerRight());
+    btnUp.on('pointerdown', () => this.movePlayer(0, -1));
+
+    const btnDown = this.add.text(80, 10, '↓ Down', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    btnDown.on('pointerdown', () => this.movePlayer(0, 1));
+
+    const btnLeft = this.add.text(150, 10, '← Left', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    btnLeft.on('pointerdown', () => this.movePlayer(-1, 0));
+
+    const btnRight = this.add.text(220, 10, '→ Right', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    btnRight.on('pointerdown', () => this.movePlayer(1, 0));
+
+    // Кнопка назад
+    const backButton = this.add.text(10, 60, '← BACK', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    backButton.on('pointerdown', () => {
+      this.scene.start('MainMenu');
+    });
   }
 
-  private movePlayerRight(): void {
-    const newPos = { col: this.playerPos.col + 1, row: this.playerPos.row };
-    if (newPos.col < this.levelData.width) {
-      this.playerPos = newPos;
+  private movePlayer(dx: number, dy: number): void {
+    const newCol = this.playerPos.col + dx;
+    const newRow = this.playerPos.row + dy;
+    if (newCol >= 0 && newCol < this.levelData.width && newRow >= 0 && newRow < this.levelData.height) {
+      this.playerPos = { col: newCol, row: newRow };
       this.drawPlayer();
       this.checkVictory();
     }
