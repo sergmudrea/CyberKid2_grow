@@ -9,8 +9,6 @@ export class CommandPanel {
   private onRunCallback: (commands: Command[]) => void;
   private onClearCallback: () => void;
   private onAddCommandCallback: (commands: Command[]) => void;
-  private saveCallback: () => void;
-  private loadCallback: () => void;
 
   constructor(
     scene: Scene,
@@ -39,18 +37,17 @@ export class CommandPanel {
     this.container.style.top = '50%';
     this.container.style.left = '20px';
     this.container.style.transform = 'translateY(-50%)';
-    this.container.style.width = '180px';
+    this.container.style.width = '160px';
     this.container.style.backgroundColor = 'rgba(0,0,0,0.85)';
     this.container.style.borderRadius = '12px';
     this.container.style.padding = '10px';
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
-    this.container.style.gap = '10px';
+    this.container.style.gap = '8px';
     this.container.style.fontFamily = 'monospace';
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
-    // Заголовок
     const title = document.createElement('div');
     title.textContent = 'COMMANDS';
     title.style.color = '#00ffcc';
@@ -60,12 +57,11 @@ export class CommandPanel {
     title.style.marginBottom = '5px';
     this.container.appendChild(title);
 
-    // Кнопки команд (вертикально)
     const addButton = (label: string, cmd: Command) => {
       const btn = document.createElement('button');
       btn.textContent = label;
       btn.style.padding = '8px';
-      btn.style.fontSize = '18px';
+      btn.style.fontSize = '16px';
       btn.style.backgroundColor = '#2a2a4a';
       btn.style.color = 'white';
       btn.style.border = 'none';
@@ -85,7 +81,6 @@ export class CommandPanel {
     addButton('← Left', 'left');
     addButton('→ Right', 'right');
 
-    // Кнопки действий
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
     runBtn.style.padding = '8px';
@@ -116,7 +111,6 @@ export class CommandPanel {
     };
     this.container.appendChild(clearBtn);
 
-    // Панель программы (справа)
     this.createProgramPanel();
   }
 
@@ -158,7 +152,6 @@ export class CommandPanel {
     this.programListDiv.style.gap = '8px';
     programContainer.appendChild(this.programListDiv);
 
-    // Кнопки SAVE и LOAD
     const saveBtn = document.createElement('button');
     saveBtn.textContent = '💾 SAVE';
     saveBtn.style.padding = '8px';
