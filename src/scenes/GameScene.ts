@@ -49,7 +49,11 @@ export class GameScene extends Scene {
       this,
       (commands: Command[]) => this.runProgram(commands),
       () => {
+        // CLEAR: сбрасываем робота домой и очищаем визуализатор
+        this.resetRobot();
         this.visualizer.clear();
+        this.isBroken = false;
+        this.drawPlayer();
       },
       () => this.saveProgram(),
       () => {
@@ -85,6 +89,12 @@ export class GameScene extends Scene {
     });
   }
 
+  private resetRobot(): void {
+    this.playerPos = { ...this.levelData.startPos };
+    this.isBroken = false;
+    this.drawPlayer();
+  }
+
   private saveProgram(): void {
     const commands = this.commandPanel.getCommands();
     localStorage.setItem('saved_program', JSON.stringify(commands));
@@ -103,6 +113,7 @@ export class GameScene extends Scene {
         this.levelData.width,
         this.levelData.height
       );
+      this.resetRobot();
       alert('Program loaded!');
     } else {
       alert('No saved program found');
@@ -119,7 +130,6 @@ export class GameScene extends Scene {
   }
 
   private executeCommands(commands: Command[], index: number): void {
-    // Если робот сломан, останавливаем выполнение
     if (this.isBroken) {
       this.isRunning = false;
       this.showBrokenMessage();
@@ -128,7 +138,9 @@ export class GameScene extends Scene {
 
     if (index >= commands.length) {
       this.isRunning = false;
-      this.checkVictory();
+      if (!this.isBroken) {
+        this.checkVictory();
+      }
       return;
     }
 
@@ -139,16 +151,17 @@ export class GameScene extends Scene {
     if (cmd === 'left') dx = -1;
     if (cmd === 'right') dx = 1;
 
-    const newCol = this.playerPos.col + dx;
-    const newRow = this.playerPos.row + dy;
+    const targetCol = this.playerPos.col + dx;
+    const targetRow = this.playerPos.row + dy;
+    const collisionCell = { col: targetCol, row: targetRow };
 
-    const isWall = this.levelData.map[newRow]?.[newCol] === 1;
-    const isOutOfBounds = newCol < 0 || newCol >= this.levelData.width || newRow < 0 || newRow >= this.levelData.height;
+    const isWall = this.levelData.map[targetRow]?.[targetCol] === 1;
+    const isOutOfBounds = targetCol < 0 || targetCol >= this.levelData.width || targetRow < 0 || targetRow >= this.levelData.height;
 
     if (!isWall && !isOutOfBounds) {
-      this.playerPos = { col: newCol, row: newRow };
+      // Нормальное движение
+      this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      // Продолжаем выполнение следующей команды
       this.time.delayedCall(200, () => {
         this.executeCommands(commands, index + 1);
       });
@@ -156,9 +169,12 @@ export class GameScene extends Scene {
       // Столкновение — робот сломан
       this.isBroken = true;
       
-      // Визуальный эффект столкновения
-      const collisionX = (this.playerPos.col + dx) * this.gridSize;
-      const collisionY = (this.playerPos.row + dy) * this.gridSize;
+      // Показываем призрака на клетке столкновения
+      this.showGhostAt(collisionCell);
+      
+      // Визуальный эффект столкновения на клетке столкновения
+      const collisionX = collisionCell.col * this.gridSize;
+      const collisionY = collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       
@@ -171,6 +187,13 @@ export class GameScene extends Scene {
       this.isRunning = false;
       // Дальнейшие команды не выполняются
     }
+  }
+
+  private showGhostAt(cell: { col: number; row: number }): void {
+    const x = cell.col * this.gridSize;
+    const y = cell.row * this.gridSize;
+    const ghost = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00, 0.3).setOrigin(0, 0);
+    this.time.delayedCall(500, () => ghost.destroy());
   }
 
   private showBrokenMessage(): void {
@@ -213,7 +236,7 @@ export class GameScene extends Scene {
   }
 
   private checkVictory(): void {
-    if (!this.isBroken && this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
+    if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
       alert('Victory!');
       this.commandPanel.destroy();
       this.scene.start('MainMenu');
