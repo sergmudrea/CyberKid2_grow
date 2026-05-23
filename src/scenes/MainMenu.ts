@@ -11,7 +11,9 @@ export class MainMenu extends Scene {
 
     const title = this.add.text(width / 2, height / 3, 'CYBERKID', {
       fontSize: '64px',
-      color: '#ffffff',
+      color: '#00ffcc',
+      stroke: '#0066ff',
+      strokeThickness: 4,
     }).setOrigin(0.5);
 
     const startButton = this.add.text(width / 2, height / 2, '▶ START', {
@@ -22,7 +24,7 @@ export class MainMenu extends Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     startButton.on('pointerdown', () => {
-      this.scene.start('GameScene', { levelId: 'test_001' });
+      this.scene.start('GameScene', { levelId: 'level_001' });
     });
   }
 }
