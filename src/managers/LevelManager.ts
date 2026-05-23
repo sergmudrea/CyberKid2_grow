@@ -1,4 +1,4 @@
-import { LevelData } from '../types/index';
+import { LevelData, TileType } from '../types/index';
 
 export class LevelManager {
   private static instance: LevelManager;
@@ -52,7 +52,6 @@ export class LevelManager {
   }
 
   public async loadLevel(levelId: string): Promise<LevelData | null> {
-    // Имитация асинхронной загрузки
     await this.delay(10);
     return this.levels.get(levelId) || null;
   }
