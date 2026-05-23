@@ -33,10 +33,10 @@ export class ProgramVisualizer {
         const x = offsetX + newCol * this.gridSize + this.gridSize / 2;
         const y = offsetY + newRow * this.gridSize + this.gridSize / 2;
         const arrow = this.scene.add.text(x, y, symbol, {
-          fontSize: '28px',
+          fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
           color: '#ffffff',
           backgroundColor: '#000000aa',
-          padding: { x: 6, y: 2 },
+          padding: { x: 4, y: 2 },
         }).setOrigin(0.5);
         this.arrows.push(arrow);
         col = newCol;
@@ -45,10 +45,10 @@ export class ProgramVisualizer {
         const x = offsetX + (col + dx) * this.gridSize + this.gridSize / 2;
         const y = offsetY + (row + dy) * this.gridSize + this.gridSize / 2;
         const cross = this.scene.add.text(x, y, '❌', {
-          fontSize: '28px',
+          fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
           color: '#ff0000',
           backgroundColor: '#000000aa',
-          padding: { x: 6, y: 2 },
+          padding: { x: 4, y: 2 },
         }).setOrigin(0.5);
         this.arrows.push(cross);
         break;
