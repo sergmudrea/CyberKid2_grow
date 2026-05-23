@@ -67,7 +67,10 @@ export class CommandPanel {
       btn.style.border = 'none';
       btn.style.borderRadius = '6px';
       btn.style.cursor = 'pointer';
-      btn.onclick = () => this.addCommand(cmd);
+      btn.onclick = () => {
+        this.addCommand(cmd);
+        this.onLoadCallback(); // перерисовка стрелок
+      };
       buttonsRow.appendChild(btn);
     };
 
@@ -114,7 +117,11 @@ export class CommandPanel {
     clearBtn.style.border = 'none';
     clearBtn.style.borderRadius = '6px';
     clearBtn.style.cursor = 'pointer';
-    clearBtn.onclick = () => this.clearProgram();
+    clearBtn.onclick = () => {
+      this.commands = [];
+      this.updateProgramList();
+      this.onClearCallback(); // сброс робота домой и очистка стрелок
+    };
     actionsRow.appendChild(clearBtn);
 
     const saveBtn = document.createElement('button');
@@ -147,15 +154,6 @@ export class CommandPanel {
   private addCommand(cmd: Command): void {
     this.commands.push(cmd);
     this.updateProgramList();
-    // Обновляем визуализацию стрелок
-    this.onClearCallback(); // хак: триггерим обновление визуализации
-    this.onLoadCallback();  // перерисовка стрелок
-  }
-
-  private clearProgram(): void {
-    this.commands = [];
-    this.updateProgramList();
-    if (this.onClearCallback) this.onClearCallback();
   }
 
   private updateProgramList(): void {
@@ -191,8 +189,8 @@ export class CommandPanel {
       removeBtn.onclick = () => {
         this.commands.splice(index, 1);
         this.updateProgramList();
-        this.onClearCallback();
-        this.onLoadCallback();
+        this.onClearCallback(); // сброс стрелок и робота домой
+        this.onLoadCallback(); // перерисовка стрелок
       };
 
       cmdDiv.appendChild(cmdText);
