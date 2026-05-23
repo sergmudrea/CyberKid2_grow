@@ -11,21 +11,23 @@ export class MainMenu extends Scene {
 
     console.log('MainMenu create, width:', width, 'height:', height);
 
+    // Заголовок с белым цветом и жёлтой обводкой
     const title = this.add.text(width / 2, height / 3, 'CYBERKID', {
       fontFamily: 'Arial',
-      fontSize: '48px',
-      color: '#00ffcc',
-      stroke: '#0066ff',
-      strokeThickness: 4,
+      fontSize: '64px',
+      color: '#ffffff',
+      stroke: '#ffaa00',
+      strokeThickness: 6,
     });
     title.setOrigin(0.5);
 
+    // Кнопка
     const startButton = this.add.text(width / 2, height / 2, '▶ START', {
       fontFamily: 'Arial',
-      fontSize: '28px',
+      fontSize: '32px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
-      padding: { x: 16, y: 8 },
+      padding: { x: 20, y: 10 },
     });
     startButton.setOrigin(0.5);
     startButton.setInteractive({ useHandCursor: true });
@@ -34,5 +36,8 @@ export class MainMenu extends Scene {
       console.log('Start clicked');
       this.scene.start('GameScene', { levelId: 'test_001' });
     });
+
+    // Для отладки: добавим красный прямоугольник в левый верхний угол
+    this.add.rectangle(50, 50, 100, 50, 0xff0000).setOrigin(0, 0);
   }
 }
