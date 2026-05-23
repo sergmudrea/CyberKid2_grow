@@ -7,15 +7,15 @@ export class GameScene extends Scene {
     id: 'test_001',
     name: 'Test Level',
     worldId: 'meadow',
-    width: 20,
-    height: 20,
+    width: 15,
+    height: 15,
     map: [] as number[][],
     startPos: { col: 0, row: 0 },
-    coinPos: { col: 19, row: 19 },
+    coinPos: { col: 14, row: 14 },
   };
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
-  private gridSize: number = 32;
+  private gridSize: number = 40;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
@@ -23,14 +23,17 @@ export class GameScene extends Scene {
   private isRunning: boolean = false;
   private isBroken: boolean = false;
   private isVictory: boolean = false;
+  private cameraFollow: Phaser.Cameras.Scene2D.Camera;
+  private gameContainer: Phaser.GameObjects.Container;
+  private gameBounds: { width: number; height: number };
 
   constructor() {
     super('GameScene');
   }
 
   init(data: { levelId: string }): void {
-    // Генерируем карту 20x20 (все платформы, без стен)
-    this.levelData.map = Array(20).fill(null).map(() => Array(20).fill(0));
+    // Генерируем карту 15x15 (все платформы)
+    this.levelData.map = Array(15).fill(null).map(() => Array(15).fill(0));
     this.playerPos = { ...this.levelData.startPos };
     this.coinPos = { ...this.levelData.coinPos };
     this.isRunning = false;
@@ -39,15 +42,24 @@ export class GameScene extends Scene {
   }
 
   create(): void {
-    // Динамическое центрирование игрового поля
-    const gameWidth = this.levelData.width * this.gridSize;
-    const gameHeight = this.levelData.height * this.gridSize;
-    const offsetX = (this.cameras.main.width - gameWidth) / 2;
-    const offsetY = (this.cameras.main.height - gameHeight) / 2;
+    // Создаём контейнер для игрового поля
+    this.gameContainer = this.add.container(0, 0);
     
-    this.drawGrid(offsetX, offsetY);
-    this.drawPlayer(offsetX, offsetY);
-    this.drawCoin(offsetX, offsetY);
+    this.gameBounds = {
+      width: this.levelData.width * this.gridSize,
+      height: this.levelData.height * this.gridSize
+    };
+    
+    this.drawGrid();
+    this.drawPlayer();
+    this.drawCoin();
+
+    // Настройка камеры для следования за игроком
+    this.cameraFollow = this.cameras.main;
+    this.cameraFollow.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
+    this.cameraFollow.startFollow(this.playerSprite, true, 0.1, 0.1);
+    this.cameraFollow.setZoom(1);
+    this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
 
     this.commandPanel = new CommandPanel(
       this,
@@ -57,30 +69,34 @@ export class GameScene extends Scene {
         this.visualizer.clear();
         this.isBroken = false;
         this.isVictory = false;
-        this.drawPlayer(offsetX, offsetY);
-        this.updateVisualizer(offsetX, offsetY);
+        this.drawPlayer();
+        this.updateVisualizer();
+        this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
       },
       (commands: Command[]) => {
-        this.updateVisualizer(offsetX, offsetY);
+        this.updateVisualizer();
       }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.updateVisualizer(offsetX, offsetY);
+    this.updateVisualizer();
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 12, y: 6 },
+      depth: 100,
     }).setInteractive({ useHandCursor: true });
     backButton.on('pointerdown', () => {
       this.commandPanel.destroy();
       this.scene.start('MainMenu');
     });
+    backButton.setScrollFactor(0);
+    backButton.setDepth(100);
   }
 
-  private updateVisualizer(offsetX: number, offsetY: number): void {
+  private updateVisualizer(): void {
     const commands = this.commandPanel.getCommands();
     this.visualizer.updateVisuals(
       commands,
@@ -88,8 +104,7 @@ export class GameScene extends Scene {
       this.levelData.startPos.row,
       this.levelData.width,
       this.levelData.height,
-      offsetX,
-      offsetY
+      this.gridSize
     );
   }
 
@@ -108,15 +123,12 @@ export class GameScene extends Scene {
     this.isRunning = true;
     this.isBroken = false;
     this.playerPos = { ...this.levelData.startPos };
-    const gameWidth = this.levelData.width * this.gridSize;
-    const gameHeight = this.levelData.height * this.gridSize;
-    const offsetX = (this.cameras.main.width - gameWidth) / 2;
-    const offsetY = (this.cameras.main.height - gameHeight) / 2;
-    this.drawPlayer(offsetX, offsetY);
-    this.executeCommands(commands, 0, offsetX, offsetY);
+    this.drawPlayer();
+    this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
+    this.executeCommands(commands, 0);
   }
 
-  private executeCommands(commands: Command[], index: number, offsetX: number, offsetY: number): void {
+  private executeCommands(commands: Command[], index: number): void {
     if (this.isVictory) {
       this.isRunning = false;
       return;
@@ -147,19 +159,20 @@ export class GameScene extends Scene {
 
     if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
-      this.drawPlayer(offsetX, offsetY);
+      this.drawPlayer();
+      this.cameraFollow.centerOn(this.playerPos.col * this.gridSize + this.gridSize/2, this.playerPos.row * this.gridSize + this.gridSize/2);
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
         this.isRunning = false;
         this.showVictoryMessage();
         return;
       }
-      this.time.delayedCall(100, () => this.executeCommands(commands, index + 1, offsetX, offsetY));
+      this.time.delayedCall(100, () => this.executeCommands(commands, index + 1));
     } else {
       this.isBroken = true;
-      this.showGhostAt(collisionCell, offsetX, offsetY);
-      const collisionX = offsetX + collisionCell.col * this.gridSize;
-      const collisionY = offsetY + collisionCell.row * this.gridSize;
+      this.showGhostAt(collisionCell);
+      const collisionX = collisionCell.col * this.gridSize;
+      const collisionY = collisionCell.row * this.gridSize;
       const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
       this.time.delayedCall(300, () => flash.destroy());
       this.playerSprite.setFillStyle(0xff0000);
@@ -168,32 +181,32 @@ export class GameScene extends Scene {
     }
   }
 
-  private showGhostAt(cell: { col: number; row: number }, offsetX: number, offsetY: number): void {
-    const x = offsetX + cell.col * this.gridSize;
-    const y = offsetY + cell.row * this.gridSize;
+  private showGhostAt(cell: { col: number; row: number }): void {
+    const x = cell.col * this.gridSize;
+    const y = cell.row * this.gridSize;
     const ghost = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x00ff00, 0.3).setOrigin(0, 0);
     this.time.delayedCall(500, () => ghost.destroy());
   }
 
   private showBrokenMessage(): void {
-    const width = this.cameras.main.width;
-    const msg = this.add.text(width / 2, 100, '💥 ROBOT BROKEN! 💥', {
+    const msg = this.add.text(this.cameraFollow.midPoint.x, 100, '💥 ROBOT BROKEN! 💥', {
       fontSize: '24px',
       color: '#ff0000',
       backgroundColor: '#000000aa',
       padding: { x: 16, y: 8 },
     }).setOrigin(0.5);
+    msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
   private showVictoryMessage(): void {
-    const width = this.cameras.main.width;
-    const msg = this.add.text(width / 2, 100, '🏆 VICTORY! 🏆', {
+    const msg = this.add.text(this.cameraFollow.midPoint.x, 100, '🏆 VICTORY! 🏆', {
       fontSize: '28px',
       color: '#ffcc00',
       backgroundColor: '#000000aa',
       padding: { x: 20, y: 10 },
     }).setOrigin(0.5);
+    msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
     this.time.delayedCall(500, () => {
       alert('Victory!');
@@ -202,31 +215,34 @@ export class GameScene extends Scene {
     });
   }
 
-  private drawGrid(offsetX: number, offsetY: number): void {
+  private drawGrid(): void {
     const { width, height, map } = this.levelData;
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
-        const x = offsetX + col * this.gridSize;
-        const y = offsetY + row * this.gridSize;
+        const x = col * this.gridSize;
+        const y = row * this.gridSize;
         const color = map[row][col] === 1 ? 0x555555 : 0x8B5A2B;
-        this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
+        const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
+        this.gameContainer.add(cell);
       }
     }
   }
 
-  private drawPlayer(offsetX: number, offsetY: number): void {
+  private drawPlayer(): void {
     if (this.playerSprite) this.playerSprite.destroy();
-    const x = offsetX + this.playerPos.col * this.gridSize;
-    const y = offsetY + this.playerPos.row * this.gridSize;
+    const x = this.playerPos.col * this.gridSize;
+    const y = this.playerPos.row * this.gridSize;
     const color = this.isBroken ? 0xff0000 : (this.isVictory ? 0xffcc00 : 0x00ff00);
     this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
+    this.gameContainer.add(this.playerSprite);
   }
 
-  private drawCoin(offsetX: number, offsetY: number): void {
+  private drawCoin(): void {
     if (this.coinSprite) this.coinSprite.destroy();
-    const x = offsetX + this.coinPos.col * this.gridSize;
-    const y = offsetY + this.coinPos.row * this.gridSize;
+    const x = this.coinPos.col * this.gridSize;
+    const y = this.coinPos.row * this.gridSize;
     this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00).setOrigin(0, 0);
+    this.gameContainer.add(this.coinSprite);
   }
 
   private checkVictory(): void {
