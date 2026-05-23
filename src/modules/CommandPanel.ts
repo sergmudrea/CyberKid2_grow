@@ -6,13 +6,24 @@ export class CommandPanel {
   private scene: Scene;
   private commands: Command[] = [];
   private container: HTMLDivElement;
+  private programListDiv: HTMLDivElement;
   private onRunCallback: (commands: Command[]) => void;
   private onClearCallback: () => void;
+  private onSaveCallback: () => void;
+  private onLoadCallback: () => void;
 
-  constructor(scene: Scene, onRun: (commands: Command[]) => void, onClear: () => void) {
+  constructor(
+    scene: Scene,
+    onRun: (commands: Command[]) => void,
+    onClear: () => void,
+    onSave: () => void,
+    onLoad: () => void
+  ) {
     this.scene = scene;
     this.onRunCallback = onRun;
     this.onClearCallback = onClear;
+    this.onSaveCallback = onSave;
+    this.onLoadCallback = onLoad;
     this.createPanel();
   }
 
@@ -22,13 +33,14 @@ export class CommandPanel {
     this.container.style.bottom = '20px';
     this.container.style.left = '20px';
     this.container.style.right = '20px';
-    this.container.style.backgroundColor = 'rgba(0,0,0,0.8)';
+    this.container.style.backgroundColor = 'rgba(0,0,0,0.85)';
     this.container.style.borderRadius = '12px';
     this.container.style.padding = '10px';
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
     this.container.style.gap = '10px';
     this.container.style.fontFamily = 'monospace';
+    this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
     // Ряд кнопок команд
@@ -59,16 +71,16 @@ export class CommandPanel {
     this.container.appendChild(buttonsRow);
 
     // Список команд программы
-    const programList = document.createElement('div');
-    programList.id = 'command-list';
-    programList.style.backgroundColor = '#1e1e1e';
-    programList.style.borderRadius = '8px';
-    programList.style.minHeight = '60px';
-    programList.style.padding = '8px';
-    programList.style.display = 'flex';
-    programList.style.flexWrap = 'wrap';
-    programList.style.gap = '8px';
-    this.container.appendChild(programList);
+    this.programListDiv = document.createElement('div');
+    this.programListDiv.id = 'command-list';
+    this.programListDiv.style.backgroundColor = '#1e1e1e';
+    this.programListDiv.style.borderRadius = '8px';
+    this.programListDiv.style.minHeight = '60px';
+    this.programListDiv.style.padding = '8px';
+    this.programListDiv.style.display = 'flex';
+    this.programListDiv.style.flexWrap = 'wrap';
+    this.programListDiv.style.gap = '8px';
+    this.container.appendChild(this.programListDiv);
 
     // Кнопки управления
     const actionsRow = document.createElement('div');
@@ -100,6 +112,30 @@ export class CommandPanel {
     clearBtn.onclick = () => this.clearProgram();
     actionsRow.appendChild(clearBtn);
 
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '💾 SAVE';
+    saveBtn.style.padding = '8px 24px';
+    saveBtn.style.fontSize = '18px';
+    saveBtn.style.backgroundColor = '#4444aa';
+    saveBtn.style.color = 'white';
+    saveBtn.style.border = 'none';
+    saveBtn.style.borderRadius = '6px';
+    saveBtn.style.cursor = 'pointer';
+    saveBtn.onclick = () => this.onSaveCallback();
+    actionsRow.appendChild(saveBtn);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = '📂 LOAD';
+    loadBtn.style.padding = '8px 24px';
+    loadBtn.style.fontSize = '18px';
+    loadBtn.style.backgroundColor = '#aa8844';
+    loadBtn.style.color = 'white';
+    loadBtn.style.border = 'none';
+    loadBtn.style.borderRadius = '6px';
+    loadBtn.style.cursor = 'pointer';
+    loadBtn.onclick = () => this.onLoadCallback();
+    actionsRow.appendChild(loadBtn);
+
     this.container.appendChild(actionsRow);
   }
 
@@ -108,16 +144,24 @@ export class CommandPanel {
     this.updateProgramList();
   }
 
-  private clearProgram(): void {
+  public clearProgram(): void {
     this.commands = [];
     this.updateProgramList();
     if (this.onClearCallback) this.onClearCallback();
   }
 
+  public loadProgram(commands: Command[]): void {
+    this.commands = [...commands];
+    this.updateProgramList();
+  }
+
+  public getCommands(): Command[] {
+    return [...this.commands];
+  }
+
   private updateProgramList(): void {
-    const listDiv = document.getElementById('command-list');
-    if (!listDiv) return;
-    listDiv.innerHTML = '';
+    if (!this.programListDiv) return;
+    this.programListDiv.innerHTML = '';
     this.commands.forEach((cmd, index) => {
       const cmdDiv = document.createElement('div');
       cmdDiv.style.backgroundColor = '#3a3a5a';
@@ -152,7 +196,7 @@ export class CommandPanel {
 
       cmdDiv.appendChild(cmdText);
       cmdDiv.appendChild(removeBtn);
-      listDiv.appendChild(cmdDiv);
+      this.programListDiv.appendChild(cmdDiv);
     });
   }
 
