@@ -7,7 +7,7 @@ export class GameScene extends Scene {
     height: 5,
     map: [
       [0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0],
+      [0, 1, 0, 0, 0],  // стена в (1,1)
       [0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0],
@@ -41,7 +41,7 @@ export class GameScene extends Scene {
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
-      () => {}, // onClear
+      () => {},
       () => this.saveProgram(),
       () => this.loadProgram()
     );
@@ -99,7 +99,11 @@ export class GameScene extends Scene {
 
     const newCol = this.playerPos.col + dx;
     const newRow = this.playerPos.row + dy;
-    if (newCol >= 0 && newCol < this.levelData.width && newRow >= 0 && newRow < this.levelData.height) {
+    
+    // Проверка на стену
+    const isWall = this.levelData.map[newRow]?.[newCol] === 1;
+    
+    if (!isWall && newCol >= 0 && newCol < this.levelData.width && newRow >= 0 && newRow < this.levelData.height) {
       this.playerPos = { col: newCol, row: newRow };
       this.drawPlayer();
     }
