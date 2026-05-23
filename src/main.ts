@@ -1,19 +1,22 @@
 import { Game } from 'phaser';
-import { Preload } from './scenes/Preload';
-import { MainMenu } from './scenes/MainMenu';
-import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.CANVAS,
-  width: window.innerWidth,
-  height: window.innerHeight,
+  width: 800,
+  height: 600,
   backgroundColor: '#0a0a2a',
-  scene: [Preload, MainMenu, GameScene],
+  parent: 'game-container',
+  scene: {
+    create: function() {
+      this.add.text(400, 300, 'CYBERKID', {
+        fontSize: '64px',
+        color: '#ffffff'
+      }).setOrigin(0.5);
+    }
+  },
   scale: {
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: window.innerWidth,
-    height: window.innerHeight,
   },
   audio: { noAudio: true },
 };
