@@ -38,14 +38,14 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.drawCoin();
 
-    // Создаём панель команд
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
-      () => {} // onClear
+      () => {}, // onClear
+      () => this.saveProgram(),
+      () => this.loadProgram()
     );
 
-    // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
       color: '#ffffff',
@@ -58,10 +58,26 @@ export class GameScene extends Scene {
     });
   }
 
+  private saveProgram(): void {
+    const commands = this.commandPanel.getCommands();
+    localStorage.setItem('saved_program', JSON.stringify(commands));
+    alert('Program saved!');
+  }
+
+  private loadProgram(): void {
+    const saved = localStorage.getItem('saved_program');
+    if (saved) {
+      const commands = JSON.parse(saved) as Command[];
+      this.commandPanel.loadProgram(commands);
+      alert('Program loaded!');
+    } else {
+      alert('No saved program found');
+    }
+  }
+
   private runProgram(commands: Command[]): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    // Сбрасываем позицию игрока на старт
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
     this.executeCommands(commands, 0);
@@ -88,7 +104,6 @@ export class GameScene extends Scene {
       this.drawPlayer();
     }
 
-    // Задержка для визуализации
     this.time.delayedCall(200, () => {
       this.executeCommands(commands, index + 1);
     });
