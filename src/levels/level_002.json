@@ -1,0 +1,16 @@
+{
+  "id": "level_002",
+  "name": "Simple",
+  "worldId": "meadow",
+  "width": 5,
+  "height": 5,
+  "map": [
+    [0,0,0,0,0],
+    [0,0,0,0,0],
+    [0,0,0,0,0],
+    [0,0,0,0,0],
+    [0,0,0,0,0]
+  ],
+  "startPos": { "col": 0, "row": 0 },
+  "coinPos": { "col": 4, "row": 4 }
+}
