@@ -4,21 +4,19 @@ import { Command } from './CommandPanel';
 export class ProgramVisualizer {
   private scene: Scene;
   private gridSize: number;
-  private arrows: Map<number, Phaser.GameObjects.Text> = new Map();
+  private arrows: Phaser.GameObjects.Text[] = [];
 
   constructor(scene: Scene, gridSize: number) {
     this.scene = scene;
     this.gridSize = gridSize;
   }
 
-  public updateVisuals(commands: Command[], startCol: number, startRow: number): void {
-    // Очищаем старые стрелки
-    this.arrows.forEach(arrow => arrow.destroy());
-    this.arrows.clear();
+  public updateVisuals(commands: Command[], startCol: number, startRow: number, width: number, height: number): void {
+    this.clear();
+    if (!commands.length) return;
 
     let col = startCol;
     let row = startRow;
-    let step = 1;
 
     for (const cmd of commands) {
       let dx = 0, dy = 0;
@@ -31,26 +29,36 @@ export class ProgramVisualizer {
       const newCol = col + dx;
       const newRow = row + dy;
 
-      // Проверка границ (не выходим за поле)
-      if (newCol >= 0 && newCol < 5 && newRow >= 0 && newRow < 5) {
+      if (newCol >= 0 && newCol < width && newRow >= 0 && newRow < height) {
         const x = newCol * this.gridSize + this.gridSize / 2;
         const y = newRow * this.gridSize + this.gridSize / 2;
         const arrow = this.scene.add.text(x, y, symbol, {
-          fontSize: '24px',
+          fontSize: '28px',
           color: '#ffffff',
-          backgroundColor: '#00000088',
-          padding: { x: 4, y: 2 },
+          backgroundColor: '#000000aa',
+          padding: { x: 6, y: 2 },
         }).setOrigin(0.5);
-        this.arrows.set(step, arrow);
+        this.arrows.push(arrow);
         col = newCol;
         row = newRow;
+      } else {
+        // Если вышли за границы, рисуем красный крест
+        const x = (col + dx) * this.gridSize + this.gridSize / 2;
+        const y = (row + dy) * this.gridSize + this.gridSize / 2;
+        const cross = this.scene.add.text(x, y, '❌', {
+          fontSize: '28px',
+          color: '#ff0000',
+          backgroundColor: '#000000aa',
+          padding: { x: 6, y: 2 },
+        }).setOrigin(0.5);
+        this.arrows.push(cross);
+        break;
       }
-      step++;
     }
   }
 
   public clear(): void {
     this.arrows.forEach(arrow => arrow.destroy());
-    this.arrows.clear();
+    this.arrows = [];
   }
 }
