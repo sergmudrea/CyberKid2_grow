@@ -11,7 +11,7 @@ export class ProgramVisualizer {
     this.gridSize = gridSize;
   }
 
-  public updateVisuals(commands: Command[], startCol: number, startRow: number, width: number, height: number): void {
+  public updateVisuals(commands: Command[], startCol: number, startRow: number, width: number, height: number, offsetX: number, offsetY: number): void {
     this.clear();
     if (!commands.length) return;
 
@@ -30,8 +30,8 @@ export class ProgramVisualizer {
       const newRow = row + dy;
 
       if (newCol >= 0 && newCol < width && newRow >= 0 && newRow < height) {
-        const x = newCol * this.gridSize + this.gridSize / 2;
-        const y = newRow * this.gridSize + this.gridSize / 2;
+        const x = offsetX + newCol * this.gridSize + this.gridSize / 2;
+        const y = offsetY + newRow * this.gridSize + this.gridSize / 2;
         const arrow = this.scene.add.text(x, y, symbol, {
           fontSize: '28px',
           color: '#ffffff',
@@ -42,9 +42,8 @@ export class ProgramVisualizer {
         col = newCol;
         row = newRow;
       } else {
-        // Если вышли за границы, рисуем красный крест
-        const x = (col + dx) * this.gridSize + this.gridSize / 2;
-        const y = (row + dy) * this.gridSize + this.gridSize / 2;
+        const x = offsetX + (col + dx) * this.gridSize + this.gridSize / 2;
+        const y = offsetY + (row + dy) * this.gridSize + this.gridSize / 2;
         const cross = this.scene.add.text(x, y, '❌', {
           fontSize: '28px',
           color: '#ff0000',
