@@ -50,11 +50,28 @@ export class GameScene extends Scene {
         this.visualizer.clear();
       },
       () => this.saveProgram(),
-      () => this.loadProgram()
+      () => {
+        const commands = this.commandPanel.getCommands();
+        this.visualizer.updateVisuals(
+          commands,
+          this.levelData.startPos.col,
+          this.levelData.startPos.row,
+          this.levelData.width,
+          this.levelData.height
+        );
+      }
     );
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.visualizer.updateVisuals(this.commandPanel.getCommands(), this.playerPos.col, this.playerPos.row);
+
+    // Изначально показываем стрелки для текущей программы
+    this.visualizer.updateVisuals(
+      this.commandPanel.getCommands(),
+      this.levelData.startPos.col,
+      this.levelData.startPos.row,
+      this.levelData.width,
+      this.levelData.height
+    );
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
@@ -79,7 +96,13 @@ export class GameScene extends Scene {
     if (saved) {
       const commands = JSON.parse(saved) as Command[];
       this.commandPanel.loadProgram(commands);
-      this.visualizer.updateVisuals(commands, this.levelData.startPos.col, this.levelData.startPos.row);
+      this.visualizer.updateVisuals(
+        commands,
+        this.levelData.startPos.col,
+        this.levelData.startPos.row,
+        this.levelData.width,
+        this.levelData.height
+      );
       alert('Program loaded!');
     } else {
       alert('No saved program found');
@@ -91,14 +114,12 @@ export class GameScene extends Scene {
     this.isRunning = true;
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
-    this.visualizer.updateVisuals(commands, this.playerPos.col, this.playerPos.row);
     this.executeCommands(commands, 0);
   }
 
   private executeCommands(commands: Command[], index: number): void {
     if (index >= commands.length) {
       this.isRunning = false;
-      this.visualizer.clear();
       this.checkVictory();
       return;
     }
@@ -114,10 +135,22 @@ export class GameScene extends Scene {
     const newRow = this.playerPos.row + dy;
 
     const isWall = this.levelData.map[newRow]?.[newCol] === 1;
+    const isOutOfBounds = newCol < 0 || newCol >= this.levelData.width || newRow < 0 || newRow >= this.levelData.height;
 
-    if (!isWall && newCol >= 0 && newCol < this.levelData.width && newRow >= 0 && newRow < this.levelData.height) {
+    if (!isWall && !isOutOfBounds) {
       this.playerPos = { col: newCol, row: newRow };
       this.drawPlayer();
+    } else {
+      // Визуальный эффект столкновения (красная вспышка)
+      const flash = this.add.rectangle(
+        (this.playerPos.col + (dx || 0)) * this.gridSize,
+        (this.playerPos.row + (dy || 0)) * this.gridSize,
+        this.gridSize,
+        this.gridSize,
+        0xff0000,
+        0.7
+      ).setOrigin(0, 0);
+      this.time.delayedCall(150, () => flash.destroy());
     }
 
     this.time.delayedCall(200, () => {
