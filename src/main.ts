@@ -1,4 +1,3 @@
-// src/main.ts (обновлённый)
 import { Game } from 'phaser';
 import { Preload } from './scenes/Preload';
 import { MainMenu } from './scenes/MainMenu';
@@ -13,6 +12,10 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  audio: {
+    noAudio: true,          // Отключает всю звуковую подсистему, устраняя ошибки AudioContext
+    disableWebAudio: true,
   },
 };
 
