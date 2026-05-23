@@ -14,14 +14,13 @@ export class LevelManager {
   }
 
   public async loadLevel(levelId: string): Promise<LevelData | null> {
-    // Проверяем кэш
     if (this.cache.has(levelId)) {
       return this.cache.get(levelId)!;
     }
     
     try {
-      // Загружаем уровень из JSON файла
-      const response = await fetch(`/src/levels/${levelId}.json`);
+      // Загружаем уровень из папки public/levels/
+      const response = await fetch(`/levels/${levelId}.json`);
       if (!response.ok) {
         console.error(`Failed to load level ${levelId}: ${response.status}`);
         return null;
