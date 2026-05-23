@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CyberKid - Simple Test</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0a0a2a; }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+    <script>
+        const config = {
+            type: Phaser.CANVAS,
+            width: 800,
+            height: 600,
+            backgroundColor: '#0a0a2a',
+            scene: {
+                create: function() {
+                    // Белый текст
+                    this.add.text(400, 300, 'CYBERKID', {
+                        fontSize: '64px',
+                        color: '#ffffff'
+                    }).setOrigin(0.5);
+                    
+                    // Красный квадрат для проверки
+                    this.add.rectangle(400, 400, 100, 100, 0xff0000);
+                }
+            },
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            }
+        };
+        
+        const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
