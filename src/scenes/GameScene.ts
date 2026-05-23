@@ -1,13 +1,17 @@
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
+import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 
 export class GameScene extends Scene {
   private levelData = {
+    id: 'test_001',
+    name: 'Test Level',
+    worldId: 'meadow',
     width: 5,
     height: 5,
     map: [
       [0, 0, 0, 0, 0],
-      [0, 1, 0, 0, 0],  // стена в (1,1)
+      [0, 1, 0, 0, 0],
       [0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0],
@@ -21,6 +25,7 @@ export class GameScene extends Scene {
   private playerSprite: Phaser.GameObjects.Rectangle;
   private coinSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
+  private visualizer: ProgramVisualizer;
   private isRunning: boolean = false;
 
   constructor() {
@@ -41,10 +46,15 @@ export class GameScene extends Scene {
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
-      () => {},
+      () => {
+        this.visualizer.clear();
+      },
       () => this.saveProgram(),
       () => this.loadProgram()
     );
+
+    this.visualizer = new ProgramVisualizer(this, this.gridSize);
+    this.visualizer.updateVisuals(this.commandPanel.getCommands(), this.playerPos.col, this.playerPos.row);
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
@@ -69,6 +79,7 @@ export class GameScene extends Scene {
     if (saved) {
       const commands = JSON.parse(saved) as Command[];
       this.commandPanel.loadProgram(commands);
+      this.visualizer.updateVisuals(commands, this.levelData.startPos.col, this.levelData.startPos.row);
       alert('Program loaded!');
     } else {
       alert('No saved program found');
@@ -80,12 +91,14 @@ export class GameScene extends Scene {
     this.isRunning = true;
     this.playerPos = { ...this.levelData.startPos };
     this.drawPlayer();
+    this.visualizer.updateVisuals(commands, this.playerPos.col, this.playerPos.row);
     this.executeCommands(commands, 0);
   }
 
   private executeCommands(commands: Command[], index: number): void {
     if (index >= commands.length) {
       this.isRunning = false;
+      this.visualizer.clear();
       this.checkVictory();
       return;
     }
@@ -99,10 +112,9 @@ export class GameScene extends Scene {
 
     const newCol = this.playerPos.col + dx;
     const newRow = this.playerPos.row + dy;
-    
-    // Проверка на стену
+
     const isWall = this.levelData.map[newRow]?.[newCol] === 1;
-    
+
     if (!isWall && newCol >= 0 && newCol < this.levelData.width && newRow >= 0 && newRow < this.levelData.height) {
       this.playerPos = { col: newCol, row: newRow };
       this.drawPlayer();
