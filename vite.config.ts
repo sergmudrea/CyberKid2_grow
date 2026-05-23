@@ -1,18 +1,17 @@
 import { defineConfig } from 'vite';
-import path from 'path';
 
 export default defineConfig({
   base: './',
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
   server: {
     port: 3000,
+    strictPort: true,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 3000,
+    },
   },
-  build: {
-    target: 'es2020',
-    sourcemap: true,
+  optimizeDeps: {
+    include: ['phaser'],
   },
 });
