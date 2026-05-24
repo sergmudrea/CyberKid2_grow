@@ -152,4 +152,12 @@ private worldIdFromId(levelId: string): string {
   }
 }
 
+// Добавьте этот метод в класс ProgressManager:
+
+public refreshProgress(): void {
+  const method = 'refreshProgress';
+  logger.debug('ProgressManager', method, 'Refreshing progress from storage');
+  this.progress = this.loadFromLocalStorage();
+}
+
 export const progressManager = ProgressManager.getInstance();
