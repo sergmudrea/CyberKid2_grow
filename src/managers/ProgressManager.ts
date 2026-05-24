@@ -70,19 +70,24 @@ export class ProgressManager {
     }
   }
 
-  public isLevelUnlocked(levelId: string): boolean {
-    const levelNum = parseInt(levelId.split('_')[1]);
-    if (levelNum === 1) return true;
-    
-    const prevLevelId = levelId.replace(/\d+$/, (match) => {
-      const num = parseInt(match);
-      return (num - 1).toString().padStart(match.length, '0');
-    });
-    
-    const prevStats = this.progress.levelStats[prevLevelId];
-    return prevStats?.completed || false;
-  }
 
+
+  public isLevelUnlocked(levelId: string): boolean {
+  const levelNum = parseInt(levelId.split('_')[1]);
+  if (levelNum === 1) return true;
+  
+  // Находим предыдущий уровень
+  const prevNum = levelNum - 1;
+  const prevLevelId = `${this.worldIdFromId(levelId)}_${prevNum.toString().padStart(3, '0')}`;
+  
+  const prevStats = this.progress.levelStats[prevLevelId];
+  return prevStats?.completed || false;
+}
+
+private worldIdFromId(levelId: string): string {
+  return levelId.split('_')[0];
+}
+  
   public unlockWorld(worldId: string): void {
     const method = 'unlockWorld';
     if (!this.progress.unlockedWorlds.includes(worldId)) {
