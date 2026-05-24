@@ -1,6 +1,7 @@
 import { PlayerProgress, LevelStats } from '../types/index';
 import { logger } from '../core/Logger';
 import { levelManager } from './LevelManager';
+import { gameEvents } from '../core/EventBus';
 
 const STORAGE_KEY = 'cyberkid_progress';
 
@@ -53,47 +54,32 @@ export class ProgressManager {
     }
     this.progress.totalStars = totalStars;
     
-    // Проверяем, нужно ли разблокировать следующий уровень
-    this.checkNextLevelUnlock(levelId);
-    
     this.saveToLocalStorage();
     logger.info('ProgressManager', method, `Progress saved. Total stars: ${totalStars}`);
-  }
-
-  private checkNextLevelUnlock(levelId: string): void {
-    const method = 'checkNextLevelUnlock';
-    const nextLevelId = levelManager.getNextLevelId(levelId);
     
-    if (nextLevelId) {
-      logger.debug('ProgressManager', method, `Next level: ${nextLevelId} is available`);
-      // Следующий уровень автоматически становится доступным (не блокируется)
-    }
+    // Отправляем событие обновления прогресса
+    gameEvents.emit('PROGRESS_UPDATED', this.progress);
   }
-
-
 
   public isLevelUnlocked(levelId: string): boolean {
-  const levelNum = parseInt(levelId.split('_')[1]);
-  if (levelNum === 1) return true;
-  
-  // Находим предыдущий уровень
-  const prevNum = levelNum - 1;
-  const prevLevelId = `${this.worldIdFromId(levelId)}_${prevNum.toString().padStart(3, '0')}`;
-  
-  const prevStats = this.progress.levelStats[prevLevelId];
-  return prevStats?.completed || false;
-}
+    const parts = levelId.split('_');
+    const worldId = parts[0];
+    const levelNum = parseInt(parts[1]);
+    
+    if (levelNum === 1) return true;
+    
+    const prevLevelId = `${worldId}_${(levelNum - 1).toString().padStart(3, '0')}`;
+    const prevStats = this.progress.levelStats[prevLevelId];
+    return prevStats?.completed || false;
+  }
 
-private worldIdFromId(levelId: string): string {
-  return levelId.split('_')[0];
-}
-  
   public unlockWorld(worldId: string): void {
     const method = 'unlockWorld';
     if (!this.progress.unlockedWorlds.includes(worldId)) {
       this.progress.unlockedWorlds.push(worldId);
       logger.info('ProgressManager', method, `World ${worldId} unlocked`);
       this.saveToLocalStorage();
+      gameEvents.emit('PROGRESS_UPDATED', this.progress);
     }
   }
 
@@ -149,15 +135,8 @@ private worldIdFromId(levelId: string): string {
     logger.warn('ProgressManager', method, 'Resetting all progress');
     localStorage.removeItem(STORAGE_KEY);
     this.progress = this.loadFromLocalStorage();
+    gameEvents.emit('PROGRESS_UPDATED', this.progress);
   }
-}
-
-// Добавьте этот метод в класс ProgressManager:
-
-public refreshProgress(): void {
-  const method = 'refreshProgress';
-  logger.debug('ProgressManager', method, 'Refreshing progress from storage');
-  this.progress = this.loadFromLocalStorage();
 }
 
 export const progressManager = ProgressManager.getInstance();
