@@ -11,9 +11,8 @@ export class GameScene extends Scene {
   private levelId: string = '';
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
-  private gridSize: number = 40;
-  private playerSprite: Phaser.GameObjects.Rectangle;
-  private coinSprite: Phaser.GameObjects.Rectangle;
+  private gridSize: number = 48;
+  private playerSprite: Phaser.GameObjects.Sprite;
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
   private isRunning: boolean = false;
@@ -30,6 +29,7 @@ export class GameScene extends Scene {
   private needScroll: boolean = false;
   private scrollX: number = 0;
   private scrollY: number = 0;
+  private tileSprites: Map<string, Phaser.GameObjects.Image> = new Map();
 
   constructor() {
     super('GameScene');
@@ -285,14 +285,12 @@ export class GameScene extends Scene {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
-      // Проверка победы после каждого шага
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
         this.isVictory = true;
         this.isRunning = false;
         this.commandPanel.clearHighlight();
         
-        // Сохраняем прогресс немедленно
         const stars = this.calculateStars();
         const steps = this.currentCommandIndex + 1;
         logger.info('GameScene', 'executeCommands', `Saving progress: ${this.levelId}, stars=${stars}, steps=${steps}`);
@@ -309,12 +307,6 @@ export class GameScene extends Scene {
       this.isBroken = true;
       this.failedCommandIndex = index;
       this.showGhostAt(collisionCell);
-      const collisionX = this.gameOffsetX + collisionCell.col * this.gridSize;
-      const collisionY = this.gameOffsetY + collisionCell.row * this.gridSize;
-      const flash = this.add.rectangle(collisionX, collisionY, this.gridSize, this.gridSize, 0xff0000, 0.8).setOrigin(0, 0);
-      this.time.delayedCall(300, () => flash.destroy());
-      this.playerSprite.setFillStyle(0xff0000);
-      this.commandPanel.highlightCommand(index, 'error');
       this.showBrokenMessage();
       this.isRunning = false;
     }
@@ -324,8 +316,6 @@ export class GameScene extends Scene {
     if (!this.level) return 1;
     const optimalSteps = this.level.optimalSteps || 18;
     const stepsUsed = this.currentCommandIndex + 1;
-    
-    logger.debug('GameScene', 'calculateStars', `optimalSteps=${optimalSteps}, stepsUsed=${stepsUsed}`);
     
     if (stepsUsed <= optimalSteps) return 3;
     if (stepsUsed <= optimalSteps * 1.5) return 2;
@@ -352,6 +342,17 @@ export class GameScene extends Scene {
     }).setOrigin(0.5);
     msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
+    
+    // Эффект красного мигания
+    if (this.playerSprite) {
+      this.tweens.add({
+        targets: this.playerSprite,
+        alpha: 0.3,
+        duration: 100,
+        yoyo: true,
+        repeat: 3,
+      });
+    }
   }
 
   private showVictoryMessage(): void {
@@ -363,6 +364,22 @@ export class GameScene extends Scene {
     }).setOrigin(0.5);
     msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
+    
+    // Эффект конфетти
+    for (let i = 0; i < 50; i++) {
+      const x = Math.random() * this.cameras.main.width;
+      const y = Math.random() * 100;
+      const color = [0xff0000, 0x00ff00, 0x0000ff, 0xffcc00, 0xff00cc][Math.floor(Math.random() * 5)];
+      const particle = this.add.rectangle(x, y, 4, 4, color);
+      particle.setScrollFactor(0);
+      this.tweens.add({
+        targets: particle,
+        y: y + 200,
+        alpha: 0,
+        duration: 1000 + Math.random() * 1000,
+        onComplete: () => particle.destroy(),
+      });
+    }
     
     this.time.delayedCall(500, () => {
       this.commandPanel.destroy();
@@ -381,11 +398,15 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B;
-        if (map[row][col] === TileType.WALL) color = 0x555555;
-        if (map[row][col] === TileType.HOLE) color = 0x000000;
-        const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0).setStrokeStyle(1, 0xaaaaaa);
-        this.gameContainer.add(cell);
+        let textureKey = 'tile_platform';
+        if (map[row][col] === TileType.WALL) textureKey = 'tile_wall';
+        if (map[row][col] === TileType.HOLE) textureKey = 'tile_hole';
+        if (map[row][col] === TileType.GOAL) textureKey = 'tile_coin';
+        
+        const tile = this.add.image(x, y, textureKey);
+        tile.setOrigin(0, 0);
+        tile.setDisplaySize(this.gridSize, this.gridSize);
+        this.gameContainer.add(tile);
       }
     }
   }
@@ -395,18 +416,28 @@ export class GameScene extends Scene {
     if (!this.level) return;
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
-    const color = this.isBroken ? 0xff0000 : (this.isVictory ? 0xffcc00 : 0x00ff00);
-    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
+    
+    // Определяем текстуру в зависимости от направления движения
+    let texture = 'player_right';
+    if (this.currentCommandIndex >= 0 && this.currentCommandIndex < this.commandPanel?.getCommands().length) {
+      const lastCmd = this.commandPanel.getCommands()[this.currentCommandIndex];
+      if (lastCmd === 'up') texture = 'player_up';
+      else if (lastCmd === 'down') texture = 'player_down';
+      else if (lastCmd === 'left') texture = 'player_left';
+      else if (lastCmd === 'right') texture = 'player_right';
+    } else {
+      texture = 'player_right';
+    }
+    
+    this.playerSprite = this.add.sprite(x, y, texture);
+    this.playerSprite.setOrigin(0, 0);
+    this.playerSprite.setDisplaySize(this.gridSize, this.gridSize);
     this.gameContainer.add(this.playerSprite);
   }
 
   private drawCoin(): void {
-    if (this.coinSprite) this.coinSprite.destroy();
     if (!this.level) return;
-    const x = this.coinPos.col * this.gridSize;
-    const y = this.coinPos.row * this.gridSize;
-    this.coinSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00).setOrigin(0, 0);
-    this.gameContainer.add(this.coinSprite);
+    // Монета уже отрисована в drawGrid как GOAL
   }
 
   private checkVictory(): void {
