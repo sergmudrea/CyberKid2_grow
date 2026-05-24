@@ -1,0 +1,44 @@
+{
+  "id": "player",
+  "name": "Robot",
+  "sprite": "player",
+  "gridSize": 48,
+  "commands": ["up", "down", "left", "right"],
+  "movementRules": [
+    {
+      "direction": "up",
+      "delta": { "col": 0, "row": -1 },
+      "canMoveThrough": ["platform", "goal", "key", "corn", "core", "drill", "hook", "wing", "bait"],
+      "blockedBy": ["wall", "door_locked", "monster"],
+      "effects": []
+    },
+    {
+      "direction": "down",
+      "delta": { "col": 0, "row": 1 },
+      "canMoveThrough": ["platform", "goal", "key", "corn", "core", "drill", "hook", "wing", "bait"],
+      "blockedBy": ["wall", "door_locked", "monster"],
+      "effects": []
+    },
+    {
+      "direction": "left",
+      "delta": { "col": -1, "row": 0 },
+      "canMoveThrough": ["platform", "goal", "key", "corn", "core", "drill", "hook", "wing", "bait"],
+      "blockedBy": ["wall", "door_locked", "monster"],
+      "effects": []
+    },
+    {
+      "direction": "right",
+      "delta": { "col": 1, "row": 0 },
+      "canMoveThrough": ["platform", "goal", "key", "corn", "core", "drill", "hook", "wing", "bait"],
+      "blockedBy": ["wall", "door_locked", "monster"],
+      "effects": []
+    }
+  ],
+  "deathConditions": ["hole", "lava", "water", "monster_collision"],
+  "inventory": {
+    "maxKeys": 99,
+    "maxCorn": 99,
+    "maxCores": 99,
+    "maxTools": 10
+  }
+}
