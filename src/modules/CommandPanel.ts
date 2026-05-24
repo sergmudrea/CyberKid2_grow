@@ -34,8 +34,13 @@ export class CommandPanel {
   public highlightCommand(index: number, type: 'running' | 'error'): void {
     this.commandElements.forEach((element, idx) => {
       if (idx === index) {
-        element.style.backgroundColor = type === 'running' ? '#00aa44' : '#ff0000';
-        element.style.transition = 'background-color 0.1s';
+        if (type === 'running') {
+          element.style.backgroundColor = '#00aa44';
+          element.style.transition = 'background-color 0.1s';
+        } else if (type === 'error') {
+          element.style.backgroundColor = '#ff0000';
+          element.style.transition = 'background-color 0.1s';
+        }
       } else {
         element.style.backgroundColor = '#3a3a5a';
       }
@@ -107,7 +112,6 @@ export class CommandPanel {
     runBtn.style.border = 'none';
     runBtn.style.borderRadius = '6px';
     runBtn.style.cursor = 'pointer';
-    runBtn.style.marginTop = '10px';
     runBtn.onclick = () => this.onRunCallback(this.commands);
     this.container.appendChild(runBtn);
 
