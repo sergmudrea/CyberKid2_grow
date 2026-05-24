@@ -98,7 +98,6 @@ export class LevelManager {
             continue;
           }
           
-          // Валидация уровня
           if (!levelData.id || !levelData.worldId || !levelData.map) {
             failedCount++;
             logger.warn('LevelManager', method, `Level ${levelId} has invalid structure (missing required fields)`);
@@ -111,7 +110,7 @@ export class LevelManager {
           }
           this.worldsLevels.get(levelData.worldId)!.push(levelId);
           loadedCount++;
-          logger.debug('LevelManager', method, `Loaded level: ${levelId} (${levelData.worldId})`);
+          logger.debug('LevelManager', method, `Loaded level: ${levelId} (${levelData.worldId}), optimalSteps: ${levelData.optimalSteps}`);
         } catch (err) {
           failedCount++;
           logger.error('LevelManager', method, `Error loading level ${levelId}`, err);
@@ -128,7 +127,6 @@ export class LevelManager {
     const method = 'generateDemoLevels';
     logger.info('LevelManager', method, 'Generating demo levels');
     
-    // Meadow уровни (1-20)
     for (let i = 1; i <= 20; i++) {
       const map = Array(10).fill(null).map(() => Array(10).fill(TileType.PLATFORM));
       if (i === 5) {
@@ -157,110 +155,13 @@ export class LevelManager {
       this.worldsLevels.get('meadow')!.push(level.id);
     }
     logger.debug('LevelManager', method, 'Generated 20 meadow levels');
-
-    // Ocean уровни (501-520)
-    for (let i = 501; i <= 520; i++) {
-      const map = Array(12).fill(null).map(() => Array(12).fill(TileType.PLATFORM));
-      const level: LevelData = {
-        id: `ocean_${i.toString().padStart(3, '0')}`,
-        name: `Ocean ${i}`,
-        worldId: 'ocean',
-        width: 12,
-        height: 12,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 11, row: 11 },
-        optimalSteps: 22,
-      };
-      this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('ocean')) this.worldsLevels.set('ocean', []);
-      this.worldsLevels.get('ocean')!.push(level.id);
-    }
-    logger.debug('LevelManager', method, 'Generated 20 ocean levels');
-
-    // Clouds уровни (1001-1020)
-    for (let i = 1001; i <= 1020; i++) {
-      const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
-      const level: LevelData = {
-        id: `clouds_${i.toString().padStart(4, '0')}`,
-        name: `Clouds ${i}`,
-        worldId: 'clouds',
-        width: 14,
-        height: 14,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 13, row: 13 },
-        optimalSteps: 26,
-      };
-      this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('clouds')) this.worldsLevels.set('clouds', []);
-      this.worldsLevels.get('clouds')!.push(level.id);
-    }
-    logger.debug('LevelManager', method, 'Generated 20 clouds levels');
-
-    // Fairytale уровни (1501-1520)
-    for (let i = 1501; i <= 1520; i++) {
-      const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
-      const level: LevelData = {
-        id: `fairytale_${i.toString().padStart(4, '0')}`,
-        name: `Fairytale ${i}`,
-        worldId: 'fairytale',
-        width: 14,
-        height: 14,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 13, row: 13 },
-        optimalSteps: 26,
-      };
-      this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('fairytale')) this.worldsLevels.set('fairytale', []);
-      this.worldsLevels.get('fairytale')!.push(level.id);
-    }
-    logger.debug('LevelManager', method, 'Generated 20 fairytale levels');
-
-    // Volcano уровни (2001-2020)
-    for (let i = 2001; i <= 2020; i++) {
-      const map = Array(16).fill(null).map(() => Array(16).fill(TileType.PLATFORM));
-      const level: LevelData = {
-        id: `volcano_${i.toString().padStart(4, '0')}`,
-        name: `Volcano ${i}`,
-        worldId: 'volcano',
-        width: 16,
-        height: 16,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 15, row: 15 },
-        optimalSteps: 30,
-      };
-      this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('volcano')) this.worldsLevels.set('volcano', []);
-      this.worldsLevels.get('volcano')!.push(level.id);
-    }
-    logger.debug('LevelManager', method, 'Generated 20 volcano levels');
-
-    // Arcade
+    
+    this.worldsLevels.set('ocean', []);
+    this.worldsLevels.set('clouds', []);
+    this.worldsLevels.set('fairytale', []);
+    this.worldsLevels.set('volcano', []);
     this.worldsLevels.set('arcade', []);
-    logger.debug('LevelManager', method, 'Arcade world initialized (empty)');
-
-    // Bonus уровни (2501-2520)
-    for (let i = 2501; i <= 2520; i++) {
-      const map = Array(20).fill(null).map(() => Array(20).fill(TileType.PLATFORM));
-      const level: LevelData = {
-        id: `bonus_${i.toString().padStart(4, '0')}`,
-        name: `Bonus ${i}`,
-        worldId: 'bonus',
-        width: 20,
-        height: 20,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 19, row: 19 },
-        optimalSteps: 38,
-      };
-      this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('bonus')) this.worldsLevels.set('bonus', []);
-      this.worldsLevels.get('bonus')!.push(level.id);
-    }
-    logger.debug('LevelManager', method, 'Generated 20 bonus levels');
+    this.worldsLevels.set('bonus', []);
     
     logger.info('LevelManager', method, `Demo generation complete. Total levels: ${this.cache.size}`);
   }
@@ -276,7 +177,7 @@ export class LevelManager {
     const level = this.cache.get(levelId);
     
     if (level) {
-      logger.info('LevelManager', method, `Level loaded: ${levelId} (${level.name})`);
+      logger.info('LevelManager', method, `Level loaded: ${levelId} (${level.name}), optimalSteps: ${level.optimalSteps}`);
     } else {
       logger.error('LevelManager', method, `Level not found: ${levelId}`);
     }
