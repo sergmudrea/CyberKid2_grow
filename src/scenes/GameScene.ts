@@ -29,7 +29,6 @@ export class GameScene extends Scene {
   private needScroll: boolean = false;
   private scrollX: number = 0;
   private scrollY: number = 0;
-  private tileSprites: Map<string, Phaser.GameObjects.Image> = new Map();
 
   constructor() {
     super('GameScene');
@@ -247,6 +246,7 @@ export class GameScene extends Scene {
     }
     if (this.isBroken) {
       this.isRunning = false;
+      // Подсвечиваем ошибочную команду красным
       this.commandPanel.highlightCommand(this.failedCommandIndex, 'error');
       this.showBrokenMessage();
       return;
@@ -306,6 +306,8 @@ export class GameScene extends Scene {
       logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
       this.isBroken = true;
       this.failedCommandIndex = index;
+      // Подсвечиваем ошибочную команду красным
+      this.commandPanel.highlightCommand(index, 'error');
       this.showGhostAt(collisionCell);
       this.showBrokenMessage();
       this.isRunning = false;
@@ -343,7 +345,6 @@ export class GameScene extends Scene {
     msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
     
-    // Эффект красного мигания
     if (this.playerSprite) {
       this.tweens.add({
         targets: this.playerSprite,
@@ -365,7 +366,6 @@ export class GameScene extends Scene {
     msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
     
-    // Эффект конфетти
     for (let i = 0; i < 50; i++) {
       const x = Math.random() * this.cameras.main.width;
       const y = Math.random() * 100;
@@ -417,16 +417,13 @@ export class GameScene extends Scene {
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
     
-    // Определяем текстуру в зависимости от направления движения
     let texture = 'player_right';
-    if (this.currentCommandIndex >= 0 && this.currentCommandIndex < this.commandPanel?.getCommands().length) {
+    if (this.currentCommandIndex >= 0 && this.commandPanel && this.commandPanel.getCommands().length > this.currentCommandIndex) {
       const lastCmd = this.commandPanel.getCommands()[this.currentCommandIndex];
       if (lastCmd === 'up') texture = 'player_up';
       else if (lastCmd === 'down') texture = 'player_down';
       else if (lastCmd === 'left') texture = 'player_left';
       else if (lastCmd === 'right') texture = 'player_right';
-    } else {
-      texture = 'player_right';
     }
     
     this.playerSprite = this.add.sprite(x, y, texture);
@@ -436,7 +433,6 @@ export class GameScene extends Scene {
   }
 
   private drawCoin(): void {
-    if (!this.level) return;
     // Монета уже отрисована в drawGrid как GOAL
   }
 
