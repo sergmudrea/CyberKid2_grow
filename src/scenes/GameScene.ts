@@ -4,8 +4,6 @@ import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { LevelData, TileType } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
-import { unitManager } from '../modules/UnitManager';
-import { unitLoader } from '../modules/UnitLoader';
 import { logger } from '../core/Logger';
 
 export class GameScene extends Scene {
@@ -15,7 +13,6 @@ export class GameScene extends Scene {
   private coinPos: { col: number; row: number };
   private gridSize: number = 48;
   private playerSprite: Phaser.GameObjects.Sprite;
-  private playerUnitId: string | null = null;
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
   private isRunning: boolean = false;
@@ -32,9 +29,6 @@ export class GameScene extends Scene {
   private needScroll: boolean = false;
   private scrollX: number = 0;
   private scrollY: number = 0;
-  private tileSprites: Map<string, Phaser.GameObjects.Image> = new Map();
-  private monsterUnitIds: string[] = [];
-  private updateInterval: Phaser.Time.TimerEvent;
 
   constructor() {
     super('GameScene');
@@ -62,12 +56,8 @@ export class GameScene extends Scene {
     this.failedCommandIndex = -1;
     this.scrollX = 0;
     this.scrollY = 0;
-    this.monsterUnitIds = [];
     
-    // Инициализируем UnitManager
-    unitManager.init(this, this.gridSize);
-    
-    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row}), optimalSteps: ${this.level.optimalSteps}`);
+    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row})`);
     this.createScene();
   }
 
@@ -92,8 +82,8 @@ export class GameScene extends Scene {
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
     
     this.drawGrid();
-    this.spawnPlayer();
-    this.spawnMonsters();
+    this.drawPlayer();
+    this.drawCoin();
 
     this.needScroll = this.gameBounds.width > this.cameras.main.width || this.gameBounds.height > this.cameras.main.height;
     
@@ -141,7 +131,7 @@ export class GameScene extends Scene {
         this.currentCommandIndex = -1;
         this.failedCommandIndex = -1;
         this.commandPanel.clearHighlight();
-        this.updatePlayerSprite();
+        this.drawPlayer();
         this.updateVisualizer();
         this.resetScroll();
       },
@@ -153,12 +143,24 @@ export class GameScene extends Scene {
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
 
-    // Авто-обновление монстров каждые 500 мс
-    this.updateInterval = this.time.addEvent({
-      delay: 500,
-      callback: () => this.updateMonsters(),
-      loop: true,
+    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#aa8844',
+      padding: { x: 12, y: 6 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    autoSolveButton.on('pointerdown', () => {
+      if (!this.level) return;
+      const commands: Command[] = [];
+      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
+      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
+      this.commandPanel.setCommands(commands);
+      this.updateVisualizer();
+      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
     });
+    autoSolveButton.setScrollFactor(0);
+    autoSolveButton.setDepth(100);
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
@@ -168,42 +170,11 @@ export class GameScene extends Scene {
       depth: 100,
     }).setInteractive({ useHandCursor: true });
     backButton.on('pointerdown', () => {
-      this.cleanup();
+      this.commandPanel.destroy();
       this.scene.start('MainMenu');
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
-  }
-
-  private async spawnPlayer(): Promise<void> {
-    await unitLoader.loadUnit('player');
-    this.playerUnitId = await unitManager.spawnUnit('player', this.playerPos, 'right');
-    logger.info('GameScene', 'spawnPlayer', `Player spawned at (${this.playerPos.col},${this.playerPos.row})`);
-  }
-
-  private async spawnMonsters(): Promise<void> {
-    if (!this.level) return;
-    
-    for (const monster of this.level.objects.monsters) {
-      let unitId = 'monster_patrol';
-      if (monster.type === 'chase') unitId = 'monster_chase';
-      if (monster.type === 'tameable') unitId = 'monster_tameable';
-      
-      await unitLoader.loadUnit(unitId);
-      const instanceId = await unitManager.spawnUnit(unitId, monster.position, monster.direction);
-      if (instanceId) {
-        this.monsterUnitIds.push(instanceId);
-      }
-    }
-    logger.debug('GameScene', 'spawnMonsters', `Spawned ${this.monsterUnitIds.length} monsters`);
-  }
-
-  private updateMonsters(): void {
-    if (this.isRunning || this.isVictory) return;
-    
-    for (const monsterId of this.monsterUnitIds) {
-      unitManager.updateUnit(monsterId, this.playerPos);
-    }
   }
   
   private updateContainerPosition(): void {
@@ -247,7 +218,7 @@ export class GameScene extends Scene {
     this.playerPos = { ...this.level.startPos };
     this.isBroken = false;
     this.isVictory = false;
-    this.updatePlayerSprite();
+    this.drawPlayer();
   }
 
   private runProgram(commands: Command[]): void {
@@ -263,7 +234,7 @@ export class GameScene extends Scene {
     this.commandPanel.clearHighlight();
     if (!this.level) return;
     this.playerPos = { ...this.level.startPos };
-    this.updatePlayerSprite();
+    this.drawPlayer();
     this.executeCommands(commands, 0);
   }
 
@@ -308,15 +279,11 @@ export class GameScene extends Scene {
     const isHole = tile === TileType.HOLE;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
-    // Проверка на монстров
-    const monsterHere = this.level.objects.monsters.find(m => m.position.col === targetCol && m.position.row === targetRow);
-    const isMonster = !!monsterHere;
-
     logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow})`);
 
-    if (!isWall && !isHole && !isOutOfBounds && !isMonster) {
+    if (!isWall && !isHole && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
-      this.updatePlayerSprite();
+      this.drawPlayer();
       
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
@@ -335,23 +302,13 @@ export class GameScene extends Scene {
       await this.delay(80);
       this.executeCommands(commands, index + 1);
     } else {
-      logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd}`);
+      logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
       this.isBroken = true;
       this.failedCommandIndex = index;
       this.commandPanel.highlightCommand(index, 'error');
       this.showGhostAt(collisionCell);
       this.showBrokenMessage();
       this.isRunning = false;
-    }
-  }
-
-  private updatePlayerSprite(): void {
-    if (!this.playerUnitId) return;
-    // Обновляем позицию игрока через UnitManager
-    const x = this.playerPos.col * this.gridSize;
-    const y = this.playerPos.row * this.gridSize;
-    if (this.playerSprite) {
-      this.playerSprite.setPosition(x, y);
     }
   }
 
@@ -423,7 +380,7 @@ export class GameScene extends Scene {
     }
     
     this.time.delayedCall(500, () => {
-      this.cleanup();
+      this.commandPanel.destroy();
       this.scene.start('VictoryScreen', { 
         levelId: this.levelId, 
         stars: this.calculateStars(), 
@@ -453,7 +410,16 @@ export class GameScene extends Scene {
   }
 
   private drawPlayer(): void {
-    // Игрок создаётся через UnitManager
+    if (this.playerSprite) this.playerSprite.destroy();
+    if (!this.level) return;
+    const x = this.playerPos.col * this.gridSize;
+    const y = this.playerPos.row * this.gridSize;
+    const texture = 'player_right';
+    
+    this.playerSprite = this.add.sprite(x, y, texture);
+    this.playerSprite.setOrigin(0, 0);
+    this.playerSprite.setDisplaySize(this.gridSize, this.gridSize);
+    this.gameContainer.add(this.playerSprite);
   }
 
   private drawCoin(): void {
@@ -468,12 +434,5 @@ export class GameScene extends Scene {
       progressManager.completeLevel(this.levelId, stars, steps);
       this.showVictoryMessage();
     }
-  }
-
-  private cleanup(): void {
-    if (this.updateInterval) {
-      this.updateInterval.remove();
-    }
-    unitManager.clear();
   }
 }
