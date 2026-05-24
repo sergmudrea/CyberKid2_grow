@@ -262,7 +262,7 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
-  private showVictoryMessage(): void {
+ private showVictoryMessage(): void {
   const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
     fontSize: '28px',
     color: '#ffcc00',
