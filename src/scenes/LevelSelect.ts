@@ -35,17 +35,14 @@ export class LevelSelect extends Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // Фон
     const bg = this.add.graphics();
     bg.fillGradientStyle(0x0a0a2a, 0x0a0a2a, 0x1a1a4a, 0x1a1a4a);
     bg.fillRect(0, 0, width, height);
 
-    // Звёзды
     for (let i = 0; i < 80; i++) {
       this.add.circle(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, 0xffffff, 0.3);
     }
 
-    // Заголовок
     const worldNames: Record<string, string> = {
       meadow: '🌾 MEADOW',
       ocean: '🌊 OCEAN',
@@ -64,7 +61,6 @@ export class LevelSelect extends Scene {
     }).setOrigin(0.5);
     title.setScrollFactor(0);
 
-    // Загрузка уровней
     this.levelIds = levelManager.getLevelIdsForWorld(this.worldId);
     if (this.levelIds.length === 0) {
       await levelManager.initialize();
@@ -78,13 +74,9 @@ export class LevelSelect extends Scene {
     
     logger.debug('LevelSelect', 'create', `Loaded ${this.levelIds.length} levels for world ${this.worldId}`);
 
-    // Сетка уровней
     this.renderLevelGrid();
-
-    // Панель информации
     this.createInfoPanel();
 
-    // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
       color: '#ffffff',
@@ -97,7 +89,6 @@ export class LevelSelect extends Scene {
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
 
-    // Кнопка возврата на карту миров
     const worldMapButton = this.add.text(width - 120, 10, '🌍 WORLDS', {
       fontSize: '14px',
       color: '#ffffff',
@@ -110,7 +101,6 @@ export class LevelSelect extends Scene {
     worldMapButton.setScrollFactor(0);
     worldMapButton.setDepth(100);
     
-    // Подписка на обновление прогресса
     gameEvents.on('PROGRESS_UPDATED', () => {
       if (this.isReady && this.cameras && this.cameras.main) {
         logger.debug('LevelSelect', 'PROGRESS_UPDATED', 'Refreshing level grid');
@@ -123,10 +113,8 @@ export class LevelSelect extends Scene {
   }
 
   private renderLevelGrid(): void {
-    // Проверяем, что сцена готова
     if (!this.cameras || !this.cameras.main) return;
     
-    // Очищаем старые кнопки
     this.levelButtons.forEach(btn => btn.destroy());
     this.levelButtons = [];
 
@@ -153,7 +141,6 @@ export class LevelSelect extends Scene {
       const stars = stats?.stars || 0;
       const isCompleted = stats?.completed || false;
       
-      // Разблокировка: первый уровень всегда открыт, остальные — если предыдущий пройден
       let isLocked = true;
       if (levelNum === 1) {
         isLocked = false;
@@ -199,7 +186,6 @@ export class LevelSelect extends Scene {
       this.levelButtons.push(container);
     }
 
-    // Пагинация
     const totalPages = Math.ceil(this.levelIds.length / this.levelsPerPage);
     if (this.pageText) this.pageText.destroy();
     this.pageText = this.add.text(this.cameras.main.width - 100, 100, `${this.currentPage + 1}/${totalPages}`, {
