@@ -235,33 +235,13 @@ export class LevelManager {
     }
     logger.debug('LevelManager', method, 'Generated 20 volcano levels');
 
-    // Arcade уровни (10 демо-уровней)
+    // Arcade уровни (собираем все уровни из всех миров)
     if (!this.worldsLevels.has('arcade')) this.worldsLevels.set('arcade', []);
-    for (let i = 1; i <= 10; i++) {
-      const map = Array(10).fill(null).map(() => Array(10).fill(TileType.PLATFORM));
-      if (i === 3) {
-        map[4][4] = TileType.WALL;
-        map[4][5] = TileType.WALL;
-      }
-      if (i === 7) {
-        map[5][5] = TileType.HOLE;
-      }
-      
-      const level: LevelData = {
-        id: `arcade_${i.toString().padStart(3, '0')}`,
-        name: `Arcade ${i}`,
-        worldId: 'arcade',
-        width: 10,
-        height: 10,
-        map: map,
-        startPos: { col: 0, row: 0 },
-        coinPos: { col: 9, row: 9 },
-        optimalSteps: 18,
-      };
-      this.cache.set(level.id, level);
-      this.worldsLevels.get('arcade')!.push(level.id);
+    const allLevels = Array.from(this.cache.keys()).sort();
+    for (const levelId of allLevels) {
+      this.worldsLevels.get('arcade')!.push(levelId);
     }
-    logger.debug('LevelManager', method, 'Generated 10 arcade levels');
+    logger.debug('LevelManager', method, `Arcade now has ${this.worldsLevels.get('arcade')!.length} levels from all worlds`);
 
     // Bonus уровни (2501-2520)
     for (let i = 2501; i <= 2520; i++) {
