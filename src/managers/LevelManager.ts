@@ -1,4 +1,4 @@
-import { LevelData, TileType } from '../types/index';
+import { LevelData } from '../types/index';
 
 export class LevelManager {
   private static instance: LevelManager;
@@ -19,9 +19,13 @@ export class LevelManager {
     }
     
     try {
-      // Динамический импорт JSON из папки src/levels
-      const module = await import(`../levels/${levelId}.json`);
-      const levelData: LevelData = module.default;
+      // Загружаем уровень из папки levels в корне проекта
+      const response = await fetch(`/levels/${levelId}.json`);
+      if (!response.ok) {
+        console.error(`Failed to load level ${levelId}: ${response.status}`);
+        return null;
+      }
+      const levelData: LevelData = await response.json();
       this.cache.set(levelId, levelData);
       return levelData;
     } catch (error) {
