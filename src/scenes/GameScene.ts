@@ -330,7 +330,7 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
-// В методе showVictoryMessage замените переход на MainMenu на VictoryScreen:
+// Замените метод showVictoryMessage на этот:
 
 private showVictoryMessage(): void {
   const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
@@ -352,7 +352,7 @@ private showVictoryMessage(): void {
   
   this.time.delayedCall(500, () => {
     this.commandPanel.destroy();
-    // Переход на экран победы вместо MainMenu
+    // Переход на экран победы
     this.scene.start('VictoryScreen', { 
       levelId: this.levelId, 
       stars: this.calculateStars(), 
