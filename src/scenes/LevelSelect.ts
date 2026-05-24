@@ -19,6 +19,7 @@ export class LevelSelect extends Scene {
   private playButton: Phaser.GameObjects.Text;
   private selectedLevelId: string = '';
   private selectedLevelIndex: number = -1;
+  private isReady: boolean = false;
 
   constructor() {
     super('LevelSelect');
@@ -30,6 +31,7 @@ export class LevelSelect extends Scene {
   }
 
   async create(): Promise<void> {
+    this.isReady = true;
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
@@ -110,15 +112,20 @@ export class LevelSelect extends Scene {
     
     // Подписка на обновление прогресса
     gameEvents.on('PROGRESS_UPDATED', () => {
-      logger.debug('LevelSelect', 'PROGRESS_UPDATED', 'Refreshing level grid');
-      this.renderLevelGrid();
-      if (this.selectedLevelId) {
-        this.updateInfoPanel(this.selectedLevelId);
+      if (this.isReady && this.cameras && this.cameras.main) {
+        logger.debug('LevelSelect', 'PROGRESS_UPDATED', 'Refreshing level grid');
+        this.renderLevelGrid();
+        if (this.selectedLevelId) {
+          this.updateInfoPanel(this.selectedLevelId);
+        }
       }
     });
   }
 
   private renderLevelGrid(): void {
+    // Проверяем, что сцена готова
+    if (!this.cameras || !this.cameras.main) return;
+    
     // Очищаем старые кнопки
     this.levelButtons.forEach(btn => btn.destroy());
     this.levelButtons = [];
