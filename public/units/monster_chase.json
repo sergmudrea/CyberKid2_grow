@@ -1,0 +1,28 @@
+{
+  "id": "monster_chase",
+  "name": "Chase Monster",
+  "sprite": "monster_chase",
+  "gridSize": 48,
+  "commands": ["chase"],
+  "movementRules": [
+    {
+      "direction": "chase",
+      "delta": "adaptive",
+      "canMoveThrough": ["platform", "start"],
+      "blockedBy": ["wall", "hole", "monster"],
+      "effects": ["kill_player_on_collision"]
+    }
+  ],
+  "behavior": {
+    "type": "chase",
+    "speed": 0.8,
+    "range": 5,
+    "target": "player"
+  },
+  "deathConditions": ["core_hit", "drill_hit"],
+  "interaction": {
+    "onCollision": "kill_player",
+    "onFeed": "tame",
+    "feedItem": "core"
+  }
+}
