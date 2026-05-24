@@ -21,20 +21,22 @@ export class WorldMap extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
   private worldContainer: Phaser.GameObjects.Container;
   private pathGraphics: Phaser.GameObjects.Graphics;
-  private startX: number = 150;
-  private startY: number = 250;
-  private stepX: number = 220;
-  private stepY: number = 100;
+  private startX: number = 100;
+  private startY: number = 200;
+  private stepX: number = 180;
+  private stepY: number = 80;
   private rows: number = 2;
   private cols: number = 4;
-  private scrollX: number = 0;
-  private scrollY: number = 0;
   private isDragging: boolean = false;
   private dragStartX: number = 0;
   private dragStartY: number = 0;
   private lastScrollX: number = 0;
   private lastScrollY: number = 0;
   private autoScrollTimer: Phaser.Time.TimerEvent;
+  private boundsMinX: number = 0;
+  private boundsMaxX: number = 0;
+  private boundsMinY: number = 0;
+  private boundsMaxY: number = 0;
 
   constructor() {
     super('WorldMap');
@@ -44,12 +46,10 @@ export class WorldMap extends Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
-    // Фон
     const bg = this.add.graphics();
     bg.fillGradientStyle(0x0a0a2a, 0x0a0a2a, 0x1a1a4a, 0x1a1a4a);
     bg.fillRect(0, 0, width, height);
 
-    // Звёзды
     for (let i = 0; i < 150; i++) {
       const star = this.add.circle(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, 0xffffff, 0.4);
       this.tweens.add({
@@ -69,26 +69,27 @@ export class WorldMap extends Scene {
     this.drawWorlds();
 
     this.camera = this.cameras.main;
-    const mapWidth = this.cols * this.stepX + 200;
+    const mapWidth = this.cols * this.stepX + 300;
     const mapHeight = this.rows * this.stepY + 300;
-    this.camera.setBounds(0, 0, mapWidth, mapHeight);
-    this.camera.setZoom(1);
+    this.boundsMinX = 0;
+    this.boundsMaxX = mapWidth - width;
+    this.boundsMinY = 0;
+    this.boundsMaxY = mapHeight - height;
+    this.camera.setBounds(this.boundsMinX, this.boundsMinY, mapWidth, mapHeight);
     this.camera.centerOn(width / 2, height / 2);
     
     this.lastScrollX = this.camera.scrollX;
     this.lastScrollY = this.camera.scrollY;
 
-    // Скролл мышью
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.camera.scrollX += deltaX;
       this.camera.scrollY += deltaY;
-      this.camera.clampBounds();
+      this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
       this.lastScrollY = this.camera.scrollY;
       this.resetAutoScrollTimer();
     });
 
-    // Перетаскивание
     this.input.on('pointerdown', (pointer: any) => {
       this.isDragging = true;
       this.dragStartX = pointer.x;
@@ -100,7 +101,7 @@ export class WorldMap extends Scene {
         const dy = pointer.y - this.dragStartY;
         this.camera.scrollX = this.lastScrollX - dx;
         this.camera.scrollY = this.lastScrollY - dy;
-        this.camera.clampBounds();
+        this.clampCamera();
         this.resetAutoScrollTimer();
       }
     });
@@ -110,58 +111,55 @@ export class WorldMap extends Scene {
       this.lastScrollY = this.camera.scrollY;
     });
 
-    // Клавиши
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.camera.scrollX -= 50;
-      this.camera.clampBounds();
+      this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
       this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
       this.camera.scrollX += 50;
-      this.camera.clampBounds();
+      this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
       this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-UP', () => {
       this.camera.scrollY -= 50;
-      this.camera.clampBounds();
+      this.clampCamera();
       this.lastScrollY = this.camera.scrollY;
       this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
       this.camera.scrollY += 50;
-      this.camera.clampBounds();
+      this.clampCamera();
       this.lastScrollY = this.camera.scrollY;
       this.resetAutoScrollTimer();
     });
 
-    // Авто-возврат
     this.autoScrollTimer = this.time.addEvent({
       delay: 5000,
       callback: () => {
         this.camera.centerOn(this.cameras.main.width / 2, this.cameras.main.height / 2);
+        this.clampCamera();
         this.lastScrollX = this.camera.scrollX;
         this.lastScrollY = this.camera.scrollY;
       },
       loop: false,
     });
 
-    // Заголовок
     this.add.text(this.cameras.main.width / 2, 40, '🌌 CYBERKID UNIVERSE 🌌', {
-      fontSize: '28px',
+      fontSize: '24px',
       color: '#ffcc00',
       fontFamily: 'monospace',
       stroke: '#ff6600',
       strokeThickness: 2,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
 
-    // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
-      padding: { x: 16, y: 8 },
+      padding: { x: 12, y: 6 },
     }).setInteractive({ useHandCursor: true });
     backButton.on('pointerdown', () => {
       this.scene.start('MainMenu');
@@ -170,12 +168,18 @@ export class WorldMap extends Scene {
     backButton.setDepth(100);
   }
 
+  private clampCamera(): void {
+    this.camera.scrollX = Math.max(this.boundsMinX, Math.min(this.camera.scrollX, this.boundsMaxX));
+    this.camera.scrollY = Math.max(this.boundsMinY, Math.min(this.camera.scrollY, this.boundsMaxY));
+  }
+
   private resetAutoScrollTimer(): void {
     this.autoScrollTimer.remove();
     this.autoScrollTimer = this.time.addEvent({
       delay: 5000,
       callback: () => {
         this.camera.centerOn(this.cameras.main.width / 2, this.cameras.main.height / 2);
+        this.clampCamera();
         this.lastScrollX = this.camera.scrollX;
         this.lastScrollY = this.camera.scrollY;
       },
@@ -203,7 +207,6 @@ export class WorldMap extends Scene {
       let levelsCount = world.levels;
       
       if (world.id === 'arcade') {
-        // Arcade показывает все уровни из всех миров
         const allLevelIds = levelManager.getLevelIdsForWorld('arcade');
         levelsCount = allLevelIds.length;
         maxStars = levelsCount * 3;
@@ -259,7 +262,7 @@ export class WorldMap extends Scene {
 
   private drawPath(): void {
     this.pathGraphics.clear();
-    this.pathGraphics.lineStyle(3, 0x88aaff, 0.6);
+    this.pathGraphics.lineStyle(2, 0x88aaff, 0.5);
     
     const order = ['meadow', 'ocean', 'clouds', 'fairytale', 'volcano', 'arcade', 'bonus'];
     for (let i = 0; i < order.length - 1; i++) {
@@ -274,14 +277,14 @@ export class WorldMap extends Scene {
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const arrowX = (from.x + to.x) / 2;
         const arrowY = (from.y + to.y) / 2;
-        const arrowSize = 10;
+        const arrowSize = 8;
         const arrowAngle1 = angle + Math.PI * 0.8;
         const arrowAngle2 = angle - Math.PI * 0.8;
         this.pathGraphics.beginPath();
         this.pathGraphics.moveTo(arrowX, arrowY);
         this.pathGraphics.lineTo(arrowX + Math.cos(arrowAngle1) * arrowSize, arrowY + Math.sin(arrowAngle1) * arrowSize);
         this.pathGraphics.lineTo(arrowX + Math.cos(arrowAngle2) * arrowSize, arrowY + Math.sin(arrowAngle2) * arrowSize);
-        this.pathGraphics.fillStyle(0x88aaff, 0.8);
+        this.pathGraphics.fillStyle(0x88aaff, 0.7);
         this.pathGraphics.fillPath();
       }
     }
@@ -292,34 +295,34 @@ export class WorldMap extends Scene {
       const container = this.add.container(world.x, world.y);
       
       const bgColor = world.isLocked ? 0x444444 : (world.id === 'arcade' ? 0x4a2a4a : 0x2a2a4a);
-      const bg = this.add.rectangle(0, 0, 150, 170, bgColor, 0.9);
+      const bg = this.add.rectangle(0, 0, 130, 150, bgColor, 0.9);
       bg.setStrokeStyle(2, world.isLocked ? 0x888888 : (world.id === 'arcade' ? 0xff44cc : 0x00ffcc));
       
       this.tweens.add({
         targets: container,
-        y: container.y - 5,
+        y: container.y - 3,
         duration: 1500 + Math.random() * 1000,
         yoyo: true,
         repeat: -1,
         ease: 'Sine.easeInOut',
       });
       
-      const icon = this.add.text(0, -35, world.icon, { fontSize: '48px' }).setOrigin(0.5);
-      const name = this.add.text(0, 10, world.name, { fontSize: '14px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
+      const icon = this.add.text(0, -30, world.icon, { fontSize: '40px' }).setOrigin(0.5);
+      const name = this.add.text(0, 8, world.name, { fontSize: '12px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
       
       const starPercent = world.maxStars > 0 ? (world.totalStars / world.maxStars) * 100 : 0;
       const starCount = Math.floor(starPercent / 20);
       const starsText = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
-      const stars = this.add.text(0, 32, starsText, { fontSize: '10px', color: '#ffcc00' }).setOrigin(0.5);
-      const levelsText = this.add.text(0, 52, `${world.completedLevels}/${world.levelsCount}`, { fontSize: '9px', color: '#aaaaaa' }).setOrigin(0.5);
+      const stars = this.add.text(0, 28, starsText, { fontSize: '9px', color: '#ffcc00' }).setOrigin(0.5);
+      const levelsText = this.add.text(0, 46, `${world.completedLevels}/${world.levelsCount}`, { fontSize: '8px', color: '#aaaaaa' }).setOrigin(0.5);
       
       container.add([bg, icon, name, stars, levelsText]);
       
       if (world.isLocked) {
-        const lock = this.add.text(0, 0, '🔒', { fontSize: '28px' }).setOrigin(0.5);
+        const lock = this.add.text(0, 0, '🔒', { fontSize: '24px' }).setOrigin(0.5);
         container.add(lock);
       } else {
-        container.setInteractive(new Phaser.Geom.Rectangle(-75, -85, 150, 170), Phaser.Geom.Rectangle.Contains);
+        container.setInteractive(new Phaser.Geom.Rectangle(-65, -75, 130, 150), Phaser.Geom.Rectangle.Contains);
         container.on('pointerdown', () => {
           this.scene.start('LevelSelect', { worldId: world.id });
         });
