@@ -23,15 +23,30 @@ export class LevelManager {
       const response = await fetch(`/levels/${levelId}.json`);
       if (!response.ok) {
         console.error(`Failed to load level ${levelId}: ${response.status}`);
-        return null;
+        // Возвращаем демо-уровень вместо null, чтобы игра не падала
+        return this.getDemoLevel(levelId);
       }
       const levelData: LevelData = await response.json();
       this.cache.set(levelId, levelData);
       return levelData;
     } catch (error) {
       console.error(`Error loading level ${levelId}:`, error);
-      return null;
+      return this.getDemoLevel(levelId);
     }
+  }
+
+  private getDemoLevel(levelId: string): LevelData {
+    console.log(`Using demo level instead of ${levelId}`);
+    return {
+      id: levelId,
+      name: 'Demo Level',
+      worldId: 'meadow',
+      width: 10,
+      height: 10,
+      map: Array(10).fill(null).map(() => Array(10).fill(0)),
+      startPos: { col: 0, row: 0 },
+      coinPos: { col: 9, row: 9 },
+    };
   }
 
   public clearCache(): void {
