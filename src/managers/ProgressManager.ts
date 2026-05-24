@@ -40,7 +40,25 @@ export class ProgressManager {
       this.progress.levelsCompleted.push(levelId);
     }
     
+    // Пересчёт общих звёзд
+    let totalStars = 0;
+    for (const st of Object.values(this.progress.levelStats)) {
+      totalStars += st.stars;
+    }
+    this.progress.totalStars = totalStars;
+    
     this.saveToLocalStorage();
+  }
+
+  public unlockWorld(worldId: string): void {
+    if (!this.progress.unlockedWorlds.includes(worldId)) {
+      this.progress.unlockedWorlds.push(worldId);
+      this.saveToLocalStorage();
+    }
+  }
+
+  public isWorldUnlocked(worldId: string): boolean {
+    return this.progress.unlockedWorlds.includes(worldId);
   }
 
   private loadFromLocalStorage(): PlayerProgress {
@@ -66,14 +84,22 @@ export class ProgressManager {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        return { ...defaultProgress, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        return { ...defaultProgress, ...parsed, levelStats: parsed.levelStats || {} };
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to load progress:', e);
+    }
     return defaultProgress;
   }
 
   private saveToLocalStorage(): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.progress));
+  }
+
+  public resetAll(): void {
+    localStorage.removeItem(STORAGE_KEY);
+    this.progress = this.loadFromLocalStorage();
   }
 }
 
