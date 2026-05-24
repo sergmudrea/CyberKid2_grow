@@ -58,7 +58,7 @@ export class GameScene extends Scene {
     this.scrollX = 0;
     this.scrollY = 0;
     
-    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), optimalSteps: ${this.level.optimalSteps}`);
+    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row}), optimalSteps: ${this.level.optimalSteps}`);
     this.createScene();
   }
 
@@ -75,7 +75,6 @@ export class GameScene extends Scene {
       height: this.level.height * this.gridSize
     };
     
-    // Центрируем контейнер
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
@@ -87,7 +86,6 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.drawCoin();
 
-    // Проверяем, нужен ли скролл
     this.needScroll = this.gameBounds.width > this.cameras.main.width || this.gameBounds.height > this.cameras.main.height;
     
     if (this.needScroll) {
@@ -146,7 +144,6 @@ export class GameScene extends Scene {
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
 
-    // Кнопка Auto-solve для тестирования
     const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
       fontSize: '14px',
       color: '#ffffff',
@@ -282,17 +279,25 @@ export class GameScene extends Scene {
     const isHole = tile === TileType.HOLE;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
-    logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow}) | Wall:${isWall} Hole:${isHole} OutOfBounds:${isOutOfBounds}`);
+    logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow})`);
 
     if (!isWall && !isHole && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
+      // Проверка победы после каждого шага
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
-        logger.info('GameScene', 'executeCommands', `Victory! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
+        logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
         this.isVictory = true;
         this.isRunning = false;
         this.commandPanel.clearHighlight();
+        
+        // Сохраняем прогресс немедленно
+        const stars = this.calculateStars();
+        const steps = this.currentCommandIndex + 1;
+        logger.info('GameScene', 'executeCommands', `Saving progress: ${this.levelId}, stars=${stars}, steps=${steps}`);
+        progressManager.completeLevel(this.levelId, stars, steps);
+        
         this.showVictoryMessage();
         return;
       }
@@ -300,7 +305,7 @@ export class GameScene extends Scene {
       await this.delay(80);
       this.executeCommands(commands, index + 1);
     } else {
-      logger.warn('GameScene', 'executeCommands', `Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
+      logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
       this.isBroken = true;
       this.failedCommandIndex = index;
       this.showGhostAt(collisionCell);
@@ -359,14 +364,6 @@ export class GameScene extends Scene {
     msg.setScrollFactor(0);
     this.time.delayedCall(2000, () => msg.destroy());
     
-    // Сохраняем прогресс
-    if (this.level && !this.isVictory) {
-      const stars = this.calculateStars();
-      const steps = this.currentCommandIndex + 1;
-      logger.info('GameScene', 'showVictoryMessage', `Saving progress for ${this.levelId}: ${stars} stars, ${steps} steps`);
-      progressManager.completeLevel(this.levelId, stars, steps);
-    }
-    
     this.time.delayedCall(500, () => {
       this.commandPanel.destroy();
       this.scene.start('VictoryScreen', { 
@@ -415,6 +412,9 @@ export class GameScene extends Scene {
   private checkVictory(): void {
     if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
       this.isVictory = true;
+      const stars = this.calculateStars();
+      const steps = this.currentCommandIndex + 1;
+      progressManager.completeLevel(this.levelId, stars, steps);
       this.showVictoryMessage();
     }
   }
