@@ -330,30 +330,36 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
-  private showVictoryMessage(): void {
-    const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
-      fontSize: '28px',
-      color: '#ffcc00',
-      backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 },
-    }).setOrigin(0.5);
-    msg.setScrollFactor(0);
-    this.time.delayedCall(2000, () => msg.destroy());
-    
-    // Сохраняем прогресс
-    if (this.level && !this.isVictory) {
-      const stars = this.calculateStars();
-      const steps = this.currentCommandIndex + 1;
-      logger.info('GameScene', 'showVictoryMessage', `Saving progress for ${this.levelId}: ${stars} stars, ${steps} steps`);
-      progressManager.completeLevel(this.levelId, stars, steps);
-    }
-    
-    this.time.delayedCall(500, () => {
-      alert('Victory!');
-      this.commandPanel.destroy();
-      this.scene.start('MainMenu');
-    });
+// В методе showVictoryMessage замените переход на MainMenu на VictoryScreen:
+
+private showVictoryMessage(): void {
+  const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
+    fontSize: '28px',
+    color: '#ffcc00',
+    backgroundColor: '#000000aa',
+    padding: { x: 20, y: 10 },
+  }).setOrigin(0.5);
+  msg.setScrollFactor(0);
+  this.time.delayedCall(2000, () => msg.destroy());
+  
+  // Сохраняем прогресс
+  if (this.level && !this.isVictory) {
+    const stars = this.calculateStars();
+    const steps = this.currentCommandIndex + 1;
+    logger.info('GameScene', 'showVictoryMessage', `Saving progress for ${this.levelId}: ${stars} stars, ${steps} steps`);
+    progressManager.completeLevel(this.levelId, stars, steps);
   }
+  
+  this.time.delayedCall(500, () => {
+    this.commandPanel.destroy();
+    // Переход на экран победы вместо MainMenu
+    this.scene.start('VictoryScreen', { 
+      levelId: this.levelId, 
+      stars: this.calculateStars(), 
+      stepsUsed: this.currentCommandIndex + 1 
+    });
+  });
+}
 
   private drawGrid(): void {
     if (!this.level) return;
