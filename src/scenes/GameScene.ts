@@ -50,9 +50,12 @@ export class GameScene extends Scene {
     this.isPlayerControlled = false;
     this.currentCommandIndex = -1;
     this.failedCommandIndex = -1;
+    
+    // Создаём сцену только после загрузки уровня
+    this.createScene();
   }
 
-  create(): void {
+  private createScene(): void {
     console.log('GameScene create');
     if (!this.level) {
       console.error('No level in create');
