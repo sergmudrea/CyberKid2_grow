@@ -21,10 +21,10 @@ export class WorldMap extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
   private worldContainer: Phaser.GameObjects.Container;
   private pathGraphics: Phaser.GameObjects.Graphics;
-  private startX: number = 100;
-  private startY: number = 200;
-  private stepX: number = 180;
-  private stepY: number = 80;
+  private startX: number = 120;
+  private startY: number = 180;
+  private stepX: number = 170;
+  private stepY: number = 150;
   private rows: number = 2;
   private cols: number = 4;
   private isDragging: boolean = false;
@@ -295,7 +295,7 @@ export class WorldMap extends Scene {
       const container = this.add.container(world.x, world.y);
       
       const bgColor = world.isLocked ? 0x444444 : (world.id === 'arcade' ? 0x4a2a4a : 0x2a2a4a);
-      const bg = this.add.rectangle(0, 0, 130, 150, bgColor, 0.9);
+      const bg = this.add.rectangle(0, 0, 120, 140, bgColor, 0.9);
       bg.setStrokeStyle(2, world.isLocked ? 0x888888 : (world.id === 'arcade' ? 0xff44cc : 0x00ffcc));
       
       this.tweens.add({
@@ -307,22 +307,22 @@ export class WorldMap extends Scene {
         ease: 'Sine.easeInOut',
       });
       
-      const icon = this.add.text(0, -30, world.icon, { fontSize: '40px' }).setOrigin(0.5);
-      const name = this.add.text(0, 8, world.name, { fontSize: '12px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
+      const icon = this.add.text(0, -25, world.icon, { fontSize: '36px' }).setOrigin(0.5);
+      const name = this.add.text(0, 8, world.name, { fontSize: '11px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
       
       const starPercent = world.maxStars > 0 ? (world.totalStars / world.maxStars) * 100 : 0;
       const starCount = Math.floor(starPercent / 20);
       const starsText = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
-      const stars = this.add.text(0, 28, starsText, { fontSize: '9px', color: '#ffcc00' }).setOrigin(0.5);
-      const levelsText = this.add.text(0, 46, `${world.completedLevels}/${world.levelsCount}`, { fontSize: '8px', color: '#aaaaaa' }).setOrigin(0.5);
+      const stars = this.add.text(0, 26, starsText, { fontSize: '8px', color: '#ffcc00' }).setOrigin(0.5);
+      const levelsText = this.add.text(0, 42, `${world.completedLevels}/${world.levelsCount}`, { fontSize: '7px', color: '#aaaaaa' }).setOrigin(0.5);
       
       container.add([bg, icon, name, stars, levelsText]);
       
       if (world.isLocked) {
-        const lock = this.add.text(0, 0, '🔒', { fontSize: '24px' }).setOrigin(0.5);
+        const lock = this.add.text(0, 0, '🔒', { fontSize: '22px' }).setOrigin(0.5);
         container.add(lock);
       } else {
-        container.setInteractive(new Phaser.Geom.Rectangle(-65, -75, 130, 150), Phaser.Geom.Rectangle.Contains);
+        container.setInteractive(new Phaser.Geom.Rectangle(-60, -70, 120, 140), Phaser.Geom.Rectangle.Contains);
         container.on('pointerdown', () => {
           this.scene.start('LevelSelect', { worldId: world.id });
         });
