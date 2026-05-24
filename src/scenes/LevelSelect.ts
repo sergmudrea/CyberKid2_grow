@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
+import { gameEvents } from '../core/EventBus';
 import { logger } from '../core/Logger';
 
 export class LevelSelect extends Scene {
@@ -107,19 +108,14 @@ export class LevelSelect extends Scene {
     worldMapButton.setScrollFactor(0);
     worldMapButton.setDepth(100);
     
-    // Слушаем событие обновления прогресса
-    this.events.on('resume', () => {
-      logger.debug('LevelSelect', 'resume', 'Scene resumed, refreshing level grid');
-      this.refreshLevelGrid();
+    // Подписка на обновление прогресса
+    gameEvents.on('PROGRESS_UPDATED', () => {
+      logger.debug('LevelSelect', 'PROGRESS_UPDATED', 'Refreshing level grid');
+      this.renderLevelGrid();
+      if (this.selectedLevelId) {
+        this.updateInfoPanel(this.selectedLevelId);
+      }
     });
-  }
-
-  private refreshLevelGrid(): void {
-    // Обновляем данные о прогрессе
-    this.renderLevelGrid();
-    if (this.selectedLevelId) {
-      this.updateInfoPanel(this.selectedLevelId);
-    }
   }
 
   private renderLevelGrid(): void {
@@ -149,6 +145,7 @@ export class LevelSelect extends Scene {
       const stats = progressManager.getLevelStats(levelId);
       const stars = stats?.stars || 0;
       const isCompleted = stats?.completed || false;
+      
       // Разблокировка: первый уровень всегда открыт, остальные — если предыдущий пройден
       let isLocked = true;
       if (levelNum === 1) {
