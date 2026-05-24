@@ -1,4 +1,5 @@
 import { LevelData, TileType } from '../types/index';
+import { logger } from '../core/Logger';
 
 export class LevelManager {
   private static instance: LevelManager;
@@ -16,26 +17,54 @@ export class LevelManager {
   }
 
   public async initialize(): Promise<void> {
-    if (this.initialized) return;
-    
-    // Загружаем уровни из папки levels (если они есть)
-    await this.loadLevelsFromFolder();
-    
-    // Если уровней нет, генерируем демо-уровни
-    if (this.cache.size === 0) {
-      this.generateDemoLevels();
+    const method = 'initialize';
+    if (this.initialized) {
+      logger.debug('LevelManager', method, 'Already initialized');
+      return;
     }
     
-    this.initialized = true;
+    logger.info('LevelManager', method, 'Starting initialization');
+    
+    try {
+      await this.loadLevelsFromFolder();
+      
+      if (this.cache.size === 0) {
+        logger.warn('LevelManager', method, 'No levels found in folder, generating demo levels');
+        this.generateDemoLevels();
+      }
+      
+      this.initialized = true;
+      logger.info('LevelManager', method, `Initialization complete. Loaded ${this.cache.size} levels across ${this.worldsLevels.size} worlds`);
+      
+      // Логируем количество уровней по мирам
+      for (const [worldId, levels] of this.worldsLevels) {
+        logger.debug('LevelManager', method, `World ${worldId}: ${levels.length} levels`);
+      }
+    } catch (error) {
+      logger.error('LevelManager', method, 'Initialization failed', error);
+      throw error;
+    }
   }
 
   private async loadLevelsFromFolder(): Promise<void> {
+    const method = 'loadLevelsFromFolder';
+    logger.debug('LevelManager', method, 'Attempting to load levels from /levels/ folder');
+    
     try {
-      // Пытаемся загрузить манифест уровней (список всех levelId)
       const manifestResponse = await fetch('/levels/manifest.json');
-      if (manifestResponse.ok) {
-        const manifest: string[] = await manifestResponse.json();
-        for (const levelId of manifest) {
+      if (!manifestResponse.ok) {
+        logger.warn('LevelManager', method, `Manifest not found at /levels/manifest.json (status: ${manifestResponse.status})`);
+        return;
+      }
+      
+      const manifest: string[] = await manifestResponse.json();
+      logger.info('LevelManager', method, `Manifest loaded, found ${manifest.length} level entries`);
+      
+      let loadedCount = 0;
+      let failedCount = 0;
+      
+      for (const levelId of manifest) {
+        try {
           const response = await fetch(`/levels/${levelId}.json`);
           if (response.ok) {
             const levelData: LevelData = await response.json();
@@ -44,24 +73,39 @@ export class LevelManager {
               this.worldsLevels.set(levelData.worldId, []);
             }
             this.worldsLevels.get(levelData.worldId)!.push(levelId);
+            loadedCount++;
+            logger.debug('LevelManager', method, `Loaded level: ${levelId} (${levelData.worldId})`);
+          } else {
+            failedCount++;
+            logger.warn('LevelManager', method, `Failed to load level ${levelId}: HTTP ${response.status}`);
           }
+        } catch (err) {
+          failedCount++;
+          logger.error('LevelManager', method, `Error loading level ${levelId}`, err);
         }
       }
-    } catch (e) {
-      console.log('No level files found, will use demo levels');
+      
+      logger.info('LevelManager', method, `Folder load complete: ${loadedCount} loaded, ${failedCount} failed`);
+    } catch (error) {
+      logger.error('LevelManager', method, 'Failed to load from folder', error);
     }
   }
 
   private generateDemoLevels(): void {
-    // Meadow уровни
+    const method = 'generateDemoLevels';
+    logger.info('LevelManager', method, 'Generating demo levels');
+    
+    // Meadow уровни (1-20)
     for (let i = 1; i <= 20; i++) {
       const map = Array(10).fill(null).map(() => Array(10).fill(TileType.PLATFORM));
       if (i === 5) {
         map[3][3] = TileType.WALL; map[3][4] = TileType.WALL;
         map[4][3] = TileType.WALL; map[4][4] = TileType.WALL;
+        logger.debug('LevelManager', method, `Level meadow_${i.toString().padStart(3, '0')}: added walls`);
       }
       if (i === 10) {
         map[5][5] = TileType.HOLE;
+        logger.debug('LevelManager', method, `Level meadow_${i.toString().padStart(3, '0')}: added hole`);
       }
       
       const level: LevelData = {
@@ -79,8 +123,9 @@ export class LevelManager {
       if (!this.worldsLevels.has('meadow')) this.worldsLevels.set('meadow', []);
       this.worldsLevels.get('meadow')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 meadow levels');
 
-    // Ocean уровни
+    // Ocean уровни (501-520)
     for (let i = 501; i <= 520; i++) {
       const map = Array(12).fill(null).map(() => Array(12).fill(TileType.PLATFORM));
       const level: LevelData = {
@@ -98,8 +143,9 @@ export class LevelManager {
       if (!this.worldsLevels.has('ocean')) this.worldsLevels.set('ocean', []);
       this.worldsLevels.get('ocean')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 ocean levels');
 
-    // Clouds уровни
+    // Clouds уровни (1001-1020)
     for (let i = 1001; i <= 1020; i++) {
       const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
       const level: LevelData = {
@@ -117,8 +163,9 @@ export class LevelManager {
       if (!this.worldsLevels.has('clouds')) this.worldsLevels.set('clouds', []);
       this.worldsLevels.get('clouds')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 clouds levels');
 
-    // Fairytale уровни
+    // Fairytale уровни (1501-1520)
     for (let i = 1501; i <= 1520; i++) {
       const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
       const level: LevelData = {
@@ -136,8 +183,9 @@ export class LevelManager {
       if (!this.worldsLevels.has('fairytale')) this.worldsLevels.set('fairytale', []);
       this.worldsLevels.get('fairytale')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 fairytale levels');
 
-    // Volcano уровни
+    // Volcano уровни (2001-2020)
     for (let i = 2001; i <= 2020; i++) {
       const map = Array(16).fill(null).map(() => Array(16).fill(TileType.PLATFORM));
       const level: LevelData = {
@@ -155,11 +203,13 @@ export class LevelManager {
       if (!this.worldsLevels.has('volcano')) this.worldsLevels.set('volcano', []);
       this.worldsLevels.get('volcano')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 volcano levels');
 
-    // Arcade (пустой)
+    // Arcade
     this.worldsLevels.set('arcade', []);
+    logger.debug('LevelManager', method, 'Arcade world initialized (empty)');
 
-    // Bonus уровни
+    // Bonus уровни (2501-2520)
     for (let i = 2501; i <= 2520; i++) {
       const map = Array(20).fill(null).map(() => Array(20).fill(TileType.PLATFORM));
       const level: LevelData = {
@@ -177,28 +227,56 @@ export class LevelManager {
       if (!this.worldsLevels.has('bonus')) this.worldsLevels.set('bonus', []);
       this.worldsLevels.get('bonus')!.push(level.id);
     }
+    logger.debug('LevelManager', method, 'Generated 20 bonus levels');
+    
+    logger.info('LevelManager', method, `Demo generation complete. Total levels: ${this.cache.size}`);
   }
 
   public async loadLevel(levelId: string): Promise<LevelData | null> {
-    if (!this.initialized) await this.initialize();
-    return this.cache.get(levelId) || null;
+    const method = 'loadLevel';
+    if (!this.initialized) {
+      logger.warn('LevelManager', method, 'Not initialized, initializing now');
+      await this.initialize();
+    }
+    
+    logger.debug('LevelManager', method, `Loading level: ${levelId}`);
+    const level = this.cache.get(levelId);
+    
+    if (level) {
+      logger.info('LevelManager', method, `Level loaded: ${levelId} (${level.name})`);
+    } else {
+      logger.error('LevelManager', method, `Level not found: ${levelId}`);
+    }
+    
+    return level || null;
   }
 
   public getLevelIdsForWorld(worldId: string): string[] {
-    return this.worldsLevels.get(worldId) || [];
+    const method = 'getLevelIdsForWorld';
+    const levels = this.worldsLevels.get(worldId) || [];
+    logger.debug('LevelManager', method, `World ${worldId}: ${levels.length} levels`);
+    return levels;
   }
 
   public getNextLevelId(currentLevelId: string): string | null {
+    const method = 'getNextLevelId';
     const worldId = currentLevelId.split('_')[0];
     const levelIds = this.worldsLevels.get(worldId) || [];
     const index = levelIds.indexOf(currentLevelId);
+    
     if (index !== -1 && index + 1 < levelIds.length) {
-      return levelIds[index + 1];
+      const nextId = levelIds[index + 1];
+      logger.debug('LevelManager', method, `${currentLevelId} -> ${nextId}`);
+      return nextId;
     }
+    
+    logger.debug('LevelManager', method, `${currentLevelId} has no next level`);
     return null;
   }
 
   public clearCache(): void {
+    const method = 'clearCache';
+    logger.info('LevelManager', method, `Clearing cache (${this.cache.size} levels)`);
     this.cache.clear();
   }
 }
