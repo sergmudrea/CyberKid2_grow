@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate CyberKid Effects</title></head>
+<body>
+<canvas id="canvas" width="64" height="64" style="display:none"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function download(filename, dataUrl) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
+function generateEffect(filename, color, icon, bgColor = '#000000') {
+  canvas.width = 64;
+  canvas.height = 64;
+  
+  // Фон
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = color;
+  
+  // Рисуем круг
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Обводка
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // Иконка
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '32px Arial';
+  ctx.fillText(icon, 20, 48);
+  
+  download(filename, canvas.toDataURL());
+}
+
+// Эффекты
+generateEffect('teleport.png', '#AA44AA', '🌀', '#1a1a2a');
+generateEffect('death.png', '#AA0000', '💀', '#1a1a2a');
+generateEffect('victory.png', '#FFAA00', '🏆', '#1a1a2a');
+
+document.body.innerHTML = '<h2>Effects generated! Check your downloads folder.</h2><p>Files: teleport.png, death.png, victory.png</p><p>Copy them to: public/assets/effects/</p>';
+</script>
+</body>
+</html>
