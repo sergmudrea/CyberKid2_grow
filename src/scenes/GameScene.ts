@@ -32,8 +32,10 @@ export class GameScene extends Scene {
   }
 
   async init(data: { levelId: string }): Promise<void> {
+    console.log('GameScene init', data);
     this.levelId = data.levelId;
     this.level = await levelManager.loadLevel(this.levelId);
+    console.log('Level loaded:', this.level);
     if (!this.level) {
       console.error('Level not found');
       this.scene.start('MainMenu');
@@ -51,7 +53,13 @@ export class GameScene extends Scene {
   }
 
   create(): void {
-    if (!this.level) return;
+    console.log('GameScene create');
+    if (!this.level) {
+      console.error('No level in create');
+      return;
+    }
+    
+    console.log('Level width:', this.level.width, 'height:', this.level.height);
     
     this.gameContainer = this.add.container(0, 0);
     
@@ -62,6 +70,8 @@ export class GameScene extends Scene {
     
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
+    
+    console.log('Offset X:', this.gameOffsetX, 'Offset Y:', this.gameOffsetY);
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
     
@@ -154,6 +164,8 @@ export class GameScene extends Scene {
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
+    
+    console.log('GameScene create finished');
   }
 
   private centerCameraOnPlayer(): void {
@@ -199,7 +211,8 @@ export class GameScene extends Scene {
     this.currentCommandIndex = -1;
     this.failedCommandIndex = -1;
     this.commandPanel.clearHighlight();
-    this.playerPos = { ...this.level!.startPos };
+    if (!this.level) return;
+    this.playerPos = { ...this.level.startPos };
     this.drawPlayer();
     this.centerCameraOnPlayer();
     this.executeCommands(commands, 0);
@@ -325,6 +338,7 @@ export class GameScene extends Scene {
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
+    console.log('Drawing grid', width, height);
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
@@ -341,6 +355,7 @@ export class GameScene extends Scene {
 
   private drawPlayer(): void {
     if (this.playerSprite) this.playerSprite.destroy();
+    if (!this.level) return;
     const x = this.playerPos.col * this.gridSize;
     const y = this.playerPos.row * this.gridSize;
     const color = this.isBroken ? 0xff0000 : (this.isVictory ? 0xffcc00 : 0x00ff00);
@@ -349,6 +364,7 @@ export class GameScene extends Scene {
   }
 
   private drawCoin(): void {
+    if (this.coinSprite) this.coinSprite.destroy();
     if (!this.level) return;
     const x = this.coinPos.col * this.gridSize;
     const y = this.coinPos.row * this.gridSize;
