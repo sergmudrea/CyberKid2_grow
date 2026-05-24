@@ -49,7 +49,7 @@ export class LevelSelect extends Scene {
       clouds: '☁️ CLOUDS',
       fairytale: '🏰 FAIRYTALE',
       volcano: '🌋 VOLCANO',
-      arcade: '🎮 ARCADE',
+      arcade: '🎮 ARCADE (ALL LEVELS)',
       bonus: '⭐ BONUS',
     };
     const title = this.add.text(width / 2, 50, worldNames[this.worldId] || this.worldId, {
@@ -141,13 +141,19 @@ export class LevelSelect extends Scene {
       const stars = stats?.stars || 0;
       const isCompleted = stats?.completed || false;
       
+      // Логика разблокировки
       let isLocked = true;
-      if (levelNum === 1) {
-        isLocked = false;
+      if (this.worldId === 'arcade') {
+        // В Arcade уровень разблокирован, если он уже пройден (completed === true)
+        isLocked = !isCompleted;
       } else {
-        const prevLevelId = `${this.worldId}_${(levelNum - 1).toString().padStart(3, '0')}`;
-        const prevStats = progressManager.getLevelStats(prevLevelId);
-        isLocked = !prevStats?.completed;
+        if (levelNum === 1) {
+          isLocked = false;
+        } else {
+          const prevLevelId = `${this.worldId}_${(levelNum - 1).toString().padStart(3, '0')}`;
+          const prevStats = progressManager.getLevelStats(prevLevelId);
+          isLocked = !prevStats?.completed;
+        }
       }
 
       logger.debug('LevelSelect', 'renderLevelGrid', `Level ${levelId}: locked=${isLocked}, completed=${isCompleted}, stars=${stars}`);
