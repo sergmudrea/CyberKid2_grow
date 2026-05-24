@@ -263,20 +263,26 @@ export class GameScene extends Scene {
   }
 
   private showVictoryMessage(): void {
-    const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
-      fontSize: '28px',
-      color: '#ffcc00',
-      backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 },
-    }).setOrigin(0.5);
-    msg.setScrollFactor(0);
-    this.time.delayedCall(2000, () => msg.destroy());
-    this.time.delayedCall(500, () => {
-      alert('Victory!');
-      this.commandPanel.destroy();
-      this.scene.start('MainMenu');
-    });
+  const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
+    fontSize: '28px',
+    color: '#ffcc00',
+    backgroundColor: '#000000aa',
+    padding: { x: 20, y: 10 },
+  }).setOrigin(0.5);
+  msg.setScrollFactor(0);
+  this.time.delayedCall(2000, () => msg.destroy());
+  
+  // Сохраняем прогресс
+  if (this.level && !this.isVictory) {
+    progressManager.completeLevel(this.levelId, 3, this.currentCommandIndex + 1);
   }
+  
+  this.time.delayedCall(500, () => {
+    alert('Victory!');
+    this.commandPanel.destroy();
+    this.scene.start('MainMenu');
+  });
+}
 
   private drawGrid(): void {
     if (!this.level) return;
