@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
-import { LevelData, TileType } from '../types/index';
+import { LevelData, TileType, Inventory } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { logger } from '../core/Logger';
@@ -29,6 +29,17 @@ export class GameScene extends Scene {
   private needScroll: boolean = false;
   private scrollX: number = 0;
   private scrollY: number = 0;
+  private inventory: Inventory = {
+    keys: [],
+    corn: 0,
+    cores: 0,
+    hasDrill: false,
+    hasHook: false,
+    hasWing: false,
+    hasBait: false,
+    tools: [],
+  };
+  private lastDirection: 'up' | 'down' | 'left' | 'right' = 'right';
 
   constructor() {
     super('GameScene');
@@ -56,6 +67,17 @@ export class GameScene extends Scene {
     this.failedCommandIndex = -1;
     this.scrollX = 0;
     this.scrollY = 0;
+    this.inventory = {
+      keys: [],
+      corn: 0,
+      cores: 0,
+      hasDrill: false,
+      hasHook: false,
+      hasWing: false,
+      hasBait: false,
+      tools: [],
+    };
+    this.lastDirection = 'right';
     
     logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row})`);
     this.createScene();
@@ -83,7 +105,7 @@ export class GameScene extends Scene {
     
     this.drawGrid();
     this.drawPlayer();
-    this.drawCoin();
+    this.spawnItems();
 
     this.needScroll = this.gameBounds.width > this.cameras.main.width || this.gameBounds.height > this.cameras.main.height;
     
@@ -143,25 +165,6 @@ export class GameScene extends Scene {
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
 
-    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
-      fontSize: '14px',
-      color: '#ffffff',
-      backgroundColor: '#aa8844',
-      padding: { x: 12, y: 6 },
-      depth: 100,
-    }).setInteractive({ useHandCursor: true });
-    autoSolveButton.on('pointerdown', () => {
-      if (!this.level) return;
-      const commands: Command[] = [];
-      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
-      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
-      this.commandPanel.setCommands(commands);
-      this.updateVisualizer();
-      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
-    });
-    autoSolveButton.setScrollFactor(0);
-    autoSolveButton.setDepth(100);
-
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -175,6 +178,19 @@ export class GameScene extends Scene {
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
+  }
+  
+  private async spawnItems(): Promise<void> {
+    if (!this.level || !this.level.items) return;
+    for (const item of this.level.items) {
+      const textureKey = `item_${item.id}`;
+      const x = item.pos.col * this.gridSize;
+      const y = item.pos.row * this.gridSize;
+      const sprite = this.add.image(x, y, textureKey);
+      sprite.setOrigin(0, 0);
+      sprite.setDisplaySize(this.gridSize, this.gridSize);
+      this.gameContainer.add(sprite);
+    }
   }
   
   private updateContainerPosition(): void {
@@ -264,11 +280,19 @@ export class GameScene extends Scene {
     this.commandPanel.highlightCommand(index, 'running');
 
     const cmd = commands[index];
+    
+    if (cmd === 'push') {
+      this.executePush();
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
     let dx = 0, dy = 0;
-    if (cmd === 'up') dy = -1;
-    if (cmd === 'down') dy = 1;
-    if (cmd === 'left') dx = -1;
-    if (cmd === 'right') dx = 1;
+    if (cmd === 'up') { dy = -1; this.lastDirection = 'up'; }
+    if (cmd === 'down') { dy = 1; this.lastDirection = 'down'; }
+    if (cmd === 'left') { dx = -1; this.lastDirection = 'left'; }
+    if (cmd === 'right') { dx = 1; this.lastDirection = 'right'; }
 
     const targetCol = this.playerPos.col + dx;
     const targetRow = this.playerPos.row + dy;
@@ -284,6 +308,9 @@ export class GameScene extends Scene {
     if (!isWall && !isHole && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
+      
+      // Проверка сбора предметов
+      await this.checkItemPickup();
       
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
@@ -310,6 +337,68 @@ export class GameScene extends Scene {
       this.showBrokenMessage();
       this.isRunning = false;
     }
+  }
+
+  private async checkItemPickup(): Promise<void> {
+    const itemKey = `item_${this.playerPos.col}_${this.playerPos.row}`;
+    const itemSprite = this.gameContainer.getFirst((obj: any) => obj.name === itemKey);
+    if (itemSprite) {
+      itemSprite.destroy();
+      // Добавляем в инвентарь
+      this.inventory.corn++;
+      logger.info('GameScene', 'checkItemPickup', `Picked up corn, total: ${this.inventory.corn}`);
+      // Визуальный эффект
+      const pickupEffect = this.add.rectangle(
+        this.gameOffsetX + this.playerPos.col * this.gridSize,
+        this.gameOffsetY + this.playerPos.row * this.gridSize,
+        this.gridSize, this.gridSize, 0xffcc00, 0.7
+      );
+      this.time.delayedCall(200, () => pickupEffect.destroy());
+    }
+  }
+
+  private executePush(): void {
+    if (!this.level) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    const brickCol = this.playerPos.col + dx;
+    const brickRow = this.playerPos.row + dy;
+    const pushCol = brickCol + dx;
+    const pushRow = brickRow + dy;
+    
+    const isBrick = this.level.map[brickRow]?.[brickCol] === TileType.BRICK;
+    const isPushFree = this.level.map[pushRow]?.[pushCol] === TileType.PLATFORM;
+    
+    if (isBrick && isPushFree) {
+      this.level.map[brickRow][brickCol] = TileType.PLATFORM;
+      this.level.map[pushRow][pushCol] = TileType.BRICK;
+      this.redrawCell(brickCol, brickRow);
+      this.redrawCell(pushCol, pushRow);
+      logger.info('GameScene', 'executePush', `Pushed brick to (${pushCol},${pushRow})`);
+    }
+  }
+
+  private redrawCell(col: number, row: number): void {
+    const x = col * this.gridSize;
+    const y = row * this.gridSize;
+    const tile = this.level.map[row][col];
+    let textureKey = 'tile_platform';
+    if (tile === TileType.WALL) textureKey = 'tile_wall';
+    if (tile === TileType.HOLE) textureKey = 'tile_hole';
+    if (tile === TileType.BRICK) textureKey = 'tile_brick';
+    if (tile === TileType.GOAL) textureKey = 'tile_coin';
+    
+    const oldTile = this.gameContainer.getAt(row * this.level.width + col);
+    if (oldTile) oldTile.destroy();
+    
+    const newTile = this.add.image(x, y, textureKey);
+    newTile.setOrigin(0, 0);
+    newTile.setDisplaySize(this.gridSize, this.gridSize);
+    this.gameContainer.add(newTile);
   }
 
   private calculateStars(): number {
@@ -399,6 +488,7 @@ export class GameScene extends Scene {
         let textureKey = 'tile_platform';
         if (map[row][col] === TileType.WALL) textureKey = 'tile_wall';
         if (map[row][col] === TileType.HOLE) textureKey = 'tile_hole';
+        if (map[row][col] === TileType.BRICK) textureKey = 'tile_brick';
         if (map[row][col] === TileType.GOAL) textureKey = 'tile_coin';
         
         const tile = this.add.image(x, y, textureKey);
@@ -420,10 +510,6 @@ export class GameScene extends Scene {
     this.playerSprite.setOrigin(0, 0);
     this.playerSprite.setDisplaySize(this.gridSize, this.gridSize);
     this.gameContainer.add(this.playerSprite);
-  }
-
-  private drawCoin(): void {
-    // Монета уже отрисована в drawGrid как GOAL
   }
 
   private checkVictory(): void {
