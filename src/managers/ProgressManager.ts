@@ -1,4 +1,6 @@
 import { PlayerProgress, LevelStats } from '../types/index';
+import { logger } from '../core/Logger';
+import { levelManager } from './LevelManager';
 
 const STORAGE_KEY = 'cyberkid_progress';
 
@@ -26,6 +28,9 @@ export class ProgressManager {
   }
 
   public completeLevel(levelId: string, stars: number, stepsUsed: number): void {
+    const method = 'completeLevel';
+    logger.info('ProgressManager', method, `Completing level: ${levelId} with ${stars} stars in ${stepsUsed} steps`);
+    
     const existing = this.progress.levelStats[levelId];
     const stats: LevelStats = {
       stars: Math.max(stars, existing?.stars || 0),
@@ -38,6 +43,7 @@ export class ProgressManager {
     
     if (!this.progress.levelsCompleted.includes(levelId)) {
       this.progress.levelsCompleted.push(levelId);
+      logger.debug('ProgressManager', method, `Level ${levelId} added to completed list`);
     }
     
     // Пересчёт общих звёзд
@@ -47,17 +53,47 @@ export class ProgressManager {
     }
     this.progress.totalStars = totalStars;
     
+    // Проверяем, нужно ли разблокировать следующий уровень
+    this.checkNextLevelUnlock(levelId);
+    
     this.saveToLocalStorage();
+    logger.info('ProgressManager', method, `Progress saved. Total stars: ${totalStars}`);
+  }
+
+  private checkNextLevelUnlock(levelId: string): void {
+    const method = 'checkNextLevelUnlock';
+    const nextLevelId = levelManager.getNextLevelId(levelId);
+    
+    if (nextLevelId) {
+      logger.debug('ProgressManager', method, `Next level: ${nextLevelId} is available`);
+      // Следующий уровень автоматически становится доступным (не блокируется)
+    }
+  }
+
+  public isLevelUnlocked(levelId: string): boolean {
+    const levelNum = parseInt(levelId.split('_')[1]);
+    if (levelNum === 1) return true;
+    
+    const prevLevelId = levelId.replace(/\d+$/, (match) => {
+      const num = parseInt(match);
+      return (num - 1).toString().padStart(match.length, '0');
+    });
+    
+    const prevStats = this.progress.levelStats[prevLevelId];
+    return prevStats?.completed || false;
   }
 
   public unlockWorld(worldId: string): void {
+    const method = 'unlockWorld';
     if (!this.progress.unlockedWorlds.includes(worldId)) {
       this.progress.unlockedWorlds.push(worldId);
+      logger.info('ProgressManager', method, `World ${worldId} unlocked`);
       this.saveToLocalStorage();
     }
   }
 
   public isWorldUnlocked(worldId: string): boolean {
+    if (worldId === 'meadow') return true;
     return this.progress.unlockedWorlds.includes(worldId);
   }
 
@@ -85,19 +121,27 @@ export class ProgressManager {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
+        logger.debug('ProgressManager', 'loadFromLocalStorage', `Loaded progress from storage: ${Object.keys(parsed.levelStats || {}).length} levels completed`);
         return { ...defaultProgress, ...parsed, levelStats: parsed.levelStats || {} };
       }
     } catch (e) {
-      console.error('Failed to load progress:', e);
+      logger.error('ProgressManager', 'loadFromLocalStorage', 'Failed to load progress', e);
     }
     return defaultProgress;
   }
 
   private saveToLocalStorage(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.progress));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.progress));
+      logger.debug('ProgressManager', 'saveToLocalStorage', 'Progress saved');
+    } catch (e) {
+      logger.error('ProgressManager', 'saveToLocalStorage', 'Failed to save progress', e);
+    }
   }
 
   public resetAll(): void {
+    const method = 'resetAll';
+    logger.warn('ProgressManager', method, 'Resetting all progress');
     localStorage.removeItem(STORAGE_KEY);
     this.progress = this.loadFromLocalStorage();
   }
