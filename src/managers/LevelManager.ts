@@ -36,7 +36,6 @@ export class LevelManager {
       this.initialized = true;
       logger.info('LevelManager', method, `Initialization complete. Loaded ${this.cache.size} levels across ${this.worldsLevels.size} worlds`);
       
-      // Логируем количество уровней по мирам
       for (const [worldId, levels] of this.worldsLevels) {
         logger.debug('LevelManager', method, `World ${worldId}: ${levels.length} levels`);
       }
@@ -57,7 +56,18 @@ export class LevelManager {
         return;
       }
       
-      const manifest: string[] = await manifestResponse.json();
+      const manifestText = await manifestResponse.text();
+      let manifest: string[];
+      try {
+        manifest = JSON.parse(manifestText);
+        if (!Array.isArray(manifest)) {
+          throw new Error('Manifest is not an array');
+        }
+      } catch (parseError) {
+        logger.error('LevelManager', method, 'Failed to parse manifest.json - invalid JSON format', { raw: manifestText.substring(0, 200) });
+        return;
+      }
+      
       logger.info('LevelManager', method, `Manifest loaded, found ${manifest.length} level entries`);
       
       let loadedCount = 0;
@@ -66,19 +76,42 @@ export class LevelManager {
       for (const levelId of manifest) {
         try {
           const response = await fetch(`/levels/${levelId}.json`);
-          if (response.ok) {
-            const levelData: LevelData = await response.json();
-            this.cache.set(levelId, levelData);
-            if (!this.worldsLevels.has(levelData.worldId)) {
-              this.worldsLevels.set(levelData.worldId, []);
-            }
-            this.worldsLevels.get(levelData.worldId)!.push(levelId);
-            loadedCount++;
-            logger.debug('LevelManager', method, `Loaded level: ${levelId} (${levelData.worldId})`);
-          } else {
+          if (!response.ok) {
             failedCount++;
             logger.warn('LevelManager', method, `Failed to load level ${levelId}: HTTP ${response.status}`);
+            continue;
           }
+          
+          const text = await response.text();
+          if (!text || text.trim() === '') {
+            failedCount++;
+            logger.warn('LevelManager', method, `Level file ${levelId}.json is empty`);
+            continue;
+          }
+          
+          let levelData: LevelData;
+          try {
+            levelData = JSON.parse(text);
+          } catch (parseError) {
+            failedCount++;
+            logger.error('LevelManager', method, `Failed to parse level ${levelId}.json - invalid JSON`, { raw: text.substring(0, 200) });
+            continue;
+          }
+          
+          // Валидация уровня
+          if (!levelData.id || !levelData.worldId || !levelData.map) {
+            failedCount++;
+            logger.warn('LevelManager', method, `Level ${levelId} has invalid structure (missing required fields)`);
+            continue;
+          }
+          
+          this.cache.set(levelId, levelData);
+          if (!this.worldsLevels.has(levelData.worldId)) {
+            this.worldsLevels.set(levelData.worldId, []);
+          }
+          this.worldsLevels.get(levelData.worldId)!.push(levelId);
+          loadedCount++;
+          logger.debug('LevelManager', method, `Loaded level: ${levelId} (${levelData.worldId})`);
         } catch (err) {
           failedCount++;
           logger.error('LevelManager', method, `Error loading level ${levelId}`, err);
