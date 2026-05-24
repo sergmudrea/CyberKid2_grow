@@ -58,7 +58,7 @@ export class GameScene extends Scene {
     this.scrollX = 0;
     this.scrollY = 0;
     
-    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name})`);
+    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), optimalSteps: ${this.level.optimalSteps}`);
     this.createScene();
   }
 
@@ -91,7 +91,6 @@ export class GameScene extends Scene {
     this.needScroll = this.gameBounds.width > this.cameras.main.width || this.gameBounds.height > this.cameras.main.height;
     
     if (this.needScroll) {
-      // Включаем перетаскивание мышью
       this.gameContainer.setInteractive(new Phaser.Geom.Rectangle(0, 0, this.gameBounds.width, this.gameBounds.height), Phaser.Geom.Rectangle.Contains);
       this.input.setDraggable(this.gameContainer);
       this.input.on('drag', (pointer: any, gameObject: any, dragX: number, dragY: number) => {
@@ -100,14 +99,12 @@ export class GameScene extends Scene {
         this.updateContainerPosition();
       });
       
-      // Скролл колёсиком мыши
       this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
         this.scrollX -= deltaX;
         this.scrollY -= deltaY;
         this.updateContainerPosition();
       });
       
-      // Управление стрелками клавиатуры
       this.input.keyboard?.on('keydown-LEFT', () => {
         this.scrollX += 30;
         this.updateContainerPosition();
@@ -148,6 +145,26 @@ export class GameScene extends Scene {
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
+
+    // Кнопка Auto-solve для тестирования
+    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#aa8844',
+      padding: { x: 12, y: 6 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    autoSolveButton.on('pointerdown', () => {
+      if (!this.level) return;
+      const commands: Command[] = [];
+      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
+      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
+      this.commandPanel.setCommands(commands);
+      this.updateVisualizer();
+      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
+    });
+    autoSolveButton.setScrollFactor(0);
+    autoSolveButton.setDepth(100);
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
@@ -303,6 +320,8 @@ export class GameScene extends Scene {
     const optimalSteps = this.level.optimalSteps || 18;
     const stepsUsed = this.currentCommandIndex + 1;
     
+    logger.debug('GameScene', 'calculateStars', `optimalSteps=${optimalSteps}, stepsUsed=${stepsUsed}`);
+    
     if (stepsUsed <= optimalSteps) return 3;
     if (stepsUsed <= optimalSteps * 1.5) return 2;
     return 1;
@@ -330,36 +349,33 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
 
-// Замените метод showVictoryMessage на этот:
-
-private showVictoryMessage(): void {
-  const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
-    fontSize: '28px',
-    color: '#ffcc00',
-    backgroundColor: '#000000aa',
-    padding: { x: 20, y: 10 },
-  }).setOrigin(0.5);
-  msg.setScrollFactor(0);
-  this.time.delayedCall(2000, () => msg.destroy());
-  
-  // Сохраняем прогресс
-  if (this.level && !this.isVictory) {
-    const stars = this.calculateStars();
-    const steps = this.currentCommandIndex + 1;
-    logger.info('GameScene', 'showVictoryMessage', `Saving progress for ${this.levelId}: ${stars} stars, ${steps} steps`);
-    progressManager.completeLevel(this.levelId, stars, steps);
-  }
-  
-  this.time.delayedCall(500, () => {
-    this.commandPanel.destroy();
-    // Переход на экран победы
-    this.scene.start('VictoryScreen', { 
-      levelId: this.levelId, 
-      stars: this.calculateStars(), 
-      stepsUsed: this.currentCommandIndex + 1 
+  private showVictoryMessage(): void {
+    const msg = this.add.text(this.cameras.main.width / 2, 100, '🏆 VICTORY! 🏆', {
+      fontSize: '28px',
+      color: '#ffcc00',
+      backgroundColor: '#000000aa',
+      padding: { x: 20, y: 10 },
+    }).setOrigin(0.5);
+    msg.setScrollFactor(0);
+    this.time.delayedCall(2000, () => msg.destroy());
+    
+    // Сохраняем прогресс
+    if (this.level && !this.isVictory) {
+      const stars = this.calculateStars();
+      const steps = this.currentCommandIndex + 1;
+      logger.info('GameScene', 'showVictoryMessage', `Saving progress for ${this.levelId}: ${stars} stars, ${steps} steps`);
+      progressManager.completeLevel(this.levelId, stars, steps);
+    }
+    
+    this.time.delayedCall(500, () => {
+      this.commandPanel.destroy();
+      this.scene.start('VictoryScreen', { 
+        levelId: this.levelId, 
+        stars: this.calculateStars(), 
+        stepsUsed: this.currentCommandIndex + 1 
+      });
     });
-  });
-}
+  }
 
   private drawGrid(): void {
     if (!this.level) return;
