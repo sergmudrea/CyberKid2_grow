@@ -71,9 +71,12 @@ export class GameScene extends Scene {
       height: this.level.height * this.gridSize
     };
     
+    // Центрируем поле
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
+    console.log('Camera width:', this.cameras.main.width, 'height:', this.cameras.main.height);
+    console.log('Game bounds:', this.gameBounds.width, this.gameBounds.height);
     console.log('Offset X:', this.gameOffsetX, 'Offset Y:', this.gameOffsetY);
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
@@ -85,8 +88,11 @@ export class GameScene extends Scene {
     this.camera = this.cameras.main;
     this.camera.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
     this.camera.setZoom(1);
+    
+    // Центрируем камеру на игроке
     this.centerCameraOnPlayer();
 
+    // Обработка скролла мыши
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.isPlayerControlled = true;
       this.lastInputTime = Date.now();
@@ -95,6 +101,7 @@ export class GameScene extends Scene {
       this.camera.clampBounds();
     });
 
+    // Обработка клавиш для перемещения камеры
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.isPlayerControlled = true;
       this.lastInputTime = Date.now();
@@ -169,15 +176,24 @@ export class GameScene extends Scene {
     backButton.setDepth(100);
     
     console.log('GameScene create finished');
+    console.log('Camera scroll X:', this.camera.scrollX, 'Y:', this.camera.scrollY);
   }
 
   private centerCameraOnPlayer(): void {
-    if (!this.playerSprite) return;
+    if (!this.playerSprite || !this.level) return;
+    // Центрируем камеру на позиции игрока
     const targetX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.width/2;
     const targetY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.height/2;
+    
+    // Ограничиваем, чтобы камера не выходила за границы поля
+    const minX = this.gameOffsetX;
+    const maxX = this.gameBounds.width + this.gameOffsetX - this.camera.width;
+    const minY = this.gameOffsetY;
+    const maxY = this.gameBounds.height + this.gameOffsetY - this.camera.height;
+    
     this.camera.setScroll(
-      Math.max(this.gameOffsetX, Math.min(targetX, this.gameBounds.width - this.camera.width + this.gameOffsetX)),
-      Math.max(this.gameOffsetY, Math.min(targetY, this.gameBounds.height - this.camera.height + this.gameOffsetY))
+      Math.max(minX, Math.min(targetX, maxX)),
+      Math.max(minY, Math.min(targetY, maxY))
     );
   }
 
