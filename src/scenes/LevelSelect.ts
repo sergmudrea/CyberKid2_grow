@@ -106,6 +106,20 @@ export class LevelSelect extends Scene {
     });
     worldMapButton.setScrollFactor(0);
     worldMapButton.setDepth(100);
+    
+    // Слушаем событие обновления прогресса
+    this.events.on('resume', () => {
+      logger.debug('LevelSelect', 'resume', 'Scene resumed, refreshing level grid');
+      this.refreshLevelGrid();
+    });
+  }
+
+  private refreshLevelGrid(): void {
+    // Обновляем данные о прогрессе
+    this.renderLevelGrid();
+    if (this.selectedLevelId) {
+      this.updateInfoPanel(this.selectedLevelId);
+    }
   }
 
   private renderLevelGrid(): void {
@@ -134,9 +148,16 @@ export class LevelSelect extends Scene {
 
       const stats = progressManager.getLevelStats(levelId);
       const stars = stats?.stars || 0;
-      // Используем ProgressManager для проверки разблокировки
-      const isLocked = !progressManager.isLevelUnlocked(levelId);
       const isCompleted = stats?.completed || false;
+      // Разблокировка: первый уровень всегда открыт, остальные — если предыдущий пройден
+      let isLocked = true;
+      if (levelNum === 1) {
+        isLocked = false;
+      } else {
+        const prevLevelId = `${this.worldId}_${(levelNum - 1).toString().padStart(3, '0')}`;
+        const prevStats = progressManager.getLevelStats(prevLevelId);
+        isLocked = !prevStats?.completed;
+      }
 
       logger.debug('LevelSelect', 'renderLevelGrid', `Level ${levelId}: locked=${isLocked}, completed=${isCompleted}, stars=${stars}`);
 
