@@ -10,6 +10,11 @@ export class LevelSelect extends Scene {
   private levelsPerPage: number = 12;
   private pageText: Phaser.GameObjects.Text;
   private infoPanel: Phaser.GameObjects.Container;
+  private infoPanelBg: Phaser.GameObjects.Rectangle;
+  private infoLevelText: Phaser.GameObjects.Text;
+  private infoStarsText: Phaser.GameObjects.Text;
+  private infoBestText: Phaser.GameObjects.Text;
+  private playButton: Phaser.GameObjects.Text;
   private selectedLevelId: string = '';
 
   constructor() {
@@ -29,21 +34,29 @@ export class LevelSelect extends Scene {
     bg.fillGradientStyle(0x0a0a2a, 0x0a0a2a, 0x1a1a4a, 0x1a1a4a);
     bg.fillRect(0, 0, width, height);
 
+    // Звёзды
+    for (let i = 0; i < 80; i++) {
+      this.add.circle(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, 0xffffff, 0.3);
+    }
+
     // Заголовок
     const worldNames: Record<string, string> = {
-      meadow: 'MEADOW',
-      ocean: 'OCEAN',
-      clouds: 'CLOUDS',
-      fairytale: 'FAIRYTALE',
-      volcano: 'VOLCANO',
-      arcade: 'ARCADE',
-      bonus: 'BONUS',
+      meadow: '🌾 MEADOW',
+      ocean: '🌊 OCEAN',
+      clouds: '☁️ CLOUDS',
+      fairytale: '🏰 FAIRYTALE',
+      volcano: '🌋 VOLCANO',
+      arcade: '🎮 ARCADE',
+      bonus: '⭐ BONUS',
     };
     const title = this.add.text(width / 2, 50, worldNames[this.worldId] || this.worldId, {
-      fontSize: '32px',
+      fontSize: '28px',
       color: '#00ffcc',
       fontFamily: 'monospace',
+      stroke: '#0066ff',
+      strokeThickness: 2,
     }).setOrigin(0.5);
+    title.setScrollFactor(0);
 
     // Загрузка уровней
     this.levelIds = levelManager.getLevelIdsForWorld(this.worldId);
@@ -65,7 +78,7 @@ export class LevelSelect extends Scene {
 
     // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 16, y: 8 },
@@ -75,6 +88,19 @@ export class LevelSelect extends Scene {
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
+
+    // Кнопка возврата на карту миров (если скролл)
+    const worldMapButton = this.add.text(width - 120, 10, '🌍 WORLDS', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 12, y: 6 },
+    }).setInteractive({ useHandCursor: true });
+    worldMapButton.on('pointerdown', () => {
+      this.scene.start('WorldMap');
+    });
+    worldMapButton.setScrollFactor(0);
+    worldMapButton.setDepth(100);
   }
 
   private renderLevelGrid(): void {
@@ -90,8 +116,8 @@ export class LevelSelect extends Scene {
     const rows = 3;
     const startX = 200;
     const startY = 130;
-    const spacingX = 100;
-    const spacingY = 90;
+    const spacingX = 90;
+    const spacingY = 85;
 
     for (let i = 0; i < pageLevels.length; i++) {
       const levelId = pageLevels[i];
@@ -109,7 +135,7 @@ export class LevelSelect extends Scene {
       const container = this.add.container(x, y);
       const bgColor = isLocked ? 0x444444 : (isCompleted ? 0x2a4a2a : 0x2a2a4a);
       const bg = this.add.rectangle(0, 0, 70, 70, bgColor, 0.9);
-      bg.setStrokeStyle(2, isLocked ? 0x888888 : 0x00ffcc);
+      bg.setStrokeStyle(2, isLocked ? 0x888888 : (isCompleted ? 0x44cc44 : 0x00ffcc));
 
       const levelText = this.add.text(0, -10, `${levelNum}`, { fontSize: '18px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5);
       const starsText = this.add.text(0, 15, '★'.repeat(stars) + '☆'.repeat(3 - stars), { fontSize: '10px', color: '#ffcc00' }).setOrigin(0.5);
@@ -125,6 +151,14 @@ export class LevelSelect extends Scene {
           this.selectedLevelId = levelId;
           this.updateInfoPanel(levelId);
         });
+        container.on('pointerover', () => {
+          bg.setStrokeStyle(3, 0xffaa00);
+          levelText.setColor('#ffaa00');
+        });
+        container.on('pointerout', () => {
+          bg.setStrokeStyle(2, isCompleted ? 0x44cc44 : 0x00ffcc);
+          levelText.setColor('#ffffff');
+        });
       }
 
       this.levelButtons.push(container);
@@ -134,12 +168,14 @@ export class LevelSelect extends Scene {
     const totalPages = Math.ceil(this.levelIds.length / this.levelsPerPage);
     if (this.pageText) this.pageText.destroy();
     this.pageText = this.add.text(this.cameras.main.width - 100, 100, `${this.currentPage + 1}/${totalPages}`, {
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#ffffff',
+      fontFamily: 'monospace',
     }).setOrigin(0.5);
+    this.pageText.setScrollFactor(0);
 
     // Кнопки пагинации
-    const prevBtn = this.add.text(this.cameras.main.width - 200, 100, '◀', { fontSize: '24px', color: '#ffffff' }).setInteractive({ useHandCursor: true });
+    const prevBtn = this.add.text(this.cameras.main.width - 170, 100, '◀', { fontSize: '24px', color: '#ffffff' }).setInteractive({ useHandCursor: true });
     prevBtn.on('pointerdown', () => {
       if (this.currentPage > 0) {
         this.currentPage--;
@@ -170,39 +206,37 @@ export class LevelSelect extends Scene {
 
   private createInfoPanel(): void {
     const width = this.cameras.main.width;
-    const panelBg = this.add.rectangle(width - 180, 200, 160, 150, 0x000000, 0.7);
-    panelBg.setStrokeStyle(2, 0x00ffcc);
     
-    this.infoPanel = this.add.container(width - 180, 200);
+    this.infoPanelBg = this.add.rectangle(width - 150, 250, 140, 160, 0x000000, 0.85);
+    this.infoPanelBg.setStrokeStyle(2, 0x00ffcc);
+    this.infoPanelBg.setVisible(false);
     
-    const levelText = this.add.text(0, -50, 'Level --', { fontSize: '16px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5);
-    const starsText = this.add.text(0, -20, 'Stars: 0/3', { fontSize: '12px', color: '#ffcc00' }).setOrigin(0.5);
-    const bestText = this.add.text(0, 0, 'Best: --', { fontSize: '12px', color: '#aaaaaa' }).setOrigin(0.5);
-    const playBtn = this.add.text(0, 40, '▶ PLAY', { fontSize: '16px', color: '#00ffcc', backgroundColor: '#2a2a4a', padding: { x: 16, y: 6 } }).setOrigin(0.5);
-    playBtn.setInteractive({ useHandCursor: true });
-    playBtn.on('pointerdown', () => {
+    this.infoPanel = this.add.container(width - 150, 250);
+    
+    this.infoLevelText = this.add.text(0, -50, 'Level --', { fontSize: '14px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5);
+    this.infoStarsText = this.add.text(0, -20, '★ 0/3', { fontSize: '12px', color: '#ffcc00' }).setOrigin(0.5);
+    this.infoBestText = this.add.text(0, 5, 'Best: --', { fontSize: '11px', color: '#aaaaaa' }).setOrigin(0.5);
+    this.playButton = this.add.text(0, 40, '▶ PLAY', { fontSize: '14px', color: '#00ffcc', backgroundColor: '#2a2a4a', padding: { x: 16, y: 6 } }).setOrigin(0.5);
+    this.playButton.setInteractive({ useHandCursor: true });
+    this.playButton.on('pointerdown', () => {
       if (this.selectedLevelId) {
         this.scene.start('GameScene', { levelId: this.selectedLevelId });
       }
     });
     
-    this.infoPanel.add([panelBg, levelText, starsText, bestText, playBtn]);
-    this.infoPanel.setVisible(false);
+    this.infoPanel.add([this.infoPanelBg, this.infoLevelText, this.infoStarsText, this.infoBestText, this.playButton]);
   }
 
   private updateInfoPanel(levelId: string): void {
     const stats = progressManager.getLevelStats(levelId);
     const stars = stats?.stars || 0;
-    const bestSteps = stats?.bestSteps !== Infinity ? stats?.bestSteps : '--';
+    const bestSteps = (stats?.bestSteps !== undefined && stats.bestSteps !== Infinity) ? stats.bestSteps : '--';
     
-    const levelText = this.infoPanel.getAt(1) as Phaser.GameObjects.Text;
-    const starsText = this.infoPanel.getAt(2) as Phaser.GameObjects.Text;
-    const bestText = this.infoPanel.getAt(3) as Phaser.GameObjects.Text;
+    this.infoLevelText.setText(`Level ${levelId.split('_')[1]}`);
+    this.infoStarsText.setText(`★ ${stars}/3`);
+    this.infoBestText.setText(`Best: ${bestSteps}`);
     
-    levelText.setText(`Level ${levelId.split('_')[1]}`);
-    starsText.setText(`Stars: ${stars}/3`);
-    bestText.setText(`Best: ${bestSteps}`);
-    
+    this.infoPanelBg.setVisible(true);
     this.infoPanel.setVisible(true);
   }
 }
