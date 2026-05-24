@@ -61,10 +61,10 @@ export class Preload extends Scene {
     this.load.image('monster_tameable', '/assets/monsters/monster_tameable.png');
     
     // Загрузка UI (опционально)
-    this.load.image('ui_button_run', '/assets/ui/button_run.png').on('loaderror', () => {});
-    this.load.image('ui_button_clear', '/assets/ui/button_clear.png').on('loaderror', () => {});
-    this.load.image('ui_button_save', '/assets/ui/button_save.png').on('loaderror', () => {});
-    this.load.image('ui_button_load', '/assets/ui/button_load.png').on('loaderror', () => {});
+    this.load.image('ui_button_run', '/assets/UI/button_run.png').on('loaderror', () => {});
+    this.load.image('ui_button_clear', '/assets/UI/button_clear.png').on('loaderror', () => {});
+    this.load.image('ui_button_save', '/assets/UI/button_save.png').on('loaderror', () => {});
+    this.load.image('ui_button_load', '/assets/UI/button_load.png').on('loaderror', () => {});
     
     // Эффекты (опционально)
     this.load.image('effect_teleport', '/assets/effects/teleport.png').on('loaderror', () => {});
