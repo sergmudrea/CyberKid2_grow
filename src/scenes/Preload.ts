@@ -41,7 +41,7 @@ export class Preload extends Scene {
       logger.warn('Preload', 'loaderror', `Failed to load: ${file.key}`);
     });
     
-    // Загрузка тайлов (с обработкой ошибок)
+    // Загрузка тайлов
     this.load.image('tile_platform', '/assets/tiles/platform.png');
     this.load.image('tile_wall', '/assets/tiles/wall.png');
     this.load.image('tile_hole', '/assets/tiles/hole.png');
@@ -61,17 +61,16 @@ export class Preload extends Scene {
     this.load.image('monster_tameable', '/assets/monsters/monster_tameable.png');
     
     // Загрузка UI (опционально)
-    this.load.image('ui_button_run', '/assets/ui/button_run.png');
-    this.load.image('ui_button_clear', '/assets/ui/button_clear.png');
-    this.load.image('ui_button_save', '/assets/ui/button_save.png');
-    this.load.image('ui_button_load', '/assets/ui/button_load.png');
+    this.load.image('ui_button_run', '/assets/ui/button_run.png').on('loaderror', () => {});
+    this.load.image('ui_button_clear', '/assets/ui/button_clear.png').on('loaderror', () => {});
+    this.load.image('ui_button_save', '/assets/ui/button_save.png').on('loaderror', () => {});
+    this.load.image('ui_button_load', '/assets/ui/button_load.png').on('loaderror', () => {});
     
-    // Эффекты (опционально, не критично)
+    // Эффекты (опционально)
     this.load.image('effect_teleport', '/assets/effects/teleport.png').on('loaderror', () => {});
     this.load.image('effect_death', '/assets/effects/death.png').on('loaderror', () => {});
     this.load.image('effect_victory', '/assets/effects/victory.png').on('loaderror', () => {});
     
-    // Генерация плейсхолдеров для отсутствующих текстур
     this.load.on('complete', () => {
       this.generatePlaceholders();
       this.startGame();
@@ -85,7 +84,6 @@ export class Preload extends Scene {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
     
-    // Генерация плейсхолдера для тайлов
     const generateTilePlaceholder = (key: string, color: string, icon: string) => {
       if (textureManager.exists(key)) return;
       canvas.width = 64;
@@ -100,7 +98,6 @@ export class Preload extends Scene {
       textureManager.addImage(key, canvas);
     };
     
-    // Генерация плейсхолдера для игрока
     const generatePlayerPlaceholder = (key: string, color: string, icon: string) => {
       if (textureManager.exists(key)) return;
       canvas.width = 64;
@@ -113,26 +110,22 @@ export class Preload extends Scene {
       textureManager.addImage(key, canvas);
     };
     
-    // Генерация плейсхолдеров для тайлов
     generateTilePlaceholder('tile_platform', '#8B5A2B', '⬜');
     generateTilePlaceholder('tile_wall', '#555555', '🧱');
     generateTilePlaceholder('tile_hole', '#000000', '🕳️');
     generateTilePlaceholder('tile_coin', '#FFD700', '💰');
     generateTilePlaceholder('tile_start', '#00AA00', '🚀');
     
-    // Генерация плейсхолдеров для игрока
     generatePlayerPlaceholder('player', '#00BFFF', '🤖');
     generatePlayerPlaceholder('player_up', '#00BFFF', '↑');
     generatePlayerPlaceholder('player_down', '#00BFFF', '↓');
     generatePlayerPlaceholder('player_left', '#00BFFF', '←');
     generatePlayerPlaceholder('player_right', '#00BFFF', '→');
     
-    // Генерация плейсхолдеров для монстров
     generateTilePlaceholder('monster_patrol', '#8B008B', '👾');
     generateTilePlaceholder('monster_chase', '#DC143C', '👾⚡');
     generateTilePlaceholder('monster_tameable', '#228B22', '👾❤️');
     
-    // Генерация плейсхолдеров для UI
     generateTilePlaceholder('ui_button_run', '#00AA44', '▶');
     generateTilePlaceholder('ui_button_clear', '#AA4444', '🗑');
     generateTilePlaceholder('ui_button_save', '#4444AA', '💾');
