@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
+import { logger } from '../core/Logger';
 
 export class LevelSelect extends Scene {
   private worldId: string = '';
@@ -16,6 +17,7 @@ export class LevelSelect extends Scene {
   private infoBestText: Phaser.GameObjects.Text;
   private playButton: Phaser.GameObjects.Text;
   private selectedLevelId: string = '';
+  private selectedLevelIndex: number = -1;
 
   constructor() {
     super('LevelSelect');
@@ -23,6 +25,7 @@ export class LevelSelect extends Scene {
 
   init(data: { worldId: string }): void {
     this.worldId = data.worldId;
+    logger.debug('LevelSelect', 'init', `Initializing for world: ${this.worldId}`);
   }
 
   async create(): Promise<void> {
@@ -69,6 +72,8 @@ export class LevelSelect extends Scene {
       const numB = parseInt(b.split('_')[1]);
       return numA - numB;
     });
+    
+    logger.debug('LevelSelect', 'create', `Loaded ${this.levelIds.length} levels for world ${this.worldId}`);
 
     // Сетка уровней
     this.renderLevelGrid();
@@ -89,7 +94,7 @@ export class LevelSelect extends Scene {
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
 
-    // Кнопка возврата на карту миров (если скролл)
+    // Кнопка возврата на карту миров
     const worldMapButton = this.add.text(width - 120, 10, '🌍 WORLDS', {
       fontSize: '14px',
       color: '#ffffff',
@@ -129,8 +134,11 @@ export class LevelSelect extends Scene {
 
       const stats = progressManager.getLevelStats(levelId);
       const stars = stats?.stars || 0;
-      const isLocked = this.isLevelLocked(levelId);
+      // Используем ProgressManager для проверки разблокировки
+      const isLocked = !progressManager.isLevelUnlocked(levelId);
       const isCompleted = stats?.completed || false;
+
+      logger.debug('LevelSelect', 'renderLevelGrid', `Level ${levelId}: locked=${isLocked}, completed=${isCompleted}, stars=${stars}`);
 
       const container = this.add.container(x, y);
       const bgColor = isLocked ? 0x444444 : (isCompleted ? 0x2a4a2a : 0x2a2a4a);
@@ -149,7 +157,9 @@ export class LevelSelect extends Scene {
         container.setInteractive(new Phaser.Geom.Rectangle(-35, -35, 70, 70), Phaser.Geom.Rectangle.Contains);
         container.on('pointerdown', () => {
           this.selectedLevelId = levelId;
+          this.selectedLevelIndex = startIdx + i;
           this.updateInfoPanel(levelId);
+          logger.debug('LevelSelect', 'renderLevelGrid', `Selected level: ${levelId}`);
         });
         container.on('pointerover', () => {
           bg.setStrokeStyle(3, 0xffaa00);
@@ -174,7 +184,6 @@ export class LevelSelect extends Scene {
     }).setOrigin(0.5);
     this.pageText.setScrollFactor(0);
 
-    // Кнопки пагинации
     const prevBtn = this.add.text(this.cameras.main.width - 170, 100, '◀', { fontSize: '24px', color: '#ffffff' }).setInteractive({ useHandCursor: true });
     prevBtn.on('pointerdown', () => {
       if (this.currentPage > 0) {
@@ -196,14 +205,6 @@ export class LevelSelect extends Scene {
     nextBtn.setDepth(100);
   }
 
-  private isLevelLocked(levelId: string): boolean {
-    const levelNum = parseInt(levelId.split('_')[1]);
-    if (levelNum === 1) return false;
-    const prevLevelId = `${this.worldId}_${(levelNum - 1).toString().padStart(3, '0')}`;
-    const prevStats = progressManager.getLevelStats(prevLevelId);
-    return !prevStats?.completed;
-  }
-
   private createInfoPanel(): void {
     const width = this.cameras.main.width;
     
@@ -220,6 +221,7 @@ export class LevelSelect extends Scene {
     this.playButton.setInteractive({ useHandCursor: true });
     this.playButton.on('pointerdown', () => {
       if (this.selectedLevelId) {
+        logger.info('LevelSelect', 'playButton', `Starting level: ${this.selectedLevelId}`);
         this.scene.start('GameScene', { levelId: this.selectedLevelId });
       }
     });
