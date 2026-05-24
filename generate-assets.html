@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate CyberKid Assets</title></head>
+<body>
+<canvas id="canvas" width="64" height="64" style="display:none"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function download(filename, dataUrl) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
+function generateTile(filename, color, icon) {
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = '#aaa';
+  ctx.strokeRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '32px Arial';
+  ctx.fillText(icon, 16, 48);
+  download(filename, canvas.toDataURL());
+}
+
+function generatePlayer(filename, color, directionIcon) {
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '40px Arial';
+  ctx.fillText(directionIcon, 12, 52);
+  download(filename, canvas.toDataURL());
+}
+
+function generateMonster(filename, color, icon) {
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '40px Arial';
+  ctx.fillText(icon, 12, 52);
+  download(filename, canvas.toDataURL());
+}
+
+function generateButton(filename, color, text) {
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px Arial';
+  ctx.fillText(text, 8, 40);
+  download(filename, canvas.toDataURL());
+}
+
+// Тайлы
+generateTile('platform.png', '#8B5A2B', '⬜');
+generateTile('wall.png', '#555555', '🧱');
+generateTile('hole.png', '#000000', '🕳️');
+generateTile('coin.png', '#FFD700', '💰');
+generateTile('start.png', '#00AA00', '🚀');
+
+// Игрок
+generatePlayer('player.png', '#00BFFF', '🤖');
+generatePlayer('player_up.png', '#00BFFF', '↑');
+generatePlayer('player_down.png', '#00BFFF', '↓');
+generatePlayer('player_left.png', '#00BFFF', '←');
+generatePlayer('player_right.png', '#00BFFF', '→');
+
+// Монстры
+generateMonster('monster_patrol.png', '#8B008B', '👾');
+generateMonster('monster_chase.png', '#DC143C', '👾⚡');
+generateMonster('monster_tameable.png', '#228B22', '👾❤️');
+
+// Кнопки UI
+generateButton('button_run.png', '#00AA44', '▶');
+generateButton('button_clear.png', '#AA4444', '🗑');
+generateButton('button_save.png', '#4444AA', '💾');
+generateButton('button_load.png', '#AA8844', '📂');
+
+document.body.innerHTML = '<h2>Assets generated! Check your downloads folder.</h2>';
+</script>
+</body>
+</html>
