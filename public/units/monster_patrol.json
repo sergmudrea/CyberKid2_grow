@@ -1,0 +1,29 @@
+{
+  "id": "monster_patrol",
+  "name": "Patrol Monster",
+  "sprite": "monster_patrol",
+  "gridSize": 48,
+  "commands": ["patrol"],
+  "movementRules": [
+    {
+      "direction": "patrol",
+      "delta": { "col": 1, "row": 0 },
+      "canMoveThrough": ["platform", "start"],
+      "blockedBy": ["wall", "hole", "monster"],
+      "effects": ["kill_player_on_collision"],
+      "patrolPath": true
+    }
+  ],
+  "behavior": {
+    "type": "patrol",
+    "speed": 1,
+    "patrolSteps": 2,
+    "turnsAround": true
+  },
+  "deathConditions": ["core_hit", "drill_hit"],
+  "interaction": {
+    "onCollision": "kill_player",
+    "onFeed": "tame",
+    "feedItem": "corn"
+  }
+}
