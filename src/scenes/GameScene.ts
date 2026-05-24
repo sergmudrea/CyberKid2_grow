@@ -17,7 +17,6 @@ export class GameScene extends Scene {
   private isRunning: boolean = false;
   private isBroken: boolean = false;
   private isVictory: boolean = false;
-  private camera: Phaser.Cameras.Scene2D.Camera;
   private gameContainer: Phaser.GameObjects.Container;
   private gameBounds: { width: number; height: number };
   private gameOffsetX: number = 0;
@@ -51,7 +50,6 @@ export class GameScene extends Scene {
     this.currentCommandIndex = -1;
     this.failedCommandIndex = -1;
     
-    // Создаём сцену только после загрузки уровня
     this.createScene();
   }
 
@@ -62,8 +60,6 @@ export class GameScene extends Scene {
       return;
     }
     
-    console.log('Level width:', this.level.width, 'height:', this.level.height);
-    
     this.gameContainer = this.add.container(0, 0);
     
     this.gameBounds = {
@@ -71,13 +67,11 @@ export class GameScene extends Scene {
       height: this.level.height * this.gridSize
     };
     
-    // Центрируем поле
+    // Центрируем контейнер
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
-    console.log('Camera width:', this.cameras.main.width, 'height:', this.cameras.main.height);
-    console.log('Game bounds:', this.gameBounds.width, this.gameBounds.height);
-    console.log('Offset X:', this.gameOffsetX, 'Offset Y:', this.gameOffsetY);
+    console.log('Game offset X:', this.gameOffsetX, 'Y:', this.gameOffsetY);
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
     
@@ -85,58 +79,20 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.drawCoin();
 
-    this.camera = this.cameras.main;
-    this.camera.setBounds(this.gameOffsetX, this.gameOffsetY, this.gameBounds.width, this.gameBounds.height);
-    this.camera.setZoom(1);
-    
-    // Центрируем камеру на игроке
-    this.centerCameraOnPlayer();
-
-    // Обработка скролла мыши
-    this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
-      this.isPlayerControlled = true;
-      this.lastInputTime = Date.now();
-      this.camera.scrollX += deltaX;
-      this.camera.scrollY += deltaY;
-      this.camera.clampBounds();
-    });
-
-    // Обработка клавиш для перемещения камеры
-    this.input.keyboard?.on('keydown-LEFT', () => {
-      this.isPlayerControlled = true;
-      this.lastInputTime = Date.now();
-      this.camera.scrollX -= 30;
-      this.camera.clampBounds();
-    });
-    this.input.keyboard?.on('keydown-RIGHT', () => {
-      this.isPlayerControlled = true;
-      this.lastInputTime = Date.now();
-      this.camera.scrollX += 30;
-      this.camera.clampBounds();
-    });
-    this.input.keyboard?.on('keydown-UP', () => {
-      this.isPlayerControlled = true;
-      this.lastInputTime = Date.now();
-      this.camera.scrollY -= 30;
-      this.camera.clampBounds();
-    });
-    this.input.keyboard?.on('keydown-DOWN', () => {
-      this.isPlayerControlled = true;
-      this.lastInputTime = Date.now();
-      this.camera.scrollY += 30;
-      this.camera.clampBounds();
-    });
-
-    this.time.addEvent({
-      delay: 100,
-      callback: () => {
-        if (this.isPlayerControlled && Date.now() - this.lastInputTime > 5000) {
-          this.isPlayerControlled = false;
-          this.centerCameraOnPlayer();
-        }
-      },
-      loop: true
-    });
+    // Добавляем возможность скролла контейнера (если поле больше экрана)
+    if (this.gameBounds.width > this.cameras.main.width) {
+      this.gameContainer.setInteractive(new Phaser.Geom.Rectangle(0, 0, this.gameBounds.width, this.gameBounds.height), Phaser.Geom.Rectangle.Contains);
+      this.input.setDraggable(this.gameContainer);
+      this.input.on('drag', (pointer: any, gameObject: any, dragX: number, dragY: number) => {
+        this.gameContainer.x = this.gameOffsetX + dragX;
+        this.gameContainer.y = this.gameOffsetY + dragY;
+        // Ограничиваем скролл
+        const minX = this.cameras.main.width - this.gameBounds.width;
+        const minY = this.cameras.main.height - this.gameBounds.height;
+        this.gameContainer.x = Math.max(Math.min(this.gameContainer.x, this.gameOffsetX), minX);
+        this.gameContainer.y = Math.max(Math.min(this.gameContainer.y, this.gameOffsetY), minY);
+      });
+    }
 
     this.commandPanel = new CommandPanel(
       this,
@@ -151,7 +107,6 @@ export class GameScene extends Scene {
         this.commandPanel.clearHighlight();
         this.drawPlayer();
         this.updateVisualizer();
-        this.centerCameraOnPlayer();
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -176,25 +131,6 @@ export class GameScene extends Scene {
     backButton.setDepth(100);
     
     console.log('GameScene create finished');
-    console.log('Camera scroll X:', this.camera.scrollX, 'Y:', this.camera.scrollY);
-  }
-
-  private centerCameraOnPlayer(): void {
-    if (!this.playerSprite || !this.level) return;
-    // Центрируем камеру на позиции игрока
-    const targetX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.width/2;
-    const targetY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.height/2;
-    
-    // Ограничиваем, чтобы камера не выходила за границы поля
-    const minX = this.gameOffsetX;
-    const maxX = this.gameBounds.width + this.gameOffsetX - this.camera.width;
-    const minY = this.gameOffsetY;
-    const maxY = this.gameBounds.height + this.gameOffsetY - this.camera.height;
-    
-    this.camera.setScroll(
-      Math.max(minX, Math.min(targetX, maxX)),
-      Math.max(minY, Math.min(targetY, maxY))
-    );
   }
 
   private updateVisualizer(): void {
@@ -233,7 +169,6 @@ export class GameScene extends Scene {
     if (!this.level) return;
     this.playerPos = { ...this.level.startPos };
     this.drawPlayer();
-    this.centerCameraOnPlayer();
     this.executeCommands(commands, 0);
   }
 
@@ -279,17 +214,6 @@ export class GameScene extends Scene {
     if (!isWall && !isHole && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      
-      if (!this.isPlayerControlled) {
-        this.centerCameraOnPlayer();
-      } else {
-        const playerScreenX = this.gameOffsetX + this.playerPos.col * this.gridSize + this.gridSize/2 - this.camera.scrollX;
-        const playerScreenY = this.gameOffsetY + this.playerPos.row * this.gridSize + this.gridSize/2 - this.camera.scrollY;
-        if (playerScreenX < 50 || playerScreenX > this.camera.width - 50 ||
-            playerScreenY < 50 || playerScreenY > this.camera.height - 50) {
-          this.centerCameraOnPlayer();
-        }
-      }
       
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         this.isVictory = true;
@@ -357,7 +281,6 @@ export class GameScene extends Scene {
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
-    console.log('Drawing grid', width, height);
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
