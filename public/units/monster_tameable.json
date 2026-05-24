@@ -1,0 +1,28 @@
+{
+  "id": "monster_tameable",
+  "name": "Tameable Monster",
+  "sprite": "monster_tameable",
+  "gridSize": 48,
+  "commands": ["wander"],
+  "movementRules": [
+    {
+      "direction": "wander",
+      "delta": "random",
+      "canMoveThrough": ["platform", "start"],
+      "blockedBy": ["wall", "hole", "monster"],
+      "effects": ["kill_player_on_collision_until_tamed"]
+    }
+  ],
+  "behavior": {
+    "type": "wander",
+    "speed": 0.5,
+    "randomness": 0.7
+  },
+  "deathConditions": ["core_hit", "drill_hit"],
+  "interaction": {
+    "onCollision": "kill_player",
+    "onFeed": "become_ally",
+    "feedItem": "corn",
+    "afterTameBehavior": "follow_player"
+  }
+}
