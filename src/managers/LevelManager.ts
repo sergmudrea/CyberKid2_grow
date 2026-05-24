@@ -235,11 +235,13 @@ export class LevelManager {
     }
     logger.debug('LevelManager', method, 'Generated 20 volcano levels');
 
-    // Arcade уровни (пользовательские, 10 демо-уровней)
+    // Arcade уровни (10 демо-уровней)
+    if (!this.worldsLevels.has('arcade')) this.worldsLevels.set('arcade', []);
     for (let i = 1; i <= 10; i++) {
       const map = Array(10).fill(null).map(() => Array(10).fill(TileType.PLATFORM));
       if (i === 3) {
-        map[4][4] = TileType.WALL; map[4][5] = TileType.WALL;
+        map[4][4] = TileType.WALL;
+        map[4][5] = TileType.WALL;
       }
       if (i === 7) {
         map[5][5] = TileType.HOLE;
@@ -257,7 +259,6 @@ export class LevelManager {
         optimalSteps: 18,
       };
       this.cache.set(level.id, level);
-      if (!this.worldsLevels.has('arcade')) this.worldsLevels.set('arcade', []);
       this.worldsLevels.get('arcade')!.push(level.id);
     }
     logger.debug('LevelManager', method, 'Generated 10 arcade levels');
