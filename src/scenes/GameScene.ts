@@ -43,6 +43,8 @@ export class GameScene extends Scene {
     tools: [],
   };
   private lastDirection: 'up' | 'down' | 'left' | 'right' = 'right';
+  private timeMultiplier: number = 1;
+  private speedLevel: number = 1;
 
   constructor() {
     super('GameScene');
@@ -84,6 +86,8 @@ export class GameScene extends Scene {
       tools: [],
     };
     this.lastDirection = 'right';
+    this.timeMultiplier = 1;
+    this.speedLevel = 1;
     
     logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row})`);
     this.createScene();
@@ -109,6 +113,8 @@ export class GameScene extends Scene {
       tools: [],
     };
     this.lastDirection = 'right';
+    this.timeMultiplier = 1;
+    this.speedLevel = 1;
     
     if (this.inventoryUI) {
       this.inventoryUI.updateInventory(this.inventory);
@@ -220,6 +226,35 @@ export class GameScene extends Scene {
     autoSolveButton.setScrollFactor(0);
     autoSolveButton.setDepth(100);
 
+    // Кнопки управления временем
+    const timeSlowButton = this.add.text(10, 100, '🐢 TIME SLOW', {
+      fontSize: '12px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 8, y: 4 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    timeSlowButton.on('pointerdown', () => {
+      this.timeMultiplier = 0.5;
+      logger.info('GameScene', 'timeSlow', 'Time slowed down');
+    });
+    timeSlowButton.setScrollFactor(0);
+    timeSlowButton.setDepth(100);
+
+    const timeFastButton = this.add.text(10, 135, '🐇 TIME FAST', {
+      fontSize: '12px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 8, y: 4 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    timeFastButton.on('pointerdown', () => {
+      this.timeMultiplier = 2;
+      logger.info('GameScene', 'timeFast', 'Time sped up');
+    });
+    timeFastButton.setScrollFactor(0);
+    timeFastButton.setDepth(100);
+
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -313,6 +348,52 @@ export class GameScene extends Scene {
     return { newCol: col, newRow: row, moved: false };
   }
 
+  private async applyTeleportEffect(col: number, row: number): Promise<{ newCol: number; newRow: number; teleported: boolean }> {
+    if (!this.level || !this.level.objects.teleports) return { newCol: col, newRow: row, teleported: false };
+    
+    const teleport = this.level.objects.teleports.find(t => t.entry.col === col && t.entry.row === row);
+    if (teleport) {
+      const exitTile = this.level.map[teleport.exit.row]?.[teleport.exit.col];
+      const isExitBlocked = exitTile === TileType.WALL || exitTile === TileType.HOLE || exitTile === TileType.BRICK;
+      
+      if (!isExitBlocked) {
+        this.playerPos = { col: teleport.exit.col, row: teleport.exit.row };
+        this.drawPlayer();
+        logger.info('GameScene', 'applyTeleportEffect', `Teleported from (${col},${row}) to (${teleport.exit.col},${teleport.exit.row})`);
+        return { newCol: teleport.exit.col, newRow: teleport.exit.row, teleported: true };
+      }
+    }
+    return { newCol: col, newRow: row, teleported: false };
+  }
+
+  private async applySpringEffect(col: number, row: number, direction: 'up' | 'down' | 'left' | 'right'): Promise<{ newCol: number; newRow: number; jumped: boolean }> {
+    if (!this.level) return { newCol: col, newRow: row, jumped: false };
+    const tile = this.level.map[row]?.[col];
+    if (tile !== TileType.SPRING) return { newCol: col, newRow: row, jumped: false };
+    
+    let dx = 0, dy = 0;
+    const jumpForce = 3;
+    
+    if (direction === 'up') dy = -jumpForce;
+    else if (direction === 'down') dy = jumpForce;
+    else if (direction === 'left') dx = -jumpForce;
+    else if (direction === 'right') dx = jumpForce;
+    
+    const newCol = Math.max(0, Math.min(col + dx, this.level.width - 1));
+    const newRow = Math.max(0, Math.min(row + dy, this.level.height - 1));
+    const targetTile = this.level.map[newRow]?.[newCol];
+    const isBlocked = targetTile === TileType.WALL || targetTile === TileType.HOLE || targetTile === TileType.BRICK;
+    
+    if (!isBlocked) {
+      this.playerPos = { col: newCol, row: newRow };
+      this.drawPlayer();
+      logger.info('GameScene', 'applySpringEffect', `Spring launched player to (${newCol},${newRow})`);
+      return { newCol: newCol, newRow: newRow, jumped: true };
+    }
+    
+    return { newCol: col, newRow: row, jumped: false };
+  }
+
   private async executeCommands(commands: Command[], index: number): Promise<void> {
     if (!this.level) return;
     
@@ -340,27 +421,91 @@ export class GameScene extends Scene {
 
     const cmd = commands[index];
     
+    // Обработка специальных команд
     if (cmd === 'push') {
       this.executePush();
-      await this.delay(80);
+      await this.delay(80 / this.timeMultiplier);
       this.executeCommands(commands, index + 1);
       return;
     }
     
     if (cmd === 'use_key') {
       this.executeUseKey();
-      await this.delay(80);
+      await this.delay(80 / this.timeMultiplier);
       this.executeCommands(commands, index + 1);
       return;
     }
     
     if (cmd === 'pickup') {
       this.executePickup();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'drill') {
+      this.executeDrill();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'hook') {
+      this.executeHook();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'wing') {
+      this.executeWing();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'bait') {
+      this.executeBait();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'throw') {
+      this.executeThrow();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'feed') {
+      this.executeFeed();
+      await this.delay(80 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'time_slow') {
+      this.timeMultiplier = 0.5;
       await this.delay(80);
       this.executeCommands(commands, index + 1);
       return;
     }
     
+    if (cmd === 'time_fast') {
+      this.timeMultiplier = 2;
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'wait') {
+      await this.delay(1000 / this.timeMultiplier);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    // Движение
     let dx = 0, dy = 0;
     if (cmd === 'up') { dy = -1; this.lastDirection = 'up'; }
     if (cmd === 'down') { dy = 1; this.lastDirection = 'down'; }
@@ -379,10 +524,40 @@ export class GameScene extends Scene {
     const isKey = tile === TileType.KEY;
     const isCorn = tile === TileType.CORN;
     const isCore = tile === TileType.CORE;
+    const isDrill = tile === TileType.TOOL_DRILL;
+    const isHook = tile === TileType.TOOL_HOOK;
+    const isWing = tile === TileType.TOOL_WING;
+    const isBait = tile === TileType.TOOL_BAIT;
+    const isLava = tile === TileType.LAVA;
+    const isWater = tile === TileType.WATER;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
     logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow})`);
 
+    // Проверка на лаву/воду (смерть)
+    if ((isLava || isWater) && !this.inventory.hasWing && !this.isPlayerControlled) {
+      logger.info('GameScene', 'executeCommands', `💀 Player died in ${tile === TileType.LAVA ? 'lava' : 'water'} at (${targetCol},${targetRow})`);
+      this.isBroken = true;
+      this.failedCommandIndex = index;
+      this.commandPanel.highlightCommand(index, 'error');
+      this.showGhostAt(collisionCell);
+      this.showBrokenMessage();
+      this.isRunning = false;
+      return;
+    }
+    
+    // Проверка на яму (смерть)
+    if (isHole && !this.inventory.hasWing && !this.isPlayerControlled) {
+      logger.info('GameScene', 'executeCommands', `💀 Player fell into hole at (${targetCol},${targetRow})`);
+      this.isBroken = true;
+      this.failedCommandIndex = index;
+      this.commandPanel.highlightCommand(index, 'error');
+      this.showGhostAt(collisionCell);
+      this.showBrokenMessage();
+      this.isRunning = false;
+      return;
+    }
+    
     // Проверка на закрытую дверь
     if (isDoorLocked && this.inventory.keys.length === 0) {
       logger.debug('GameScene', 'executeCommands', `Locked door at (${targetCol},${targetRow}), need key`);
@@ -422,14 +597,66 @@ export class GameScene extends Scene {
       logger.info('GameScene', 'executeCommands', `Picked up core, total: ${this.inventory.cores}`);
       this.showPickupEffect(targetCol, targetRow);
     }
+    
+    if (isDrill) {
+      this.inventory.hasDrill = true;
+      this.inventory.tools.push('drill');
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeCommands', `Picked up drill`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+    
+    if (isHook) {
+      this.inventory.hasHook = true;
+      this.inventory.tools.push('hook');
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeCommands', `Picked up hook`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+    
+    if (isWing) {
+      this.inventory.hasWing = true;
+      this.inventory.tools.push('wing');
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeCommands', `Picked up wing`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+    
+    if (isBait) {
+      this.inventory.hasBait = true;
+      this.inventory.tools.push('bait');
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeCommands', `Picked up bait`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
 
-    if (!isWall && !isHole && !isBrick && !isOutOfBounds) {
+    if (!isWall && !isHole && !isBrick && !isOutOfBounds && !isLava && !isWater) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
-      // Применяем эффект конвейера после движения
+      // Применяем эффект телепорта
+      const teleportResult = await this.applyTeleportEffect(this.playerPos.col, this.playerPos.row);
+      if (teleportResult.teleported) {
+        this.drawPlayer();
+      }
+      
+      // Применяем эффект конвейера
       const conveyorResult = await this.applyConveyorEffect(this.playerPos.col, this.playerPos.row);
       if (conveyorResult.moved) {
+        this.drawPlayer();
+      }
+      
+      // Применяем эффект пружины (если направление задано)
+      const springResult = await this.applySpringEffect(this.playerPos.col, this.playerPos.row, this.lastDirection);
+      if (springResult.jumped) {
         this.drawPlayer();
       }
       
@@ -447,7 +674,7 @@ export class GameScene extends Scene {
         return;
       }
       
-      await this.delay(80);
+      await this.delay(80 / this.timeMultiplier);
       this.executeCommands(commands, index + 1);
     } else if (isBrick) {
       logger.debug('GameScene', 'executeCommands', `Brick at (${targetCol},${targetRow}), use PUSH command to move it`);
@@ -465,12 +692,13 @@ export class GameScene extends Scene {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
-      const conveyorResult = await this.applyConveyorEffect(this.playerPos.col, this.playerPos.row);
-      if (conveyorResult.moved) {
-        this.drawPlayer();
-      }
+      const teleportResult = await this.applyTeleportEffect(this.playerPos.col, this.playerPos.row);
+      if (teleportResult.teleported) this.drawPlayer();
       
-      await this.delay(80);
+      const conveyorResult = await this.applyConveyorEffect(this.playerPos.col, this.playerPos.row);
+      if (conveyorResult.moved) this.drawPlayer();
+      
+      await this.delay(80 / this.timeMultiplier);
       this.executeCommands(commands, index + 1);
     } else {
       logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
@@ -539,22 +767,175 @@ export class GameScene extends Scene {
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
       this.inventoryUI.updateInventory(this.inventory);
-      logger.info('GameScene', 'executePickup', `Picked up key, total keys: ${this.inventory.keys.length}`);
+      logger.info('GameScene', 'executePickup', `Picked up key`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
     } else if (tile === TileType.CORN) {
       this.inventory.corn++;
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
       this.inventoryUI.updateInventory(this.inventory);
-      logger.info('GameScene', 'executePickup', `Picked up corn, total: ${this.inventory.corn}`);
+      logger.info('GameScene', 'executePickup', `Picked up corn`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
     } else if (tile === TileType.CORE) {
       this.inventory.cores++;
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
       this.inventoryUI.updateInventory(this.inventory);
-      logger.info('GameScene', 'executePickup', `Picked up core, total: ${this.inventory.cores}`);
+      logger.info('GameScene', 'executePickup', `Picked up core`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.TOOL_DRILL) {
+      this.inventory.hasDrill = true;
+      this.inventory.tools.push('drill');
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executePickup', `Picked up drill`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.TOOL_HOOK) {
+      this.inventory.hasHook = true;
+      this.inventory.tools.push('hook');
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executePickup', `Picked up hook`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.TOOL_WING) {
+      this.inventory.hasWing = true;
+      this.inventory.tools.push('wing');
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executePickup', `Picked up wing`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.TOOL_BAIT) {
+      this.inventory.hasBait = true;
+      this.inventory.tools.push('bait');
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executePickup', `Picked up bait`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    }
+  }
+
+  private executeDrill(): void {
+    if (!this.level || !this.inventory.hasDrill) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    const wallCol = this.playerPos.col + dx;
+    const wallRow = this.playerPos.row + dy;
+    const tile = this.level.map[wallRow]?.[wallCol];
+    
+    if (tile === TileType.WALL || tile === TileType.FAKE_WALL) {
+      this.level.map[wallRow][wallCol] = TileType.PLATFORM;
+      this.redrawCell(wallCol, wallRow);
+      this.inventory.hasDrill = false;
+      this.inventory.tools = this.inventory.tools.filter(t => t !== 'drill');
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeDrill', `Wall destroyed at (${wallCol},${wallRow})`);
+      this.showPickupEffect(wallCol, wallRow);
+    }
+  }
+
+  private executeHook(): void {
+    if (!this.level || !this.inventory.hasHook) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    // Ищем стену в направлении взгляда на расстоянии до 3 клеток
+    let wallCol = this.playerPos.col;
+    let wallRow = this.playerPos.row;
+    let found = false;
+    
+    for (let i = 1; i <= 3; i++) {
+      const checkCol = this.playerPos.col + dx * i;
+      const checkRow = this.playerPos.row + dy * i;
+      const tile = this.level.map[checkRow]?.[checkCol];
+      if (tile === TileType.WALL || tile === TileType.FAKE_WALL) {
+        wallCol = checkCol;
+        wallRow = checkRow;
+        found = true;
+        break;
+      }
+    }
+    
+    if (found && (wallCol !== this.playerPos.col || wallRow !== this.playerPos.row)) {
+      this.playerPos = { col: wallCol, row: wallRow };
+      this.drawPlayer();
+      this.inventory.hasHook = false;
+      this.inventory.tools = this.inventory.tools.filter(t => t !== 'hook');
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeHook', `Hooked to wall at (${wallCol},${wallRow})`);
+      this.showPickupEffect(wallCol, wallRow);
+    }
+  }
+
+  private executeWing(): void {
+    if (!this.inventory.hasWing) return;
+    this.inventory.hasWing = false;
+    this.inventory.tools = this.inventory.tools.filter(t => t !== 'wing');
+    this.inventoryUI.updateInventory(this.inventory);
+    logger.info('GameScene', 'executeWing', 'Wings activated (can fly over holes/lava)');
+    // Эффект крыльев уже учтён в проверках isHole и isLava/isWater
+  }
+
+  private executeBait(): void {
+    if (!this.inventory.hasBait) return;
+    this.inventory.hasBait = false;
+    this.inventory.tools = this.inventory.tools.filter(t => t !== 'bait');
+    this.inventoryUI.updateInventory(this.inventory);
+    logger.info('GameScene', 'executeBait', 'Bait used (monsters distracted)');
+    // В реальности здесь нужно отвлечь монстров
+    this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+  }
+
+  private executeThrow(): void {
+    if (!this.level || this.inventory.cores === 0) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    const targetCol = this.playerPos.col + dx;
+    const targetRow = this.playerPos.row + dy;
+    
+    // Проверяем, есть ли монстр на целевой клетке
+    const monsterIndex = this.level.objects.monsters?.findIndex(m => m.position.col === targetCol && m.position.row === targetRow);
+    if (monsterIndex !== undefined && monsterIndex !== -1 && this.level.objects.monsters) {
+      this.level.objects.monsters.splice(monsterIndex, 1);
+      this.inventory.cores--;
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeThrow', `Core thrown at monster at (${targetCol},${targetRow})`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+  }
+
+  private executeFeed(): void {
+    if (!this.level || this.inventory.corn === 0) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    const targetCol = this.playerPos.col + dx;
+    const targetRow = this.playerPos.row + dy;
+    
+    const monster = this.level.objects.monsters?.find(m => m.position.col === targetCol && m.position.row === targetRow);
+    if (monster && monster.type === 'tameable') {
+      monster.isTamed = true;
+      this.inventory.corn--;
+      this.inventoryUI.updateInventory(this.inventory);
+      logger.info('GameScene', 'executeFeed', `Monster tamed at (${targetCol},${targetRow})`);
+      this.showPickupEffect(targetCol, targetRow);
     }
   }
 
@@ -570,24 +951,33 @@ export class GameScene extends Scene {
     const y = row * this.gridSize;
     const tile = this.level.map[row][col];
     let textureKey = 'tile_platform';
-    if (tile === TileType.WALL) textureKey = 'tile_wall';
-    if (tile === TileType.HOLE) textureKey = 'tile_hole';
-    if (tile === TileType.BRICK) textureKey = 'tile_brick';
-    if (tile === TileType.GOAL) textureKey = 'tile_coin';
-    if (tile === TileType.KEY) textureKey = 'tile_key';
-    if (tile === TileType.DOOR_LOCKED) textureKey = 'tile_door_locked';
-    if (tile === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
-    if (tile === TileType.CORN) textureKey = 'tile_corn';
-    if (tile === TileType.CORE) textureKey = 'tile_core';
-    if (tile === TileType.CONVEYOR_UP) textureKey = 'tile_conveyor_up';
-    if (tile === TileType.CONVEYOR_DOWN) textureKey = 'tile_conveyor_down';
-    if (tile === TileType.CONVEYOR_LEFT) textureKey = 'tile_conveyor_left';
-    if (tile === TileType.CONVEYOR_RIGHT) textureKey = 'tile_conveyor_right';
-    if (tile === TileType.SPRING) textureKey = 'tile_spring';
-    if (tile === TileType.TELEPORT_IN) textureKey = 'tile_teleport_in';
-    if (tile === TileType.TELEPORT_OUT) textureKey = 'tile_teleport_out';
-    if (tile === TileType.LAVA) textureKey = 'tile_lava';
-    if (tile === TileType.WATER) textureKey = 'tile_water';
+    
+    switch (tile) {
+      case TileType.PLATFORM: textureKey = 'tile_platform'; break;
+      case TileType.WALL: textureKey = 'tile_wall'; break;
+      case TileType.HOLE: textureKey = 'tile_hole'; break;
+      case TileType.BRICK: textureKey = 'tile_brick'; break;
+      case TileType.GOAL: textureKey = 'tile_coin'; break;
+      case TileType.KEY: textureKey = 'tile_key'; break;
+      case TileType.DOOR_LOCKED: textureKey = 'tile_door_locked'; break;
+      case TileType.DOOR_UNLOCKED: textureKey = 'tile_door_unlocked'; break;
+      case TileType.CORN: textureKey = 'tile_corn'; break;
+      case TileType.CORE: textureKey = 'tile_core'; break;
+      case TileType.TOOL_DRILL: textureKey = 'tile_drill'; break;
+      case TileType.TOOL_HOOK: textureKey = 'tile_hook'; break;
+      case TileType.TOOL_WING: textureKey = 'tile_wing'; break;
+      case TileType.TOOL_BAIT: textureKey = 'tile_bait'; break;
+      case TileType.CONVEYOR_UP: textureKey = 'tile_conveyor_up'; break;
+      case TileType.CONVEYOR_DOWN: textureKey = 'tile_conveyor_down'; break;
+      case TileType.CONVEYOR_LEFT: textureKey = 'tile_conveyor_left'; break;
+      case TileType.CONVEYOR_RIGHT: textureKey = 'tile_conveyor_right'; break;
+      case TileType.SPRING: textureKey = 'tile_spring'; break;
+      case TileType.TELEPORT_IN: textureKey = 'tile_teleport_in'; break;
+      case TileType.TELEPORT_OUT: textureKey = 'tile_teleport_out'; break;
+      case TileType.LAVA: textureKey = 'tile_lava'; break;
+      case TileType.WATER: textureKey = 'tile_water'; break;
+      default: textureKey = 'tile_platform';
+    }
     
     const children = this.gameContainer.getAll();
     for (const child of children) {
@@ -689,24 +1079,33 @@ export class GameScene extends Scene {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
         let textureKey = 'tile_platform';
-        if (map[row][col] === TileType.WALL) textureKey = 'tile_wall';
-        if (map[row][col] === TileType.HOLE) textureKey = 'tile_hole';
-        if (map[row][col] === TileType.BRICK) textureKey = 'tile_brick';
-        if (map[row][col] === TileType.GOAL) textureKey = 'tile_coin';
-        if (map[row][col] === TileType.KEY) textureKey = 'tile_key';
-        if (map[row][col] === TileType.DOOR_LOCKED) textureKey = 'tile_door_locked';
-        if (map[row][col] === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
-        if (map[row][col] === TileType.CORN) textureKey = 'tile_corn';
-        if (map[row][col] === TileType.CORE) textureKey = 'tile_core';
-        if (map[row][col] === TileType.CONVEYOR_UP) textureKey = 'tile_conveyor_up';
-        if (map[row][col] === TileType.CONVEYOR_DOWN) textureKey = 'tile_conveyor_down';
-        if (map[row][col] === TileType.CONVEYOR_LEFT) textureKey = 'tile_conveyor_left';
-        if (map[row][col] === TileType.CONVEYOR_RIGHT) textureKey = 'tile_conveyor_right';
-        if (map[row][col] === TileType.SPRING) textureKey = 'tile_spring';
-        if (map[row][col] === TileType.TELEPORT_IN) textureKey = 'tile_teleport_in';
-        if (map[row][col] === TileType.TELEPORT_OUT) textureKey = 'tile_teleport_out';
-        if (map[row][col] === TileType.LAVA) textureKey = 'tile_lava';
-        if (map[row][col] === TileType.WATER) textureKey = 'tile_water';
+        
+        switch (map[row][col]) {
+          case TileType.PLATFORM: textureKey = 'tile_platform'; break;
+          case TileType.WALL: textureKey = 'tile_wall'; break;
+          case TileType.HOLE: textureKey = 'tile_hole'; break;
+          case TileType.BRICK: textureKey = 'tile_brick'; break;
+          case TileType.GOAL: textureKey = 'tile_coin'; break;
+          case TileType.KEY: textureKey = 'tile_key'; break;
+          case TileType.DOOR_LOCKED: textureKey = 'tile_door_locked'; break;
+          case TileType.DOOR_UNLOCKED: textureKey = 'tile_door_unlocked'; break;
+          case TileType.CORN: textureKey = 'tile_corn'; break;
+          case TileType.CORE: textureKey = 'tile_core'; break;
+          case TileType.TOOL_DRILL: textureKey = 'tile_drill'; break;
+          case TileType.TOOL_HOOK: textureKey = 'tile_hook'; break;
+          case TileType.TOOL_WING: textureKey = 'tile_wing'; break;
+          case TileType.TOOL_BAIT: textureKey = 'tile_bait'; break;
+          case TileType.CONVEYOR_UP: textureKey = 'tile_conveyor_up'; break;
+          case TileType.CONVEYOR_DOWN: textureKey = 'tile_conveyor_down'; break;
+          case TileType.CONVEYOR_LEFT: textureKey = 'tile_conveyor_left'; break;
+          case TileType.CONVEYOR_RIGHT: textureKey = 'tile_conveyor_right'; break;
+          case TileType.SPRING: textureKey = 'tile_spring'; break;
+          case TileType.TELEPORT_IN: textureKey = 'tile_teleport_in'; break;
+          case TileType.TELEPORT_OUT: textureKey = 'tile_teleport_out'; break;
+          case TileType.LAVA: textureKey = 'tile_lava'; break;
+          case TileType.WATER: textureKey = 'tile_water'; break;
+          default: textureKey = 'tile_platform';
+        }
         
         const tile = this.add.image(x, y, textureKey);
         tile.setOrigin(0, 0);
