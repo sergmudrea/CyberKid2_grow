@@ -1,50 +1,52 @@
-import { Scene } from 'phaser';
-import { Point, Inventory } from '../types/index';
+// src/modules/Player.ts
+// Эйдо: Управление персонажем (позиция, направление, инвентарь, клоны, верховая езда).
+// Поддерживает: движение, телепортацию, эффекты конвейера/пружины, клей, клетку (ловушку),
+// клонирование, верховую езду, инвентарь, смерть/возрождение.
+// Эмитит события через EventBus: PLAYER_MOVED, PLAYER_DIED, INVENTORY_CHANGED, CLONE_CREATED и др.
+
+import { Point, Inventory, Monster, Command } from '../types/index';
 import { gameEvents as eventBus } from '../core/EventBus';
+import { logger } from '../core/Logger';
+
+export interface CloneInfo {
+  id: string;
+  position: Point;
+  inventory: Inventory;
+  commands: Command[];
+  currentCommandIndex: number;
+}
 
 export class Player {
-  private scene: Scene;
-  private sprite: Phaser.GameObjects.Sprite;
   private position: Point;
   private direction: 'up' | 'down' | 'left' | 'right';
   private inventory: Inventory;
   private isAlive: boolean = true;
   private isGhostMode: boolean = false;
-  private gridSize: number;
+  private clones: CloneInfo[] = [];
+  private riddenMonster: Monster | null = null;
+  private levelBounds: { width: number; height: number };
+  private tileMap: (col: number, row: number) => number;
 
-  constructor(scene: Scene, startPos: Point, startDir: 'up' | 'down' | 'left' | 'right', gridSize: number) {
-    this.scene = scene;
+  // Новые поля для механик
+  private glued: boolean = false;
+  private gluedTurns: number = 0;
+  private trapped: boolean = false;
+
+  constructor(
+    startPos: Point,
+    startDir: 'up' | 'down' | 'left' | 'right',
+    levelWidth: number,
+    levelHeight: number,
+    tileGetter: (col: number, row: number) => number
+  ) {
     this.position = { ...startPos };
     this.direction = startDir;
-    this.gridSize = gridSize;
-    this.inventory = {
-      keys: [],
-      corn: 0,
-      cores: 0,
-      hasDrill: false,
-      hasHook: false,
-      hasWing: false,
-      hasBait: false,
-      tools: [],
-    };
-    
-    // Создаём спрайт игрока
-    const texture = this.getDirectionTexture(startDir);
-    this.sprite = scene.add.sprite(startPos.col * gridSize, startPos.row * gridSize, texture);
-    this.sprite.setOrigin(0, 0);
-    this.sprite.setDisplaySize(gridSize, gridSize);
+    this.levelBounds = { width: levelWidth, height: levelHeight };
+    this.tileMap = tileGetter;
+    this.resetInventory();
   }
 
-  private getDirectionTexture(dir: 'up' | 'down' | 'left' | 'right'): string {
-    switch (dir) {
-      case 'up': return 'player_up';
-      case 'down': return 'player_down';
-      case 'left': return 'player_left';
-      case 'right': return 'player_right';
-      default: return 'player';
-    }
-  }
-
+  // ---------- Геттеры ----------
   public getPosition(): Point {
     return { ...this.position };
   }
@@ -65,102 +67,113 @@ export class Player {
     return this.isGhostMode;
   }
 
+  public getClones(): CloneInfo[] {
+    return [...this.clones];
+  }
+
+  public getRiddenMonster(): Monster | null {
+    return this.riddenMonster ? { ...this.riddenMonster } : null;
+  }
+
+  public isGlued(): boolean {
+    return this.glued && this.gluedTurns > 0;
+  }
+
+  public isTrapped(): boolean {
+    return this.trapped;
+  }
+
+  // ---------- Управление режимами ----------
   public setGhostMode(enabled: boolean): void {
     this.isGhostMode = enabled;
-    if (enabled) {
-      this.sprite.setAlpha(0.6);
-    } else {
-      this.sprite.setAlpha(1);
-    }
     eventBus.emit('EXPLORATION_TOGGLED', { enabled, penaltyWarningShown: true });
   }
 
+  // ---------- Движение и коллизии ----------
   public move(direction: 'up' | 'down' | 'left' | 'right'): boolean {
     if (!this.isAlive) return false;
-    
+    if (this.isTrapped()) {
+      logger.debug('Player', 'move', 'Player is trapped in cage, cannot move');
+      return false;
+    }
+    if (this.isGlued()) {
+      this.decrementGlueTurn();
+      if (this.isGlued()) {
+        logger.debug('Player', 'move', 'Player is glued, cannot move');
+        return false;
+      }
+    }
+
     const delta = this.directionToDelta(direction);
     const newPos = { col: this.position.col + delta.col, row: this.position.row + delta.row };
-    
+    if (!this.isWithinBounds(newPos)) return false;
+    const tile = this.tileMap(newPos.col, newPos.row);
+    if (!this.canEnterTile(tile)) return false;
+
+    const oldPos = { ...this.position };
+    this.position = newPos;
     this.direction = direction;
-    this.updateSpriteTexture(direction);
-    
-    const x = newPos.col * this.gridSize;
-    const y = newPos.row * this.gridSize;
-    
-    this.scene.tweens.add({
-      targets: this.sprite,
-      x: x,
-      y: y,
-      duration: 100,
-      ease: 'Linear',
-      onComplete: () => {
-        this.position = newPos;
-        eventBus.emit('PLAYER_MOVED', { from: this.position, to: newPos });
-      },
-    });
-    
+
+    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
     return true;
   }
 
-  private updateSpriteTexture(direction: 'up' | 'down' | 'left' | 'right'): void {
-    const texture = this.getDirectionTexture(direction);
-    this.sprite.setTexture(texture);
-  }
-
+  // Принудительная телепортация (без проверок)
   public teleport(point: Point): void {
-    const x = point.col * this.gridSize;
-    const y = point.row * this.gridSize;
-    this.sprite.setPosition(x, y);
+    const oldPos = { ...this.position };
     this.position = { ...point };
-    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position });
+    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
   }
 
-  public kill(cause: string): void {
-    if (this.isGhostMode) return;
-    this.isAlive = false;
-    // Эффект смерти
-    this.scene.tweens.add({
-      targets: this.sprite,
-      alpha: 0,
-      duration: 200,
-      yoyo: true,
-      repeat: 2,
-      onComplete: () => {
-        this.sprite.setAlpha(1);
-      },
-    });
-    eventBus.emit('PLAYER_DIED', { cause });
+  // Применить эффект конвейера (вызывается из ExecutionEngine)
+  public applyConveyor(conveyorDir: 'up' | 'down' | 'left' | 'right'): boolean {
+    if (!this.isAlive) return false;
+    if (this.isTrapped()) return false;
+    if (this.isGlued()) {
+      this.decrementGlueTurn();
+      if (this.isGlued()) return false;
+    }
+
+    const delta = this.directionToDelta(conveyorDir);
+    const newPos = { col: this.position.col + delta.col, row: this.position.row + delta.row };
+    if (!this.isWithinBounds(newPos)) return false;
+    const tile = this.tileMap(newPos.col, newPos.row);
+    if (!this.canEnterTile(tile)) return false;
+    const oldPos = { ...this.position };
+    this.position = newPos;
+    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
+    return true;
   }
 
-  public revive(startPos: Point, startDir: 'up' | 'down' | 'left' | 'right'): void {
-    this.position = { ...startPos };
-    this.direction = startDir;
-    this.isAlive = true;
-    this.isGhostMode = false;
-    this.updateSpriteTexture(startDir);
-    this.sprite.setPosition(startPos.col * this.gridSize, startPos.row * this.gridSize);
-    this.sprite.setAlpha(1);
-    this.resetInventory();
+  // Применить пружину (вызывается из ExecutionEngine)
+  public applySpring(launchDir: 'up' | 'down' | 'left' | 'right', force: number = 3): boolean {
+    if (!this.isAlive) return false;
+    if (this.isTrapped()) return false;
+    if (this.isGlued()) {
+      this.decrementGlueTurn();
+      if (this.isGlued()) return false;
+    }
+
+    let currentPos = { ...this.position };
+    for (let i = 0; i < force; i++) {
+      const delta = this.directionToDelta(launchDir);
+      const nextPos = { col: currentPos.col + delta.col, row: currentPos.row + delta.row };
+      if (!this.isWithinBounds(nextPos)) return false;
+      const tile = this.tileMap(nextPos.col, nextPos.row);
+      if (!this.canEnterTile(tile)) return false;
+      currentPos = nextPos;
+    }
+    const oldPos = { ...this.position };
+    this.position = currentPos;
+    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
+    return true;
   }
 
-  public resetInventory(): void {
-    this.inventory = {
-      keys: [],
-      corn: 0,
-      cores: 0,
-      hasDrill: false,
-      hasHook: false,
-      hasWing: false,
-      hasBait: false,
-      tools: [],
-    };
-    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-  }
-
+  // ---------- Инвентарь ----------
   public addKey(keyId: string): void {
     if (!this.inventory.keys.includes(keyId)) {
       this.inventory.keys.push(keyId);
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+      this.emitInventoryChanged();
     }
   }
 
@@ -168,7 +181,7 @@ export class Player {
     const index = this.inventory.keys.indexOf(keyId);
     if (index !== -1) {
       this.inventory.keys.splice(index, 1);
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+      this.emitInventoryChanged();
       return true;
     }
     return false;
@@ -176,13 +189,13 @@ export class Player {
 
   public addCorn(amount: number = 1): void {
     this.inventory.corn += amount;
-    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+    this.emitInventoryChanged();
   }
 
   public useCorn(): boolean {
     if (this.inventory.corn > 0) {
       this.inventory.corn--;
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+      this.emitInventoryChanged();
       return true;
     }
     return false;
@@ -190,13 +203,13 @@ export class Player {
 
   public addCore(amount: number = 1): void {
     this.inventory.cores += amount;
-    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+    this.emitInventoryChanged();
   }
 
   public useCore(): boolean {
     if (this.inventory.cores > 0) {
       this.inventory.cores--;
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+      this.emitInventoryChanged();
       return true;
     }
     return false;
@@ -210,7 +223,7 @@ export class Player {
       case 'bait': this.inventory.hasBait = true; break;
     }
     if (!this.inventory.tools.includes(tool)) this.inventory.tools.push(tool);
-    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+    this.emitInventoryChanged();
   }
 
   public useTool(tool: 'drill' | 'hook' | 'wing' | 'bait'): boolean {
@@ -223,12 +236,146 @@ export class Player {
     }
     if (has) {
       this.inventory.tools = this.inventory.tools.filter(t => t !== tool);
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+      this.emitInventoryChanged();
       return true;
     }
     return false;
   }
 
+  // ---------- Смерть и сброс ----------
+  public kill(cause: string): void {
+    if (this.isGhostMode) return;
+    this.isAlive = false;
+    eventBus.emit('PLAYER_DIED', { cause });
+  }
+
+  public revive(startPos: Point, startDir: 'up' | 'down' | 'left' | 'right'): void {
+    this.position = { ...startPos };
+    this.direction = startDir;
+    this.isAlive = true;
+    this.resetInventory();
+    this.clones = [];
+    this.riddenMonster = null;
+    this.glued = false;
+    this.gluedTurns = 0;
+    this.trapped = false;
+  }
+
+  public resetInventory(): void {
+    this.inventory = {
+      keys: [],
+      corn: 0,
+      cores: 0,
+      hasDrill: false,
+      hasHook: false,
+      hasWing: false,
+      hasBait: false,
+      tools: [],
+    };
+    this.emitInventoryChanged();
+  }
+
+  // ---------- Клонирование ----------
+  public createClone(cloneId: string, position: Point, commands: Command[]): void {
+    const newClone: CloneInfo = {
+      id: cloneId,
+      position: { ...position },
+      inventory: JSON.parse(JSON.stringify(this.inventory)),
+      commands: [...commands],
+      currentCommandIndex: 0,
+    };
+    this.clones.push(newClone);
+    eventBus.emit('CLONE_CREATED', { cloneId, pos: position });
+  }
+
+  public removeClone(cloneId: string): void {
+    this.clones = this.clones.filter(c => c.id !== cloneId);
+  }
+
+  public getClone(cloneId: string): CloneInfo | undefined {
+    return this.clones.find(c => c.id === cloneId);
+  }
+
+  public updateClonePosition(cloneId: string, newPos: Point): void {
+    const clone = this.getClone(cloneId);
+    if (clone) {
+      clone.position = { ...newPos };
+    }
+  }
+
+  public joinClones(): void {
+    for (const clone of this.clones) {
+      for (const key of clone.inventory.keys) {
+        if (!this.inventory.keys.includes(key)) this.inventory.keys.push(key);
+      }
+      this.inventory.corn += clone.inventory.corn;
+      this.inventory.cores += clone.inventory.cores;
+      if (clone.inventory.hasDrill) this.inventory.hasDrill = true;
+      if (clone.inventory.hasHook) this.inventory.hasHook = true;
+      if (clone.inventory.hasWing) this.inventory.hasWing = true;
+      if (clone.inventory.hasBait) this.inventory.hasBait = true;
+      for (const tool of clone.inventory.tools) {
+        if (!this.inventory.tools.includes(tool)) this.inventory.tools.push(tool);
+      }
+    }
+    this.clones = [];
+    this.emitInventoryChanged();
+    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position });
+  }
+
+  // ---------- Верховая езда ----------
+  public rideMonster(monster: Monster): void {
+    if (this.riddenMonster) this.dismountMonster();
+    this.riddenMonster = { ...monster };
+    this.riddenMonster.isRidden = true;
+    this.position = { ...monster.position };
+    eventBus.emit('MONSTER_TAMED', { monsterId: monster.id });
+  }
+
+  public dismountMonster(): void {
+    if (this.riddenMonster) {
+      this.riddenMonster.isRidden = false;
+      this.riddenMonster = null;
+    }
+  }
+
+  public isRiding(): boolean {
+    return this.riddenMonster !== null;
+  }
+
+  // ---------- Клей и клетка ----------
+  public setGlued(glued: boolean, turns: number = 3): void {
+    this.glued = glued;
+    this.gluedTurns = turns;
+    if (glued) {
+      logger.info('Player', 'setGlued', `Player glued for ${turns} turns`);
+      eventBus.emit('PLAYER_GLUED', { duration: turns });
+    }
+  }
+
+  private decrementGlueTurn(): void {
+    if (this.gluedTurns > 0) {
+      this.gluedTurns--;
+      if (this.gluedTurns === 0) {
+        this.glued = false;
+        logger.info('Player', 'decrementGlueTurn', 'Player no longer glued');
+        eventBus.emit('PLAYER_UNGLUED');
+      }
+    }
+  }
+
+  public setTrapped(trapped: boolean): void {
+    this.trapped = trapped;
+    if (trapped) {
+      logger.info('Player', 'setTrapped', 'Player trapped in cage');
+      eventBus.emit('PLAYER_TRAPPED');
+    } else {
+      logger.info('Player', 'setTrapped', 'Player freed from cage');
+      eventBus.emit('PLAYER_FREED');
+    }
+  }
+
+  // ---------- Приватные вспомогательные методы ----------
   private directionToDelta(dir: 'up' | 'down' | 'left' | 'right'): { col: number; row: number } {
     switch (dir) {
       case 'up': return { col: 0, row: -1 };
@@ -236,5 +383,20 @@ export class Player {
       case 'left': return { col: -1, row: 0 };
       case 'right': return { col: 1, row: 0 };
     }
+  }
+
+  private isWithinBounds(pos: Point): boolean {
+    return pos.col >= 0 && pos.col < this.levelBounds.width && pos.row >= 0 && pos.row < this.levelBounds.height;
+  }
+
+  private canEnterTile(tile: number): boolean {
+    if (tile === 4 || tile === 5) return false; // WALL, FAKE_WALL
+    if (tile === 2 && !this.inventory.hasWing && !this.isGhostMode) return false; // HOLE
+    if ((tile === 32 || tile === 33) && !this.isGhostMode) return false; // LAVA, WATER
+    return true;
+  }
+
+  private emitInventoryChanged(): void {
+    eventBus.emit('INVENTORY_CHANGED', { inventory: this.getInventory() });
   }
 }
