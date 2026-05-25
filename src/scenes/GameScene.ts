@@ -6,14 +6,15 @@ import { LevelData, TileType, Inventory } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { ExecutionEngine } from '../modules/execution';
+import { Player } from '../modules/Player';
 import { logger } from '../core/Logger';
+import { gameEvents as eventBus } from '../core/EventBus';
 
 export class GameScene extends Scene {
   private level: LevelData | null = null;
   private originalLevelData: LevelData | null = null;
   private levelId: string = '';
-  private playerPos: { col: number; row: number };
-  private coinPos: { col: number; row: number };
+  private player: Player | null = null;
   private gridSize: number = 48;
   private playerSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
@@ -32,17 +33,6 @@ export class GameScene extends Scene {
   private needScroll: boolean = false;
   private scrollX: number = 0;
   private scrollY: number = 0;
-  private inventory: Inventory = {
-    keys: [],
-    corn: 0,
-    cores: 0,
-    hasDrill: false,
-    hasHook: false,
-    hasWing: false,
-    hasBait: false,
-    tools: [],
-  };
-  private lastDirection: 'up' | 'down' | 'left' | 'right' = 'right';
 
   constructor() {
     super('GameScene');
@@ -62,33 +52,24 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
     
-    this.playerPos = { ...this.level.startPos };
-    this.coinPos = { ...this.level.coinPos };
-    this.lastInputTime = 0;
-    this.isPlayerControlled = false;
-    this.scrollX = 0;
-    this.scrollY = 0;
-    this.inventory = {
-      keys: [],
-      corn: 0,
-      cores: 0,
-      hasDrill: false,
-      hasHook: false,
-      hasWing: false,
-      hasBait: false,
-      tools: [],
-    };
-    this.lastDirection = 'right';
-    
-    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.coinPos.col},${this.coinPos.row})`);
-    this.createScene();
+    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.level.coinPos.col},${this.level.coinPos.row})`);
   }
 
-  private createScene(): void {
-    if (!this.level) {
-      logger.error('GameScene', 'createScene', 'No level data');
-      return;
-    }
+  create(): void {
+    if (!this.level) return;
+    
+    // Создаём игрока
+    const tileGetter = (col: number, row: number): number => {
+      if (!this.level) return 0;
+      return this.level.map[row]?.[col] ?? 0;
+    };
+    this.player = new Player(
+      this.level.startPos,
+      'right',
+      this.level.width,
+      this.level.height,
+      tileGetter
+    );
     
     this.gameContainer = this.add.container(0, 0);
     
@@ -100,7 +81,7 @@ export class GameScene extends Scene {
     this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
     this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
     
-    logger.debug('GameScene', 'createScene', `Game offset X: ${this.gameOffsetX}, Y: ${this.gameOffsetY}`);
+    logger.debug('GameScene', 'create', `Game offset X: ${this.gameOffsetX}, Y: ${this.gameOffsetY}`);
     
     this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
     
@@ -163,7 +144,9 @@ export class GameScene extends Scene {
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
     
-    this.inventoryUI = new InventoryUI(this, this.inventory);
+    if (this.player) {
+      this.inventoryUI = new InventoryUI(this, this.player.getInventory());
+    }
 
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
@@ -173,13 +156,52 @@ export class GameScene extends Scene {
       depth: 100,
     }).setInteractive({ useHandCursor: true });
     backButton.on('pointerdown', () => {
-      this.inventoryUI.destroy();
+      this.inventoryUI?.destroy();
       this.commandPanel.destroy();
       if (this.executionEngine) this.executionEngine.stop();
       this.scene.start('MainMenu');
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
+    
+    // Подписка на события от ExecutionEngine
+    this.setupExecutionListeners();
+  }
+  
+  private setupExecutionListeners(): void {
+    eventBus.on('PLAYER_MOVED', (payload: any) => {
+      if (payload && payload.to && this.player) {
+        // Обновляем позицию игрока (Player уже обновил внутреннее состояние)
+        this.drawPlayer();
+      }
+    });
+    
+    eventBus.on('INVENTORY_CHANGED', (payload: any) => {
+      if (payload && payload.inventory && this.inventoryUI && this.player) {
+        this.inventoryUI.updateInventory(payload.inventory);
+      }
+    });
+    
+    eventBus.on('EXECUTION_STEP', (payload: any) => {
+      if (payload && payload.command !== undefined) {
+        this.currentCommandIndex = payload.stepIndex;
+        this.commandPanel.highlightCommand(this.currentCommandIndex, 'running');
+      }
+    });
+    
+    eventBus.on('EXECUTION_FINISHED', (payload: any) => {
+      this.isExecuting = false;
+      if (payload && payload.success && payload.result) {
+        // Победа
+        const stars = payload.result.stars;
+        const steps = payload.result.steps;
+        progressManager.completeLevel(this.levelId, stars, steps);
+        this.showVictoryMessage(stars, steps);
+      } else {
+        // Поражение
+        this.showDefeatMessage();
+      }
+    });
   }
   
   private updateContainerPosition(): void {
@@ -221,22 +243,19 @@ export class GameScene extends Scene {
   private resetLevel(): void {
     if (!this.originalLevelData) return;
     this.level = JSON.parse(JSON.stringify(this.originalLevelData));
-    this.playerPos = { ...this.level.startPos };
-    this.coinPos = { ...this.level.coinPos };
-    this.inventory = {
-      keys: [],
-      corn: 0,
-      cores: 0,
-      hasDrill: false,
-      hasHook: false,
-      hasWing: false,
-      hasBait: false,
-      tools: [],
-    };
-    this.lastDirection = 'right';
-    
-    if (this.inventoryUI) {
-      this.inventoryUI.updateInventory(this.inventory);
+    if (this.player) {
+      // Сброс игрока
+      this.player.revoke?.(this.level.startPos, 'right'); // В Player есть revive
+      // Но лучше обновить инвентарь и позицию
+      this.player.resetInventory();
+      // Устанавливаем позицию
+      // (Player имеет методы, но позиция private – используем teleport?)
+      this.player.teleport(this.level.startPos);
+      this.player.setTrapped(false);
+      this.player.setGlued(false, 0);
+    }
+    if (this.inventoryUI && this.player) {
+      this.inventoryUI.updateInventory(this.player.getInventory());
     }
     if (this.executionEngine) {
       this.executionEngine.reset();
@@ -259,63 +278,11 @@ export class GameScene extends Scene {
     this.failedCommandIndex = -1;
     this.commandPanel.clearHighlight();
     
-    // Создаём ExecutionEngine с текущим уровнем и игроком
-    // Для упрощения используем заглушку Player, но в реальности должен быть передан объект player
-    // Создаём временный объект player с нужными методами
-    const dummyPlayer = {
-      getPosition: () => this.playerPos,
-      getDirection: () => this.lastDirection,
-      getInventory: () => this.inventory,
-      move: (cmd: Command) => {
-        // В новой архитектуре движок сам управляет позицией
-        logger.debug('GameScene', 'runProgram', `Move command: ${cmd}`);
-        return true;
-      },
-      teleport: (pos: Point) => {
-        this.playerPos = pos;
-        this.drawPlayer();
-      },
-      setGlued: (glued: boolean, turns?: number) => {},
-      setTrapped: (trapped: boolean) => {},
-      isGlued: () => false,
-      isTrapped: () => false,
-      rideMonster: (monster: any) => {},
-    };
+    if (!this.player) return;
     
-    this.executionEngine = new ExecutionEngine(this.level, dummyPlayer);
+    // Создаём ExecutionEngine с реальным player
+    this.executionEngine = new ExecutionEngine(this.level, this.player);
     this.executionEngine.loadProgram(commands);
-    
-    // Подписываемся на события выполнения
-    const onStep = (payload: any) => {
-      if (payload && payload.command !== undefined) {
-        this.currentCommandIndex = payload.stepIndex;
-        this.commandPanel.highlightCommand(this.currentCommandIndex, 'running');
-        // Обновляем позицию игрока из движка (нужно получить актуальную позицию)
-        // Для этого нужен доступ к player в движке, пока оставим
-        this.drawPlayer();
-      }
-    };
-    const onFinished = async (payload: any) => {
-      eventBus.off('EXECUTION_STEP', onStep);
-      eventBus.off('EXECUTION_FINISHED', onFinished);
-      this.isExecuting = false;
-      if (payload && payload.success) {
-        const result = payload.result;
-        if (result && result.success) {
-          // Победа
-          progressManager.completeLevel(this.levelId, result.stars, result.steps);
-          this.showVictoryMessage(result.stars, result.steps);
-        } else {
-          // Поражение
-          this.showDefeatMessage();
-        }
-      } else {
-        this.showDefeatMessage();
-      }
-    };
-    
-    eventBus.on('EXECUTION_STEP', onStep);
-    eventBus.on('EXECUTION_FINISHED', onFinished);
     
     await this.executionEngine.start();
   }
@@ -331,7 +298,7 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
     
     this.time.delayedCall(500, () => {
-      this.inventoryUI.destroy();
+      this.inventoryUI?.destroy();
       this.commandPanel.destroy();
       this.scene.start('VictoryScreen', { 
         levelId: this.levelId, 
@@ -362,27 +329,24 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B;
-        if (map[row][col] === TileType.WALL) color = 0x555555;
-        if (map[row][col] === TileType.HOLE) color = 0x000000;
-        if (map[row][col] === TileType.BRICK) color = 0xA52A2A;
-        if (map[row][col] === TileType.GOAL) color = 0xffcc00;
-        if (map[row][col] === TileType.KEY) color = 0xffaa00;
-        if (map[row][col] === TileType.DOOR_LOCKED) color = 0x8B0000;
-        if (map[row][col] === TileType.DOOR_UNLOCKED) color = 0x228B22;
-        if (map[row][col] === TileType.CONVEYOR_UP) color = 0x888888;
-        if (map[row][col] === TileType.CONVEYOR_DOWN) color = 0x888888;
-        if (map[row][col] === TileType.CONVEYOR_LEFT) color = 0x888888;
-        if (map[row][col] === TileType.CONVEYOR_RIGHT) color = 0x888888;
-        if (map[row][col] === TileType.SPRING) color = 0xff6600;
-        if (map[row][col] === TileType.TELEPORT_IN) color = 0x9932CC;
-        if (map[row][col] === TileType.TELEPORT_OUT) color = 0x9932CC;
-        if (map[row][col] === TileType.LAVA) color = 0xff4500;
-        if (map[row][col] === TileType.WATER) color = 0x1E90FF;
-        if (map[row][col] === TileType.GLUE) color = 0x88cc88;
-        if (map[row][col] === TileType.CAGE) color = 0xcd7f32;
-        if (map[row][col] === TileType.TRAP) color = 0x8b4513;
-        if (map[row][col] === TileType.GEM) color = 0x00ffcc;
+        let color = 0x8B5A2B; // platform
+        const tile = map[row][col];
+        if (tile === TileType.WALL) color = 0x555555;
+        else if (tile === TileType.HOLE) color = 0x000000;
+        else if (tile === TileType.BRICK) color = 0xA52A2A;
+        else if (tile === TileType.GOAL) color = 0xffcc00;
+        else if (tile === TileType.KEY) color = 0xffaa00;
+        else if (tile === TileType.DOOR_LOCKED) color = 0x8B0000;
+        else if (tile === TileType.DOOR_UNLOCKED) color = 0x228B22;
+        else if (tile === TileType.CONVEYOR_UP || tile === TileType.CONVEYOR_DOWN || tile === TileType.CONVEYOR_LEFT || tile === TileType.CONVEYOR_RIGHT) color = 0x888888;
+        else if (tile === TileType.SPRING) color = 0xff6600;
+        else if (tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT) color = 0x9932CC;
+        else if (tile === TileType.LAVA) color = 0xff4500;
+        else if (tile === TileType.WATER) color = 0x1E90FF;
+        else if (tile === TileType.GLUE) color = 0x88cc88;
+        else if (tile === TileType.CAGE) color = 0xcd7f32;
+        else if (tile === TileType.TRAP) color = 0x8b4513;
+        else if (tile === TileType.GEM) color = 0x00ffcc;
         
         const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
         cell.setStrokeStyle(1, 0xaaaaaa);
@@ -393,9 +357,10 @@ export class GameScene extends Scene {
 
   private drawPlayer(): void {
     if (this.playerSprite) this.playerSprite.destroy();
-    if (!this.level) return;
-    const x = this.playerPos.col * this.gridSize;
-    const y = this.playerPos.row * this.gridSize;
+    if (!this.level || !this.player) return;
+    const pos = this.player.getPosition();
+    const x = pos.col * this.gridSize;
+    const y = pos.row * this.gridSize;
     const color = 0x00ff00;
     this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
     this.playerSprite.setStrokeStyle(2, 0xffffff);
