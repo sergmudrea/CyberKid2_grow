@@ -85,7 +85,10 @@ export class GameScene extends Scene {
     // Настройка камеры для скролла (перемещение камеры, а не контейнера)
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
-    this.cameras.main.centerOn(this.player.getPosition().col * this.gridSize + this.gridSize/2, this.player.getPosition().row * this.gridSize + this.gridSize/2);
+    this.cameras.main.centerOn(
+      this.player.getPosition().col * this.gridSize + this.gridSize/2,
+      this.player.getPosition().row * this.gridSize + this.gridSize/2
+    );
     
     // Скролл мышью
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
@@ -94,31 +97,21 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
     
-    // Перетаскивание правой кнопкой мыши (для удобства)
-    this.input.on('pointerdown', (pointer: any) => {
-      if (pointer.rightButtonDown()) {
-        this.input.on('pointermove', this.onDragMove, this);
-      }
-    });
-    this.input.on('pointerup', () => {
-      this.input.off('pointermove', this.onDragMove, this);
-    });
-    
-    // Клавиши для перемещения камеры
+    // Управление стрелками клавиатуры для перемещения камеры
     this.input.keyboard?.on('keydown-LEFT', () => {
-      this.cameras.main.scrollX -= 30;
+      this.cameras.main.scrollX -= 50;
       this.clampCamera();
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
-      this.cameras.main.scrollX += 30;
+      this.cameras.main.scrollX += 50;
       this.clampCamera();
     });
     this.input.keyboard?.on('keydown-UP', () => {
-      this.cameras.main.scrollY -= 30;
+      this.cameras.main.scrollY -= 50;
       this.clampCamera();
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
-      this.cameras.main.scrollY += 30;
+      this.cameras.main.scrollY += 50;
       this.clampCamera();
     });
     
@@ -144,6 +137,26 @@ export class GameScene extends Scene {
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
+    
+    // Кнопка AUTO (автоматическое решение)
+    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#aa8844',
+      padding: { x: 12, y: 6 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    autoSolveButton.on('pointerdown', () => {
+      if (!this.level) return;
+      const commands: Command[] = [];
+      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
+      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
+      this.commandPanel.setCommands(commands);
+      this.updateVisualizer();
+      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
+    });
+    autoSolveButton.setScrollFactor(0);
+    autoSolveButton.setDepth(100);
     
     // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
@@ -174,18 +187,10 @@ export class GameScene extends Scene {
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
   
-  private onDragMove(pointer: any): void {
-    this.cameras.main.scrollX -= pointer.velocity.x * 0.01;
-    this.cameras.main.scrollY -= pointer.velocity.y * 0.01;
-    this.clampCamera();
-  }
-  
   private setupExecutionListeners(): void {
     eventBus.on('PLAYER_MOVED', (payload: any) => {
       if (payload && payload.to && this.player) {
         this.drawPlayer();
-        // Центрируем камеру на игроке (по желанию)
-        // this.cameras.main.centerOn(this.player.getPosition().col * this.gridSize + this.gridSize/2, this.player.getPosition().row * this.gridSize + this.gridSize/2);
       }
     });
     
