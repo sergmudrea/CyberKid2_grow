@@ -46,7 +46,9 @@ export class GameScene extends Scene {
   async create(): Promise<void> {
     logger.info('GameScene', 'create', 'Loading level...');
     
-    // Загружаем уровень (синхронно ожидаем)
+    // Тестовый красный квадрат для проверки отображения
+    this.add.rectangle(50, 50, 100, 100, 0xff0000);
+    
     const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
       logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
@@ -59,7 +61,6 @@ export class GameScene extends Scene {
     
     logger.info('GameScene', 'create', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.level.coinPos.col},${this.level.coinPos.row})`);
     
-    // Создаём игрока
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -165,7 +166,6 @@ export class GameScene extends Scene {
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
     
-    // Подписка на события от ExecutionEngine
     this.setupExecutionListeners();
   }
   
