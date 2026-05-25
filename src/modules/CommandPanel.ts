@@ -98,26 +98,55 @@ export class CommandPanel {
       this.container.appendChild(btn);
     };
 
+    // Базовые команды движения
     addButton('↑ Up', 'up');
     addButton('↓ Down', 'down');
     addButton('← Left', 'left');
     addButton('→ Right', 'right');
+    
+    // Дополнительные команды
     addButton('📦 Push', 'push');
     addButton('🔑 Use Key', 'use_key');
-    addButton('🎯 Throw', 'throw');
-    addButton('🌽 Feed', 'feed');
+    addButton('📥 Pickup', 'pickup');
+    addButton('🗑 Drop', 'drop');
+    
+    // Инструменты
     addButton('🔧 Drill', 'drill');
     addButton('🪝 Hook', 'hook');
     addButton('🪽 Wing', 'wing');
     addButton('🐟 Bait', 'bait');
-    addButton('🔍 Scan', 'scan');
-    addButton('🐎 Ride', 'ride');
-    addButton('👥 Clone', 'clone');
-    addButton('🤝 Join', 'join');
-    addButton('⏳ Wait', 'wait');
+    
+    // Бой
+    addButton('🎯 Throw', 'throw');
+    addButton('🌽 Feed', 'feed');
+    
+    // Время
     addButton('🐢 Time Slow', 'time_slow');
     addButton('🐇 Time Fast', 'time_fast');
-
+    addButton('⏳ Wait', 'wait');
+    
+    // Функции
+    addButton('📞 Call', 'call');
+    addButton('↩️ Return', 'return');
+    addButton('📥 Param', 'param');
+    
+    // ООП
+    addButton('🏛️ Class', 'class');
+    addButton('✨ New', 'new');
+    addButton('⚙️ Method', 'method');
+    
+    // Параллелизм
+    addButton('👥 Clone', 'clone');
+    addButton('🤝 Join', 'join');
+    
+    // Взаимодействие
+    addButton('🔍 Scan', 'scan');
+    addButton('🐎 Ride', 'ride');
+    
+    // Чёрный ящик
+    addButton('📦 Black Box', 'black_box');
+    
+    // Кнопки управления
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
     runBtn.style.padding = '8px';
@@ -127,6 +156,7 @@ export class CommandPanel {
     runBtn.style.border = 'none';
     runBtn.style.borderRadius = '6px';
     runBtn.style.cursor = 'pointer';
+    runBtn.style.marginTop = '10px';
     runBtn.onclick = () => this.onRunCallback(this.commands);
     this.container.appendChild(runBtn);
 
@@ -155,7 +185,7 @@ export class CommandPanel {
     programContainer.style.top = '50%';
     programContainer.style.right = '20px';
     programContainer.style.transform = 'translateY(-50%)';
-    programContainer.style.width = '200px';
+    programContainer.style.width = '220px';
     programContainer.style.backgroundColor = 'rgba(0,0,0,0.85)';
     programContainer.style.borderRadius = '12px';
     programContainer.style.padding = '10px';
@@ -241,11 +271,37 @@ export class CommandPanel {
       const cmdText = document.createElement('span');
       let icon = '';
       if (cmd === 'up') icon = '↑';
-      if (cmd === 'down') icon = '↓';
-      if (cmd === 'left') icon = '←';
-      if (cmd === 'right') icon = '→';
+      else if (cmd === 'down') icon = '↓';
+      else if (cmd === 'left') icon = '←';
+      else if (cmd === 'right') icon = '→';
+      else if (cmd === 'push') icon = '📦';
+      else if (cmd === 'use_key') icon = '🔑';
+      else if (cmd === 'pickup') icon = '📥';
+      else if (cmd === 'drop') icon = '🗑';
+      else if (cmd === 'drill') icon = '🔧';
+      else if (cmd === 'hook') icon = '🪝';
+      else if (cmd === 'wing') icon = '🪽';
+      else if (cmd === 'bait') icon = '🐟';
+      else if (cmd === 'throw') icon = '🎯';
+      else if (cmd === 'feed') icon = '🌽';
+      else if (cmd === 'time_slow') icon = '🐢';
+      else if (cmd === 'time_fast') icon = '🐇';
+      else if (cmd === 'wait') icon = '⏳';
+      else if (cmd === 'call') icon = '📞';
+      else if (cmd === 'return') icon = '↩️';
+      else if (cmd === 'param') icon = '📥';
+      else if (cmd === 'class') icon = '🏛️';
+      else if (cmd === 'new') icon = '✨';
+      else if (cmd === 'method') icon = '⚙️';
+      else if (cmd === 'clone') icon = '👥';
+      else if (cmd === 'join') icon = '🤝';
+      else if (cmd === 'scan') icon = '🔍';
+      else if (cmd === 'ride') icon = '🐎';
+      else if (cmd === 'black_box') icon = '📦';
+      else icon = cmd.slice(0,2);
+      
       cmdText.textContent = `${icon} ${cmd}`;
-      cmdText.style.fontSize = '14px';
+      cmdText.style.fontSize = '12px';
       cmdText.style.color = '#fff';
 
       const removeBtn = document.createElement('button');
