@@ -104,6 +104,19 @@ export class CommandPanel {
     addButton('→ Right', 'right');
     addButton('📦 Push', 'push');
     addButton('🔑 Use Key', 'use_key');
+    addButton('🎯 Throw', 'throw');
+    addButton('🌽 Feed', 'feed');
+    addButton('🔧 Drill', 'drill');
+    addButton('🪝 Hook', 'hook');
+    addButton('🪽 Wing', 'wing');
+    addButton('🐟 Bait', 'bait');
+    addButton('🔍 Scan', 'scan');
+    addButton('🐎 Ride', 'ride');
+    addButton('👥 Clone', 'clone');
+    addButton('🤝 Join', 'join');
+    addButton('⏳ Wait', 'wait');
+    addButton('🐢 Time Slow', 'time_slow');
+    addButton('🐇 Time Fast', 'time_fast');
 
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
