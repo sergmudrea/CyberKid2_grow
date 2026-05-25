@@ -59,7 +59,7 @@ export class CommandPanel {
     this.container.style.top = '50%';
     this.container.style.left = '20px';
     this.container.style.transform = 'translateY(-50%)';
-    this.container.style.width = '160px';
+    this.container.style.width = '180px';
     this.container.style.backgroundColor = 'rgba(0,0,0,0.85)';
     this.container.style.borderRadius = '12px';
     this.container.style.padding = '10px';
@@ -68,6 +68,8 @@ export class CommandPanel {
     this.container.style.gap = '8px';
     this.container.style.fontFamily = 'monospace';
     this.container.style.zIndex = '1000';
+    this.container.style.maxHeight = '90vh';
+    this.container.style.overflowY = 'auto';
     document.body.appendChild(this.container);
 
     const title = document.createElement('div');
@@ -83,7 +85,7 @@ export class CommandPanel {
       const btn = document.createElement('button');
       btn.textContent = label;
       btn.style.padding = '8px';
-      btn.style.fontSize = '16px';
+      btn.style.fontSize = '14px';
       btn.style.backgroundColor = '#2a2a4a';
       btn.style.color = 'white';
       btn.style.border = 'none';
@@ -146,6 +148,9 @@ export class CommandPanel {
     // Чёрный ящик
     addButton('📦 Black Box', 'black_box');
     
+    // Кнопка AUTO (автоматическое решение)
+    addButton('🤖 AUTO', 'auto');
+    
     // Кнопки управления
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
@@ -185,7 +190,7 @@ export class CommandPanel {
     programContainer.style.top = '50%';
     programContainer.style.right = '20px';
     programContainer.style.transform = 'translateY(-50%)';
-    programContainer.style.width = '220px';
+    programContainer.style.width = '240px';
     programContainer.style.backgroundColor = 'rgba(0,0,0,0.85)';
     programContainer.style.borderRadius = '12px';
     programContainer.style.padding = '10px';
@@ -194,6 +199,7 @@ export class CommandPanel {
     programContainer.style.gap = '10px';
     programContainer.style.fontFamily = 'monospace';
     programContainer.style.zIndex = '1000';
+    programContainer.style.maxHeight = '90vh';
     document.body.appendChild(programContainer);
 
     const title = document.createElement('div');
@@ -209,7 +215,7 @@ export class CommandPanel {
     this.programListDiv.style.backgroundColor = '#1e1e1e';
     this.programListDiv.style.borderRadius = '8px';
     this.programListDiv.style.minHeight = '200px';
-    this.programListDiv.style.maxHeight = '400px';
+    this.programListDiv.style.maxHeight = 'calc(90vh - 120px)';
     this.programListDiv.style.overflowY = 'auto';
     this.programListDiv.style.padding = '8px';
     this.programListDiv.style.display = 'flex';
@@ -298,6 +304,7 @@ export class CommandPanel {
       else if (cmd === 'scan') icon = '🔍';
       else if (cmd === 'ride') icon = '🐎';
       else if (cmd === 'black_box') icon = '📦';
+      else if (cmd === 'auto') icon = '🤖';
       else icon = cmd.slice(0,2);
       
       cmdText.textContent = `${icon} ${cmd}`;
