@@ -1,5 +1,6 @@
 // src/modules/execution/parallelism.ts
-// Команды параллелизма: CLONE, JOIN
+// Полная поддержка параллелизма: CLONE, JOIN
+// Клоны выполняются параллельно (чередование шагов), обновляют позиции, суммируют инвентарь при JOIN.
 
 import { Point, Inventory } from '../../types/index';
 import { ASTNode, CloneInfo } from './types';
@@ -21,14 +22,14 @@ export class ParallelismExecutor {
   }
 
   /**
-   * CLONE — создать клона игрока на текущей позиции
+   * CLONE — создать клона
    */
-  public executeClone(
+  public createClone(
     playerPos: Point,
     currentInventory: Inventory,
     currentAST: ASTNode[],
     currentNodeIndex: number
-  ): 'ok' {
+  ): string {
     const cloneId = `clone_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const cloneInventory = copyInventory(currentInventory);
     
@@ -43,55 +44,20 @@ export class ParallelismExecutor {
     this.clones.set(cloneId, clone);
     this.backdoorUsed = true;
     
-    logInfo('ParallelismExecutor', 'executeClone', `Clone '${cloneId}' created at (${playerPos.col},${playerPos.row})`);
+    logInfo('ParallelismExecutor', 'createClone', `Clone '${cloneId}' created at (${playerPos.col},${playerPos.row})`);
     eventBus.emit('CLONE_CREATED', { cloneId, pos: playerPos });
-    
-    return 'ok';
+    return cloneId;
   }
 
   /**
-   * JOIN — объединить всех клонов, суммируя их инвентарь
+   * Обновить позицию клона
    */
-  public executeJoin(primaryInventory: Inventory): 'ok' {
-    if (this.clones.size === 0) {
-      log('ParallelismExecutor', 'executeJoin', 'No clones to join');
-      return 'ok';
+  public updateClonePosition(cloneId: string, newPos: Point): void {
+    const clone = this.clones.get(cloneId);
+    if (clone) {
+      clone.position = newPos;
+      log('ParallelismExecutor', 'updateClonePosition', `Clone ${cloneId} moved to (${newPos.col},${newPos.row})`);
     }
-
-    // Суммируем инвентарь всех клонов в основной инвентарь
-    for (const [cloneId, clone] of this.clones) {
-      // Ключи
-      for (const key of clone.inventory.keys) {
-        if (!primaryInventory.keys.includes(key)) {
-          primaryInventory.keys.push(key);
-        }
-      }
-      // Кукуруза
-      primaryInventory.corn += clone.inventory.corn;
-      // Ядра
-      primaryInventory.cores += clone.inventory.cores;
-      // Инструменты
-      if (clone.inventory.hasDrill) primaryInventory.hasDrill = true;
-      if (clone.inventory.hasHook) primaryInventory.hasHook = true;
-      if (clone.inventory.hasWing) primaryInventory.hasWing = true;
-      if (clone.inventory.hasBait) primaryInventory.hasBait = true;
-      // Инструменты в массиве
-      for (const tool of clone.inventory.tools) {
-        if (!primaryInventory.tools.includes(tool)) {
-          primaryInventory.tools.push(tool);
-        }
-      }
-      
-      log('ParallelismExecutor', 'executeJoin', `Merged clone '${cloneId}' inventory`);
-    }
-
-    this.clones.clear();
-    this.backdoorUsed = true;
-    logInfo('ParallelismExecutor', 'executeJoin', `Joined ${this.clones.size} clones, inventory updated`);
-    eventBus.emit('INVENTORY_CHANGED', { inventory: primaryInventory });
-    eventBus.emit('CLONES_JOINED', { count: this.clones.size });
-    
-    return 'ok';
   }
 
   /**
@@ -106,6 +72,43 @@ export class ParallelismExecutor {
    */
   public getClone(cloneId: string): CloneInfo | undefined {
     return this.clones.get(cloneId);
+  }
+
+  /**
+   * JOIN — объединить всех клонов в основного игрока
+   */
+  public joinClones(): void {
+    if (this.clones.size === 0) {
+      log('ParallelismExecutor', 'joinClones', 'No clones to join');
+      return;
+    }
+
+    for (const [cloneId, clone] of this.clones) {
+      // Суммируем инвентарь
+      for (const key of clone.inventory.keys) {
+        if (!this.inventory.keys.includes(key)) {
+          this.inventory.keys.push(key);
+        }
+      }
+      this.inventory.corn += clone.inventory.corn;
+      this.inventory.cores += clone.inventory.cores;
+      if (clone.inventory.hasDrill) this.inventory.hasDrill = true;
+      if (clone.inventory.hasHook) this.inventory.hasHook = true;
+      if (clone.inventory.hasWing) this.inventory.hasWing = true;
+      if (clone.inventory.hasBait) this.inventory.hasBait = true;
+      for (const tool of clone.inventory.tools) {
+        if (!this.inventory.tools.includes(tool)) {
+          this.inventory.tools.push(tool);
+        }
+      }
+      log('ParallelismExecutor', 'joinClones', `Merged clone '${cloneId}' inventory`);
+    }
+
+    this.clones.clear();
+    this.backdoorUsed = true;
+    logInfo('ParallelismExecutor', 'joinClones', `All clones joined, inventory updated`);
+    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+    eventBus.emit('CLONES_JOINED');
   }
 
   /**
