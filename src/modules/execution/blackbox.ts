@@ -1,8 +1,9 @@
 // src/modules/execution/blackbox.ts
-// Реализация чёрного ящика (Black Box) — функции преобразования входа в выход
+// Реализация чёрного ящика (Black Box) — функции преобразования входа в выход.
+// Полная поддержка SISO, MIMO, с обновлением инвентаря.
 
 import { Inventory, TileType } from '../../types/index';
-import { log, logError, logInfo } from './helpers';
+import { log, logInfo, logError } from './helpers';
 
 export interface BlackBoxMapping {
   id: string;
@@ -21,7 +22,7 @@ export class BlackBoxProcessor {
   }
 
   private initDefaultMappings(): void {
-    // SISO (Single Input Single Output) — 1 вход, 1 выход
+    // SISO (Single Input Single Output)
     this.mappings.set('identity', {
       id: 'identity',
       inputCount: 1,
@@ -107,10 +108,7 @@ export class BlackBoxProcessor {
       outputCount: 1,
       mapping: (input) => {
         const dirs: Record<string, string> = {
-          up: 'down',
-          down: 'up',
-          left: 'right',
-          right: 'left',
+          up: 'down', down: 'up', left: 'right', right: 'left',
         };
         return dirs[input] || input;
       },
@@ -122,10 +120,7 @@ export class BlackBoxProcessor {
       outputCount: 1,
       mapping: (input) => {
         const dirs: Record<string, string> = {
-          up: 'left',
-          left: 'down',
-          down: 'right',
-          right: 'up',
+          up: 'left', left: 'down', down: 'right', right: 'up',
         };
         return dirs[input] || input;
       },
@@ -137,16 +132,13 @@ export class BlackBoxProcessor {
       outputCount: 1,
       mapping: (input) => {
         const dirs: Record<string, string> = {
-          up: 'right',
-          right: 'down',
-          down: 'left',
-          left: 'up',
+          up: 'right', right: 'down', down: 'left', left: 'up',
         };
         return dirs[input] || input;
       },
     });
 
-    // MIMO (Multiple Input Multiple Output) — 2 входа, 2 выхода
+    // MIMO (Multiple Input Multiple Output)
     this.mappings.set('swap_inventory', {
       id: 'swap_inventory',
       inputCount: 2,
@@ -177,6 +169,9 @@ export class BlackBoxProcessor {
     logInfo('BlackBoxProcessor', 'addMapping', `Added mapping: ${id}`);
   }
 
+  /**
+   * Применить преобразование чёрного ящика к инвентарю игрока
+   */
   public process(mappingId: string, input: any): any {
     const mapping = this.mappings.get(mappingId);
     if (!mapping) {
@@ -196,22 +191,56 @@ export class BlackBoxProcessor {
     }
   }
 
-  public processSISO(mappingId: string, input: any): any {
+  /**
+   * Применить SISO преобразование и обновить инвентарь
+   */
+  public applySISO(mappingId: string, inputType: string, removeInput: boolean = true): void {
     const mapping = this.mappings.get(mappingId);
     if (!mapping || mapping.inputCount !== 1 || mapping.outputCount !== 1) {
-      logError('BlackBoxProcessor', 'processSISO', `Invalid mapping for SISO: ${mappingId}`);
-      return input;
+      logError('BlackBoxProcessor', 'applySISO', `Invalid mapping for SISO: ${mappingId}`);
+      return;
     }
-    return this.process(mappingId, input);
+
+    let input = null;
+    if (inputType === 'corn' && this.inventory.corn > 0) input = 'corn';
+    else if (inputType === 'core' && this.inventory.cores > 0) input = 'core';
+    else if (inputType === 'key' && this.inventory.keys.length > 0) input = this.inventory.keys[0];
+    else if (inputType === 'drill' && this.inventory.hasDrill) input = 'drill';
+    else if (inputType === 'hook' && this.inventory.hasHook) input = 'hook';
+    else if (inputType === 'wing' && this.inventory.hasWing) input = 'wing';
+    else if (inputType === 'bait' && this.inventory.hasBait) input = 'bait';
+    else return;
+
+    const output = this.process(mappingId, input);
+    if (removeInput) {
+      if (input === 'corn') this.inventory.corn--;
+      else if (input === 'core') this.inventory.cores--;
+      else if (input === 'drill') this.inventory.hasDrill = false;
+      else if (input === 'hook') this.inventory.hasHook = false;
+      else if (input === 'wing') this.inventory.hasWing = false;
+      else if (input === 'bait') this.inventory.hasBait = false;
+      else if (input?.startsWith('key_')) this.inventory.keys.pop();
+    }
+    if (output === 'corn') this.inventory.corn++;
+    else if (output === 'core') this.inventory.cores++;
+    else if (output === 'drill') this.inventory.hasDrill = true;
+    else if (output === 'hook') this.inventory.hasHook = true;
+    else if (output === 'wing') this.inventory.hasWing = true;
+    else if (output === 'bait') this.inventory.hasBait = true;
+    else if (output === 'power_core') this.inventory.cores += 3;
+    else if (output?.startsWith('key_')) this.inventory.keys.push(output);
   }
 
-  public processMIMO(mappingId: string, inputs: any[]): any {
+  /**
+   * Применить MIMO преобразование
+   */
+  public applyMIMO(mappingId: string): void {
     const mapping = this.mappings.get(mappingId);
-    if (!mapping) {
-      logError('BlackBoxProcessor', 'processMIMO', `Mapping not found: ${mappingId}`);
-      return inputs;
+    if (!mapping || mapping.inputCount !== 2) {
+      logError('BlackBoxProcessor', 'applyMIMO', `Invalid mapping for MIMO: ${mappingId}`);
+      return;
     }
-    return this.process(mappingId, inputs);
+    this.process(mappingId, null);
   }
 
   public getMapping(id: string): BlackBoxMapping | undefined {
