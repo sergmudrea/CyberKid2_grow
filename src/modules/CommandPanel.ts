@@ -103,6 +103,7 @@ export class CommandPanel {
     addButton('← Left', 'left');
     addButton('→ Right', 'right');
     addButton('📦 Push', 'push');
+    addButton('🔑 Use Key', 'use_key');
 
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
