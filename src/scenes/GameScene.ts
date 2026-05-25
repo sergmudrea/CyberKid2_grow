@@ -56,6 +56,7 @@ export class GameScene extends Scene {
   }
 
   create(): void {
+    logger.info('GameScene', 'create', 'Creating game scene');
     if (!this.level) return;
     
     // Создаём игрока
@@ -171,7 +172,6 @@ export class GameScene extends Scene {
   private setupExecutionListeners(): void {
     eventBus.on('PLAYER_MOVED', (payload: any) => {
       if (payload && payload.to && this.player) {
-        // Обновляем позицию игрока (Player уже обновил внутреннее состояние)
         this.drawPlayer();
       }
     });
@@ -192,13 +192,11 @@ export class GameScene extends Scene {
     eventBus.on('EXECUTION_FINISHED', (payload: any) => {
       this.isExecuting = false;
       if (payload && payload.success && payload.result) {
-        // Победа
         const stars = payload.result.stars;
         const steps = payload.result.steps;
         progressManager.completeLevel(this.levelId, stars, steps);
         this.showVictoryMessage(stars, steps);
       } else {
-        // Поражение
         this.showDefeatMessage();
       }
     });
@@ -244,13 +242,8 @@ export class GameScene extends Scene {
     if (!this.originalLevelData) return;
     this.level = JSON.parse(JSON.stringify(this.originalLevelData));
     if (this.player) {
-      // Сброс игрока
-      this.player.revoke?.(this.level.startPos, 'right'); // В Player есть revive
-      // Но лучше обновить инвентарь и позицию
-      this.player.resetInventory();
-      // Устанавливаем позицию
-      // (Player имеет методы, но позиция private – используем teleport?)
       this.player.teleport(this.level.startPos);
+      this.player.resetInventory();
       this.player.setTrapped(false);
       this.player.setGlued(false, 0);
     }
@@ -280,7 +273,6 @@ export class GameScene extends Scene {
     
     if (!this.player) return;
     
-    // Создаём ExecutionEngine с реальным player
     this.executionEngine = new ExecutionEngine(this.level, this.player);
     this.executionEngine.loadProgram(commands);
     
@@ -329,7 +321,7 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B; // platform
+        let color = 0x8B5A2B;
         const tile = map[row][col];
         if (tile === TileType.WALL) color = 0x555555;
         else if (tile === TileType.HOLE) color = 0x000000;
@@ -338,7 +330,7 @@ export class GameScene extends Scene {
         else if (tile === TileType.KEY) color = 0xffaa00;
         else if (tile === TileType.DOOR_LOCKED) color = 0x8B0000;
         else if (tile === TileType.DOOR_UNLOCKED) color = 0x228B22;
-        else if (tile === TileType.CONVEYOR_UP || tile === TileType.CONVEYOR_DOWN || tile === TileType.CONVEYOR_LEFT || tile === TileType.CONVEYOR_RIGHT) color = 0x888888;
+        else if (tile >= TileType.CONVEYOR_UP && tile <= TileType.CONVEYOR_RIGHT) color = 0x888888;
         else if (tile === TileType.SPRING) color = 0xff6600;
         else if (tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT) color = 0x9932CC;
         else if (tile === TileType.LAVA) color = 0xff4500;
