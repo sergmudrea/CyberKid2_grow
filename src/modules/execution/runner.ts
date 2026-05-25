@@ -1,6 +1,7 @@
 // src/modules/execution/runner.ts
 // Основной цикл выполнения AST
 
+import { Command } from '../../types/index';
 import { ASTNode, CallFrame, ExecutionResult } from './types';
 import { ConditionEvaluator } from './conditions';
 import { MovementExecutor } from './movement';
@@ -15,10 +16,10 @@ import { InteractionsExecutor } from './interactions';
 import { BlackBoxProcessor } from './blackbox';
 import { TilesExecutor } from './tiles';
 import { MonstersExecutor } from './monsters';
+import { ASTParser } from './parser';
 import { delay, log, logError, logInfo, calculateStars } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
-import { LevelData, Point, Inventory, Monster, Command } from '../../types/index';
-import { logger } from '../../core/Logger';
+import { LevelData, Point, Inventory } from '../../types/index';
 
 export interface RunnerContext {
   level: LevelData;
@@ -94,6 +95,18 @@ export class ASTRunner {
     logInfo('ASTRunner', 'constructor', 'ASTRunner initialized');
   }
 
+  public loadProgram(commands: Command[]): void {
+    const parser = new ASTParser(commands);
+    this.context.ast = parser.parse();
+    this.currentAST = [...this.context.ast];
+    this.currentNodeIndex = 0;
+    this.callStack = [];
+    this.stepCount = 0;
+    this.backdoorUsed = false;
+    this.status = 'idle';
+    logInfo('ASTRunner', 'loadProgram', `Program loaded with ${commands.length} commands, AST has ${this.context.ast.length} nodes`);
+  }
+
   public async run(): Promise<ExecutionResult> {
     this.status = 'running';
     eventBus.emit('EXECUTION_START');
@@ -122,10 +135,10 @@ export class ASTRunner {
 
     const success = this.status === 'finished';
     const isWin = this.checkVictory();
-    const result = this.buildResult(success && isWin);
+    const finalResult = this.buildResult(success && isWin);
 
-    eventBus.emit('EXECUTION_FINISHED', { success: success && isWin, result });
-    return result;
+    eventBus.emit('EXECUTION_FINISHED', { success: success && isWin, result: finalResult });
+    return finalResult;
   }
 
   private async executeCurrentNode(): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
@@ -165,7 +178,6 @@ export class ASTRunner {
     }
 
     if (node.type === 'function') {
-      // Определение функции — сохраняем в FunctionsExecutor
       if (node.functionName) {
         this.functionsExecutor.defineFunction(node.functionName, node.children || []);
       }
@@ -173,7 +185,6 @@ export class ASTRunner {
     }
 
     if (node.type === 'class') {
-      // Определение класса — сохраняем в OOPExecutor
       if (node.className) {
         this.oopExecutor.defineClass(node.className, node.children || []);
       }
@@ -253,13 +264,13 @@ export class ASTRunner {
 
     if (node.blockType === 'else') {
       const savedAST = this.currentAST;
-        const savedIndex = this.currentNodeIndex;
-        this.currentAST = node.children || [];
-        this.currentNodeIndex = 0;
-        const result = await this.runSubAST();
-        this.currentAST = savedAST;
-        this.currentNodeIndex = savedIndex;
-        return result;
+      const savedIndex = this.currentNodeIndex;
+      this.currentAST = node.children || [];
+      this.currentNodeIndex = 0;
+      const result = await this.runSubAST();
+      this.currentAST = savedAST;
+      this.currentNodeIndex = savedIndex;
+      return result;
     }
 
     if (node.blockType === 'if_else' && node.children) {
@@ -347,37 +358,32 @@ export class ASTRunner {
       // Время
       case Command.TIME_SLOW:
         this.context.speedMultiplier = 0.5;
+        this.timeExecutor.setSlow();
         return 'ok';
       case Command.TIME_FAST:
         this.context.speedMultiplier = 2;
+        this.timeExecutor.setFast();
         return 'ok';
       case Command.WAIT:
         return await this.timeExecutor.executeWait(this.context.speedMultiplier);
 
       // Функции
       case Command.CALL:
-        return this.functionsExecutor.executeCall(this.currentAST, this.currentNodeIndex, (ast, index) => {
-          this.callStack.push({
-            functionName: '',
-            returnNodeIndex: this.currentNodeIndex,
-            localVars: new Map(),
-            nodeStack: this.currentAST,
-            nodeIndex: this.currentNodeIndex,
-            parameters: new Map(),
-          });
-          this.currentAST = ast;
-          this.currentNodeIndex = index;
+        return this.functionsExecutor.executeCall(this.currentAST, this.currentNodeIndex, (newAST, newIndex, frame) => {
+          this.callStack.push(frame);
+          this.currentAST = newAST;
+          this.currentNodeIndex = newIndex;
         });
       case Command.RETURN:
-        return this.functionsExecutor.executeReturn(this.callStack, (stack, ast, index) => {
-          this.callStack = stack;
-          this.currentAST = ast;
-          this.currentNodeIndex = index;
+        return this.functionsExecutor.executeReturn(this.callStack, (newStack, newAST, newIndex) => {
+          this.callStack = newStack;
+          this.currentAST = newAST;
+          this.currentNodeIndex = newIndex;
         });
 
       // ООП
       case Command.NEW:
-        return this.oopExecutor.executeNew(this.currentAST[this.currentNodeIndex]?.className);
+        return this.oopExecutor.executeNew(this.currentAST[this.currentNodeIndex]?.className || '');
       case Command.METHOD:
         return this.oopExecutor.executeMethod();
 
@@ -394,15 +400,17 @@ export class ASTRunner {
 
       // Взаимодействие
       case Command.PUSH:
-        return this.interactionsExecutor.executePush(this.lastDirection);
+        this.interactionsExecutor.setLastDirection(this.lastDirection);
+        return this.interactionsExecutor.executePush();
       case Command.SCAN:
         return this.interactionsExecutor.executeScan(this.context.player.getPosition());
       case Command.RIDE:
-        return this.interactionsExecutor.executeRide(this.lastDirection);
+        this.interactionsExecutor.setLastDirection(this.lastDirection);
+        return this.interactionsExecutor.executeRide();
 
-      // Чёрный ящик (обрабатывается при движении на клетку)
+      // Чёрный ящик (обрабатывается в движении)
       case Command.BLACK_BOX:
-        return this.blackBoxProcessor.process('identity', null) ? 'ok' : 'ok';
+        return 'ok';
 
       default:
         log('ASTRunner', 'executeCommand', `Unknown command: ${cmd}`);
