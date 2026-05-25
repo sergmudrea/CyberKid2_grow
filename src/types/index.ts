@@ -1,15 +1,16 @@
 export type Command = 
   | 'up' | 'down' | 'left' | 'right'
-  | 'for_n' | 'while_wall' | 'while_hole' | 'while_monster'
+  | 'for_n' | 'for_loop' | 'while_monster' | 'while_wall' | 'while_hole' | 'repeat'
   | 'if_wall' | 'if_hole' | 'if_monster' | 'if_coin' | 'if_key' | 'if_no_key' | 'else'
-  | 'drill' | 'pickup' | 'drop' | 'use_key'
-  | 'wait' | 'time_slow' | 'time_fast'
-  | 'push'
-  | 'clone' | 'join'
-  | 'call' | 'def' | 'return'
+  | 'push' | 'pickup' | 'drop' | 'use_key'
+  | 'drill' | 'hook' | 'wing' | 'bait'
+  | 'throw' | 'feed'
+  | 'time_slow' | 'time_fast' | 'wait'
+  | 'call' | 'def' | 'return' | 'param'
   | 'class' | 'new' | 'method'
-  | 'throw' | 'feed' | 'hook' | 'bait' | 'scan'
-  | 'wing' | 'ride';
+  | 'clone' | 'join'
+  | 'scan' | 'ride'
+  | 'black_box';
 
 export enum TileType {
   PLATFORM = 0,
@@ -34,8 +35,28 @@ export enum TileType {
   SPRING = 23,
   TELEPORT_IN = 24,
   TELEPORT_OUT = 25,
+  BLACK_BOX = 26,
+  SENSOR = 27,
+  LEVER = 28,
+  BUTTON = 29,
+  TIMER = 30,
+  SORTER = 31,
   LAVA = 32,
   WATER = 33,
+  BRIDGE = 34,
+  BRIDGE_ACTIVE = 35,
+  ROCKET = 36,
+  MIRROR = 37,
+  CLONE_POINT = 38,
+  RIDE_POINT = 39,
+  NEURO_STAB = 40,
+  // Новые механики
+  GLUE = 41,          // Клей (приклеивает)
+  CAGE = 42,          // Клетка (ловит)
+  TRAP = 43,          // Ловушка (превращает монстра в добычу)
+  CAGE_KEY = 44,      // Ключ от клетки (отдельный предмет)
+  PRISONER = 45,      // Пойманный субъект (временно)
+  GEM = 46,           // Драгоценность (результат ловушки)
 }
 
 export interface Point {
@@ -66,6 +87,20 @@ export interface LevelData {
   optimalSteps?: number;
   initialCode?: Command[];
   items?: { id: string; pos: Point }[];
+  objects?: {
+    teleports?: any[];
+    conveyors?: any[];
+    springs?: any[];
+    blackBoxes?: any[];
+    buttons?: any[];
+    levers?: any[];
+    timers?: any[];
+    sensors?: any[];
+    sorters?: any[];
+    monsters?: any[];
+    cages?: any[];
+    traps?: any[];
+  };
 }
 
 export interface LevelStats {
@@ -74,6 +109,9 @@ export interface LevelStats {
   bestSteps: number;
   completed: boolean;
   lastPlayed: number;
+  blackStar?: boolean;
+  explorationUsed?: boolean;
+  backdoorUsed?: boolean;
 }
 
 export interface PlayerProgress {
