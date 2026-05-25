@@ -1,16 +1,52 @@
-export type Command = 
-  | 'up' | 'down' | 'left' | 'right'
-  | 'for_n' | 'for_loop' | 'while_monster' | 'while_wall' | 'while_hole' | 'repeat'
-  | 'if_wall' | 'if_hole' | 'if_monster' | 'if_coin' | 'if_key' | 'if_no_key' | 'else'
-  | 'push' | 'pickup' | 'drop' | 'use_key'
-  | 'drill' | 'hook' | 'wing' | 'bait'
-  | 'throw' | 'feed'
-  | 'time_slow' | 'time_fast' | 'wait'
-  | 'call' | 'def' | 'return' | 'param'
-  | 'class' | 'new' | 'method'
-  | 'clone' | 'join'
-  | 'scan' | 'ride'
-  | 'black_box';
+// src/types/index.ts
+// Все типы данных для игры
+
+export enum Command {
+  UP = 'up',
+  DOWN = 'down',
+  LEFT = 'left',
+  RIGHT = 'right',
+  FOR_N = 'for_n',
+  FOR_LOOP = 'for_loop',
+  WHILE_MONSTER = 'while_monster',
+  WHILE_WALL = 'while_wall',
+  WHILE_HOLE = 'while_hole',
+  REPEAT = 'repeat',
+  IF_WALL = 'if_wall',
+  IF_HOLE = 'if_hole',
+  IF_MONSTER = 'if_monster',
+  IF_COIN = 'if_coin',
+  IF_KEY = 'if_key',
+  IF_NO_KEY = 'if_no_key',
+  ELSE = 'else',
+  CALL = 'call',
+  DEF = 'def',
+  RETURN = 'return',
+  PARAM = 'param',
+  CLASS = 'class',
+  NEW = 'new',
+  METHOD = 'method',
+  CLONE = 'clone',
+  JOIN = 'join',
+  PUSH = 'push',
+  THROW = 'throw',
+  FEED = 'feed',
+  HOOK = 'hook',
+  DRILL = 'drill',
+  BAIT = 'bait',
+  SCAN = 'scan',
+  PICKUP = 'pickup',
+  DROP = 'drop',
+  USE_KEY = 'use_key',
+  TIME_SLOW = 'time_slow',
+  TIME_FAST = 'time_fast',
+  WAIT = 'wait',
+  WING = 'wing',
+  RIDE = 'ride',
+  BLACK_BOX = 'black_box',
+  START = 'start',
+  END = 'end'
+}
 
 export enum TileType {
   PLATFORM = 0,
@@ -50,13 +86,12 @@ export enum TileType {
   CLONE_POINT = 38,
   RIDE_POINT = 39,
   NEURO_STAB = 40,
-  // Новые механики
-  GLUE = 41,          // Клей (приклеивает)
-  CAGE = 42,          // Клетка (ловит)
-  TRAP = 43,          // Ловушка (превращает монстра в добычу)
-  CAGE_KEY = 44,      // Ключ от клетки (отдельный предмет)
-  PRISONER = 45,      // Пойманный субъект (временно)
-  GEM = 46,           // Драгоценность (результат ловушки)
+  GLUE = 41,
+  CAGE = 42,
+  TRAP = 43,
+  CAGE_KEY = 44,
+  PRISONER = 45,
+  GEM = 46
 }
 
 export interface Point {
@@ -87,20 +122,7 @@ export interface LevelData {
   optimalSteps?: number;
   initialCode?: Command[];
   items?: { id: string; pos: Point }[];
-  objects?: {
-    teleports?: any[];
-    conveyors?: any[];
-    springs?: any[];
-    blackBoxes?: any[];
-    buttons?: any[];
-    levers?: any[];
-    timers?: any[];
-    sensors?: any[];
-    sorters?: any[];
-    monsters?: any[];
-    cages?: any[];
-    traps?: any[];
-  };
+  objects?: any;
 }
 
 export interface LevelStats {
