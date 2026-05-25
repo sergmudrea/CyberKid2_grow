@@ -1,8 +1,8 @@
 // src/modules/Player.ts
 // Эйдо: Управление персонажем (позиция, направление, инвентарь, клоны, верховая езда).
-// Поддерживает: движение, телепортацию, эффекты конвейера/пружины, клей, клетку (ловушку),
-// клонирование, верховую езду, инвентарь, смерть/возрождение.
-// Эмитит события через EventBus: PLAYER_MOVED, PLAYER_DIED, INVENTORY_CHANGED, CLONE_CREATED и др.
+// Полностью совместим с новым ExecutionEngine. Поддерживает: движение, телепортацию,
+// эффекты конвейера/пружины, клей, клетку (ловушку), клонирование, верховую езду, инвентарь,
+// смерть/возрождение. Эмитит события через EventBus.
 
 import { Point, Inventory, Monster, Command } from '../types/index';
 import { gameEvents as eventBus } from '../core/EventBus';
@@ -27,7 +27,7 @@ export class Player {
   private levelBounds: { width: number; height: number };
   private tileMap: (col: number, row: number) => number;
 
-  // Новые поля для механик
+  // Состояния для новых механик
   private glued: boolean = false;
   private gluedTurns: number = 0;
   private trapped: boolean = false;
@@ -112,6 +112,7 @@ export class Player {
 
     const oldPos = { ...this.position };
     this.position = newPos;
+    this.direction = direction;
     this.direction = direction;
 
     eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
