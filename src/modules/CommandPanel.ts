@@ -29,6 +29,7 @@ export class CommandPanel {
   public setCommands(commands: Command[]): void {
     this.commands = [...commands];
     this.updateProgramList();
+    this.onAddCommandCallback(this.commands);
   }
 
   public highlightCommand(index: number, type: 'running' | 'error'): void {
@@ -252,7 +253,8 @@ export class CommandPanel {
       if (saved) {
         this.commands = JSON.parse(saved);
         this.updateProgramList();
-        this.onAddCommandCallback(this.commands);
+        this.onClearCallback(); // сброс уровня (робот на старт, стрелки очищаются)
+        this.onAddCommandCallback(this.commands); // обновление визуализатора
         alert('Program loaded!');
       } else {
         alert('No saved program found');
