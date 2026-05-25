@@ -38,13 +38,18 @@ export class GameScene extends Scene {
     super('GameScene');
   }
 
-  async init(data: { levelId: string }): Promise<void> {
-    logger.debug('GameScene', 'init', `Initializing with levelId: ${data.levelId}`);
+  init(data: { levelId: string }): void {
     this.levelId = data.levelId;
-    const loadedLevel = await levelManager.loadLevel(this.levelId);
+    logger.debug('GameScene', 'init', `levelId set to ${this.levelId}`);
+  }
+
+  async create(): Promise<void> {
+    logger.info('GameScene', 'create', 'Loading level...');
     
+    // Загружаем уровень (синхронно ожидаем)
+    const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
-      logger.error('GameScene', 'init', `Level not found: ${this.levelId}`);
+      logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
       this.scene.start('MainMenu');
       return;
     }
@@ -52,12 +57,7 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
     
-    logger.info('GameScene', 'init', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.level.coinPos.col},${this.level.coinPos.row})`);
-  }
-
-  create(): void {
-    logger.info('GameScene', 'create', 'Creating game scene');
-    if (!this.level) return;
+    logger.info('GameScene', 'create', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.level.coinPos.col},${this.level.coinPos.row})`);
     
     // Создаём игрока
     const tileGetter = (col: number, row: number): number => {
@@ -315,7 +315,10 @@ export class GameScene extends Scene {
   }
 
   private drawGrid(): void {
-    if (!this.level) return;
+    if (!this.level) {
+      logger.error('GameScene', 'drawGrid', 'No level data');
+      return;
+    }
     const { width, height, map } = this.level;
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
