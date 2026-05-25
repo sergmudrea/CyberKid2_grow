@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate Complete CyberKid Assets</title></head>
+<body>
+<h2>Generating all CyberKid assets...</h2>
+<p id="status">Processing...</p>
+<canvas id="canvas" width="64" height="64" style="display:none"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let count = 0;
+let total = 0;
+let zipContent = {};
+
+function download(filename, dataUrl) {
+  zipContent[filename] = dataUrl.split(',')[1];
+  count++;
+  document.getElementById('status').innerHTML = `Generated ${count}/${total} assets...`;
+  if (count === total) {
+    createZip();
+  }
+}
+
+function generateTile(filename, color, icon) {
+  total++;
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = '#aaa';
+  ctx.strokeRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '32px Arial';
+  ctx.fillText(icon, 16, 48);
+  download(filename, canvas.toDataURL());
+}
+
+function generatePlayer(filename, color, icon) {
+  total++;
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '40px Arial';
+  ctx.fillText(icon, 12, 52);
+  download(filename, canvas.toDataURL());
+}
+
+function generateEffect(filename, color, icon, bgColor = '#1a1a2a') {
+  total++;
+  canvas.width = 64;
+  canvas.height = 64;
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '32px Arial';
+  ctx.fillText(icon, 20, 48);
+  download(filename, canvas.toDataURL());
+}
+
+// ============ ТАЙЛЫ (TILES) - ПОЛНЫЙ СПИСОК ============
+generateTile('tiles/platform.png', '#8B5A2B', '⬜');
+generateTile('tiles/sky.png', '#87CEEB', '☁️');
+generateTile('tiles/hole.png', '#000000', '🕳️');
+generateTile('tiles/brick.png', '#A52A2A', '🧱');
+generateTile('tiles/wall.png', '#555555', '🧱');
+generateTile('tiles/fake_wall.png', '#888888', '❓');
+generateTile('tiles/ladder.png', '#8B4513', '🪜');
+generateTile('tiles/goal.png', '#FFD700', '💰');
+generateTile('tiles/start.png', '#00AA00', '🚀');
+generateTile('tiles/key.png', '#FFD700', '🔑');
+generateTile('tiles/door_locked.png', '#8B0000', '🔒');
+generateTile('tiles/door_unlocked.png', '#228B22', '🔓');
+generateTile('tiles/corn.png', '#FFA500', '🌽');
+generateTile('tiles/core.png', '#9370DB', '💎');
+generateTile('tiles/drill.png', '#888888', '🔧');
+generateTile('tiles/hook.png', '#C0C0C0', '🪝');
+generateTile('tiles/wing.png', '#FFFFFF', '🪽');
+generateTile('tiles/bait.png', '#FF6347', '🐟');
+generateTile('tiles/conveyor_up.png', '#666666', '⬆️');
+generateTile('tiles/conveyor_down.png', '#666666', '⬇️');
+generateTile('tiles/conveyor_left.png', '#666666', '⬅️');
+generateTile('tiles/conveyor_right.png', '#666666', '➡️');
+generateTile('tiles/spring.png', '#FF6600', '⬆️⬆️');
+generateTile('tiles/teleport_in.png', '#9932CC', '🌀');
+generateTile('tiles/teleport_out.png', '#9932CC', '🌀');
+generateTile('tiles/black_box.png', '#2F4F4F', '📦');
+generateTile('tiles/sensor.png', '#00CED1', '📡');
+generateTile('tiles/lever.png', '#D2691E', '🎚️');
+generateTile('tiles/button.png', '#DC143C', '🔘');
+generateTile('tiles/timer.png', '#FFD700', '⏲️');
+generateTile('tiles/sorter.png', '#4B0082', '📊');
+generateTile('tiles/lava.png', '#FF4500', '🌋');
+generateTile('tiles/water.png', '#1E90FF', '💧');
+generateTile('tiles/bridge.png', '#8B4513', '🌉');
+generateTile('tiles/bridge_active.png', '#32CD32', '🌉✅');
+generateTile('tiles/rocket.png', '#FF4500', '🚀');
+generateTile('tiles/mirror.png', '#C0C0C0', '🪞');
+generateTile('tiles/clone_point.png', '#00CED1', '👥');
+generateTile('tiles/ride_point.png', '#DAA520', '🐎');
+generateTile('tiles/neuro_stab.png', '#8A2BE2', '🧠');
+
+// ============ ИГРОК (PLAYER) ============
+generatePlayer('player/player.png', '#00BFFF', '🤖');
+generatePlayer('player/player_up.png', '#00BFFF', '↑');
+generatePlayer('player/player_down.png', '#00BFFF', '↓');
+generatePlayer('player/player_left.png', '#00BFFF', '←');
+generatePlayer('player/player_right.png', '#00BFFF', '→');
+generatePlayer('player/player_death.png', '#FF0000', '💀');
+generatePlayer('player/player_victory.png', '#FFD700', '🏆');
+
+// ============ МОНСТРЫ (MONSTERS) ============
+generatePlayer('monsters/monster_patrol.png', '#8B008B', '👾');
+generatePlayer('monsters/monster_chase.png', '#DC143C', '👾⚡');
+generatePlayer('monsters/monster_tameable.png', '#228B22', '👾❤️');
+generatePlayer('monsters/monster_phased.png', '#9370DB', '👾🌫️');
+generatePlayer('monsters/monster_zombie.png', '#556B2F', '🧟');
+generatePlayer('monsters/monster_boss.png', '#8B0000', '👾👑');
+generatePlayer('monsters/mama_hedgehog.png', '#FF69B4', '🦔');
+generatePlayer('monsters/baby_hedgehog.png', '#FFB6C1', '🦔');
+
+// ============ UI КНОПКИ ============
+generatePlayer('ui/button_run.png', '#00AA44', '▶');
+generatePlayer('ui/button_clear.png', '#AA4444', '🗑');
+generatePlayer('ui/button_save.png', '#4444AA', '💾');
+generatePlayer('ui/button_load.png', '#AA8844', '📂');
+generatePlayer('ui/button_reset.png', '#FF6600', '🔄');
+generatePlayer('ui/button_settings.png', '#888888', '⚙️');
+generatePlayer('ui/button_play.png', '#00AA44', '▶');
+generatePlayer('ui/button_stop.png', '#AA4444', '⏹️');
+
+// ============ ЭФФЕКТЫ ============
+generateEffect('effects/teleport.png', '#AA44AA', '🌀', '#1a1a2a');
+generateEffect('effects/death.png', '#AA0000', '💀', '#1a1a2a');
+generateEffect('effects/victory.png', '#FFAA00', '🏆', '#1a1a2a');
+generateEffect('effects/pickup.png', '#FFD700', '✨', '#1a1a2a');
+generateEffect('effects/explosion.png', '#FF4500', '💥', '#1a1a2a');
+generateEffect('effects/heal.png', '#00FF00', '❤️', '#1a1a2a');
+
+// ============ ПРЕДМЕТЫ (ITEMS) ============
+generateTile('items/corn.png', '#FFA500', '🌽');
+generateTile('items/core.png', '#9370DB', '💎');
+generateTile('items/key.png', '#FFD700', '🔑');
+generateTile('items/drill.png', '#888888', '🔧');
+generateTile('items/hook.png', '#C0C0C0', '🪝');
+generateTile('items/wing.png', '#FFFFFF', '🪽');
+generateTile('items/bait.png', '#FF6347', '🐟');
+generateTile('items/star.png', '#FFD700', '⭐');
+generateTile('items/black_star.png', '#000000', '⭐');
+
+// ============ ФОНЫ ============
+generateTile('backgrounds/menu_bg.png', '#0a0a2a', '🌌');
+generateTile('backgrounds/world_map_bg.png', '#0a0a2a', '🗺️');
+generateTile('backgrounds/victory_bg.png', '#1a1a4a', '🏆');
+
+function createZip() {
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+  script.onload = () => {
+    const zip = new JSZip();
+    for (const [filename, base64] of Object.entries(zipContent)) {
+      zip.file(filename, base64, { base64: true });
+    }
+    zip.generateAsync({ type: 'blob' }).then(function(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cyberkid_complete_assets.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+      document.getElementById('status').innerHTML = '✅ Complete! Assets downloaded as cyberkid_complete_assets.zip (Total: ' + total + ' files)';
+    });
+  };
+  document.body.appendChild(script);
+}
+</script>
+</body>
+</html>
