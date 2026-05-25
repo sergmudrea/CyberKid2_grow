@@ -1,0 +1,88 @@
+{
+  "id": "meadow_004",
+  "name": "Test All Mechanics",
+  "worldId": "meadow",
+  "width": 20,
+  "height": 20,
+  "map": [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,10,0,0,0,0,0,11,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
+  ],
+  "startPos": { "col": 0, "row": 0 },
+  "coinPos": { "col": 19, "row": 19 },
+  "optimalSteps": 50,
+  "objects": {
+    "monsters": [
+      { "id": "monster_patrol_1", "type": "patrol", "position": { "col": 4, "row": 2 }, "direction": "right", "isTamed": false, "isRidden": false, "patrolPath": [{ "col": 4, "row": 2 }, { "col": 4, "row": 6 }] },
+      { "id": "monster_chase_1", "type": "chase", "position": { "col": 15, "row": 15 }, "direction": "right", "isTamed": false, "isRidden": false },
+      { "id": "monster_tameable_1", "type": "tameable", "position": { "col": 17, "row": 17 }, "direction": "right", "isTamed": false, "isRidden": false }
+    ],
+    "teleports": [
+      { "id": "tp1", "entry": { "col": 0, "row": 5 }, "exit": { "col": 19, "row": 5 } }
+    ],
+    "conveyors": [
+      { "id": "conv1", "position": { "col": 10, "row": 10 }, "direction": "right" },
+      { "id": "conv2", "position": { "col": 11, "row": 10 }, "direction": "right" }
+    ],
+    "springs": [
+      { "id": "spring1", "position": { "col": 13, "row": 13 }, "launchDirection": "up", "force": 3 }
+    ],
+    "blackBoxes": [
+      { "id": "box1", "position": { "col": 18, "row": 18 }, "inputCount": 1, "outputCount": 1, "mapping": "double" }
+    ],
+    "buttons": [
+      { "id": "btn1", "position": { "col": 8, "row": 8 }, "isPressed": false, "linkedObjects": ["bridge1"] }
+    ],
+    "levers": [
+      { "id": "lever1", "position": { "col": 12, "row": 12 }, "state": false, "linkedObjects": ["bridge2"] }
+    ],
+    "timers": [
+      { "id": "timer1", "position": { "col": 14, "row": 14 }, "delay": 2000, "active": false, "remaining": 0, "linkedObjects": ["bridge3"] }
+    ],
+    "sensors": [
+      { "id": "sensor1", "position": { "col": 9, "row": 9 }, "range": 3, "active": true }
+    ],
+    "sorters": [
+      { "id": "sorter1", "position": { "col": 16, "row": 16 }, "order": "asc" }
+    ],
+    "bridges": [
+      { "id": "bridge1", "position": { "col": 7, "row": 7 }, "active": false, "buttonId": "btn1" },
+      { "id": "bridge2", "position": { "col": 11, "row": 11 }, "active": false, "buttonId": "lever1" },
+      { "id": "bridge3", "position": { "col": 13, "row": 11 }, "active": false, "buttonId": "timer1" }
+    ],
+    "cages": [
+      { "id": "cage1", "position": { "col": 5, "row": 5 }, "isClosed": false, "prisoner": null }
+    ],
+    "traps": [
+      { "id": "trap1", "position": { "col": 6, "row": 6 }, "used": false }
+    ]
+  },
+  "items": [
+    { "id": "key", "pos": { "col": 1, "row": 1 } },
+    { "id": "corn", "pos": { "col": 2, "row": 2 } },
+    { "id": "core", "pos": { "col": 3, "row": 3 } },
+    { "id": "drill", "pos": { "col": 4, "row": 4 } },
+    { "id": "hook", "pos": { "col": 5, "row": 5 } },
+    { "id": "wing", "pos": { "col": 6, "row": 6 } },
+    { "id": "bait", "pos": { "col": 7, "row": 7 } },
+    { "id": "cage_key", "pos": { "col": 8, "row": 8 } }
+  ]
+}
