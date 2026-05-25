@@ -1,9 +1,15 @@
 // src/modules/execution/oop.ts
-// Команды ООП: CLASS, NEW, METHOD
+// Полная поддержка ООП: CLASS, NEW, METHOD
+// Классы, экземпляры, вызов методов с контекстом this.
 
 import { ASTNode, ClassDef, Instance } from './types';
 import { log, logInfo, logError } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
+
+export interface MethodDef {
+  nodes: ASTNode[];
+  paramNames: string[];
+}
 
 export class OOPExecutor {
   private classDefinitions: Map<string, ClassDef> = new Map();
@@ -15,12 +21,19 @@ export class OOPExecutor {
    */
   public defineClass(className: string, body: ASTNode[]): void {
     const properties = new Map<string, any>();
-    const methods = new Map<string, ASTNode[]>();
+    const methods = new Map<string, MethodDef>();
 
-    // Парсим тело класса: ищем METHOD узлы и PARAM команды для свойств
     for (const node of body) {
       if (node.type === 'method' && node.methodName) {
-        methods.set(node.methodName, node.children || []);
+        const paramNames: string[] = [];
+        if (node.children) {
+          for (const child of node.children) {
+            if (child.type === 'command' && child.command === 'PARAM' && child.functionName) {
+              paramNames.push(child.functionName);
+            }
+          }
+        }
+        methods.set(node.methodName, { nodes: node.children || [], paramNames });
       }
       if (node.type === 'command' && node.command === 'PARAM' && node.functionName) {
         properties.set(node.functionName, null);
@@ -40,63 +53,64 @@ export class OOPExecutor {
   /**
    * NEW — создать экземпляр класса
    */
-  public executeNew(className: string): 'ok' {
+  public createInstance(className: string, constructorArgs: any[] = []): { instanceId: string; instance: Instance } | null {
     const classDef = this.classDefinitions.get(className);
     if (!classDef) {
-      logError('OOPExecutor', 'executeNew', `Class '${className}' not defined`);
-      return 'ok';
+      logError('OOPExecutor', 'createInstance', `Class '${className}' not defined`);
+      return null;
     }
 
     const instanceId = `instance_${this.nextInstanceId++}_${Date.now()}`;
+    const properties = new Map(classDef.properties);
+    const methods = new Map(classDef.methods);
+
     const instance: Instance = {
       classId: className,
-      properties: new Map(classDef.properties),
-      methods: new Map(classDef.methods),
+      properties,
+      methods,
     };
 
     this.instances.set(instanceId, instance);
-    logInfo('OOPExecutor', 'executeNew', `Created instance '${instanceId}' of class '${className}'`);
-    eventBus.emit('INSTANCE_CREATED', { classId: className, instanceId });
-
-    return 'ok';
+    logInfo('OOPExecutor', 'createInstance', `Created instance '${instanceId}' of class '${className}'`);
+    eventBus.emit('INSTANCE_CREATED', { classId: className, instanceId, args: constructorArgs });
+    return { instanceId, instance };
   }
 
   /**
-   * METHOD — вызвать метод объекта (упрощённо)
+   * METHOD — подготовить вызов метода на экземпляре
    */
-  public executeMethod(instanceId: string, methodName: string, args: any[]): 'ok' {
+  public prepareMethodCall(instanceId: string, methodName: string, args: any[]): { instance: Instance; methodDef: MethodDef; context: any } | null {
     const instance = this.instances.get(instanceId);
     if (!instance) {
-      logError('OOPExecutor', 'executeMethod', `Instance '${instanceId}' not found`);
-      return 'ok';
+      logError('OOPExecutor', 'prepareMethodCall', `Instance '${instanceId}' not found`);
+      return null;
     }
 
-    const methodBody = instance.methods.get(methodName);
-    if (!methodBody) {
-      logError('OOPExecutor', 'executeMethod', `Method '${methodName}' not found in instance '${instanceId}'`);
-      return 'ok';
+    const methodDef = instance.methods.get(methodName);
+    if (!methodDef) {
+      logError('OOPExecutor', 'prepareMethodCall', `Method '${methodName}' not found in instance '${instanceId}'`);
+      return null;
     }
 
-    logInfo('OOPExecutor', 'executeMethod', `Calling method '${methodName}' on instance '${instanceId}'`);
-    eventBus.emit('METHOD_CALL', { instanceId, methodName });
+    logInfo('OOPExecutor', 'prepareMethodCall', `Calling method '${methodName}' on instance '${instanceId}' with args: ${args}`);
+    eventBus.emit('METHOD_CALL', { instanceId, methodName, args });
 
-    // В реальности здесь нужно выполнить тело метода с контекстом (this)
-    // Для упрощения — возвращаем ok
-    return 'ok';
+    // Контекст this: экземпляр с методами и свойствами
+    const context = {
+      properties: instance.properties,
+      methods: instance.methods,
+      getProperty: (prop: string) => instance.properties.get(prop),
+      setProperty: (prop: string, val: any) => instance.properties.set(prop, val),
+    };
+    return { instance, methodDef, context };
   }
 
-  /**
-   * Получить свойство экземпляра
-   */
   public getProperty(instanceId: string, propName: string): any {
     const instance = this.instances.get(instanceId);
     if (!instance) return undefined;
     return instance.properties.get(propName);
   }
 
-  /**
-   * Установить свойство экземпляра
-   */
   public setProperty(instanceId: string, propName: string, value: any): void {
     const instance = this.instances.get(instanceId);
     if (instance) {
