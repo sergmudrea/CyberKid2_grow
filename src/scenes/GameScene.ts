@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { CommandPanel, Command } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
+import { InventoryUI } from '../modules/InventoryUI';
 import { LevelData, TileType, Inventory } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
@@ -16,6 +17,7 @@ export class GameScene extends Scene {
   private playerSprite: Phaser.GameObjects.Sprite;
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
+  private inventoryUI: InventoryUI;
   private isRunning: boolean = false;
   private isBroken: boolean = false;
   private isVictory: boolean = false;
@@ -108,6 +110,10 @@ export class GameScene extends Scene {
     };
     this.lastDirection = 'right';
     
+    if (this.inventoryUI) {
+      this.inventoryUI.updateInventory(this.inventory);
+    }
+    
     this.gameContainer.removeAll(true);
     this.drawGrid();
     this.drawPlayer();
@@ -192,6 +198,8 @@ export class GameScene extends Scene {
 
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
+    
+    this.inventoryUI = new InventoryUI(this, this.inventory);
 
     const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
       fontSize: '14px',
@@ -220,6 +228,7 @@ export class GameScene extends Scene {
       depth: 100,
     }).setInteractive({ useHandCursor: true });
     backButton.on('pointerdown', () => {
+      this.inventoryUI.destroy();
       this.commandPanel.destroy();
       this.scene.start('MainMenu');
     });
@@ -365,6 +374,7 @@ export class GameScene extends Scene {
       this.inventory.keys.push(`key_${targetCol}_${targetRow}`);
       this.level.map[targetRow][targetCol] = TileType.PLATFORM;
       this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executeCommands', `Picked up key, total keys: ${this.inventory.keys.length}`);
       this.showPickupEffect(targetCol, targetRow);
     }
@@ -373,6 +383,7 @@ export class GameScene extends Scene {
       this.inventory.corn++;
       this.level.map[targetRow][targetCol] = TileType.PLATFORM;
       this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executeCommands', `Picked up corn, total: ${this.inventory.corn}`);
       this.showPickupEffect(targetCol, targetRow);
     }
@@ -381,6 +392,7 @@ export class GameScene extends Scene {
       this.inventory.cores++;
       this.level.map[targetRow][targetCol] = TileType.PLATFORM;
       this.redrawCell(targetCol, targetRow);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executeCommands', `Picked up core, total: ${this.inventory.cores}`);
       this.showPickupEffect(targetCol, targetRow);
     }
@@ -475,6 +487,7 @@ export class GameScene extends Scene {
       this.level.map[doorRow][doorCol] = TileType.DOOR_UNLOCKED;
       this.redrawCell(doorCol, doorRow);
       this.inventory.keys.pop();
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executeUseKey', `Door unlocked at (${doorCol},${doorRow})`);
       this.showPickupEffect(doorCol, doorRow);
     }
@@ -488,18 +501,21 @@ export class GameScene extends Scene {
       this.inventory.keys.push(`key_${this.playerPos.col}_${this.playerPos.row}`);
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executePickup', `Picked up key, total keys: ${this.inventory.keys.length}`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
     } else if (tile === TileType.CORN) {
       this.inventory.corn++;
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executePickup', `Picked up corn, total: ${this.inventory.corn}`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
     } else if (tile === TileType.CORE) {
       this.inventory.cores++;
       this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
       this.redrawCell(this.playerPos.col, this.playerPos.row);
+      this.inventoryUI.updateInventory(this.inventory);
       logger.info('GameScene', 'executePickup', `Picked up core, total: ${this.inventory.cores}`);
       this.showPickupEffect(this.playerPos.col, this.playerPos.row);
     }
@@ -609,6 +625,7 @@ export class GameScene extends Scene {
     }
     
     this.time.delayedCall(500, () => {
+      this.inventoryUI.destroy();
       this.commandPanel.destroy();
       this.scene.start('VictoryScreen', { 
         levelId: this.levelId, 
