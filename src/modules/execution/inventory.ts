@@ -1,19 +1,23 @@
 // src/modules/execution/inventory.ts
 // Команды инвентаря: PICKUP, DROP, USE_KEY
+// Добавлена поддержка ключа от клетки (cage_key)
 
 import { TileType, Inventory } from '../../types/index';
 import { gameEvents as eventBus } from '../../core/EventBus';
 import { log, logInfo, logError } from './helpers';
+import { TilesExecutor } from './tiles';
 
 export class InventoryExecutor {
   private level: any;
   private player: any;
   private inventory: Inventory;
+  private tilesExecutor: TilesExecutor;
 
   constructor(level: any, player: any, inventory: Inventory) {
     this.level = level;
     this.player = player;
     this.inventory = inventory;
+    this.tilesExecutor = new TilesExecutor(level, player, inventory);
   }
 
   /**
@@ -64,6 +68,16 @@ export class InventoryExecutor {
         this.inventory.tools.push('bait');
         this.level.map[pos.row][pos.col] = TileType.PLATFORM;
         logInfo('InventoryExecutor', 'executePickup', `Picked up bait`);
+        break;
+      case TileType.CAGE_KEY:
+        this.inventory.keys.push('cage_key');
+        this.level.map[pos.row][pos.col] = TileType.PLATFORM;
+        logInfo('InventoryExecutor', 'executePickup', `Picked up cage key`);
+        break;
+      case TileType.GEM:
+        this.inventory.cores += 5;
+        this.level.map[pos.row][pos.col] = TileType.PLATFORM;
+        logInfo('InventoryExecutor', 'executePickup', `Picked up gem, +5 cores`);
         break;
       default:
         log('InventoryExecutor', 'executePickup', `Nothing to pick up at (${pos.col},${pos.row})`);
@@ -130,7 +144,7 @@ export class InventoryExecutor {
   }
 
   /**
-   * USE_KEY — использовать ключ для открытия двери перед игроком
+   * USE_KEY — использовать ключ для открытия двери или клетки перед игроком
    */
   public executeUseKey(lastDirection: 'up' | 'down' | 'left' | 'right'): 'ok' {
     let dx = 0, dy = 0;
@@ -141,22 +155,31 @@ export class InventoryExecutor {
       case 'right': dx = 1; break;
     }
 
-    const doorPos = {
+    const targetPos = {
       col: this.player.getPosition().col + dx,
       row: this.player.getPosition().row + dy,
     };
-    const tile = this.level.map[doorPos.row]?.[doorPos.col];
+    const tile = this.level.map[targetPos.row]?.[targetPos.col];
 
+    // Открытие двери
     if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length > 0) {
-      this.level.map[doorPos.row][doorPos.col] = TileType.DOOR_UNLOCKED;
+      this.level.map[targetPos.row][targetPos.col] = TileType.DOOR_UNLOCKED;
       this.inventory.keys.pop();
-      logInfo('InventoryExecutor', 'executeUseKey', `Door unlocked at (${doorPos.col},${doorPos.row})`);
+      logInfo('InventoryExecutor', 'executeUseKey', `Door unlocked at (${targetPos.col},${targetPos.row})`);
       eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-      eventBus.emit('DOOR_UNLOCKED', { pos: doorPos });
+      eventBus.emit('DOOR_UNLOCKED', { pos: targetPos });
       return 'ok';
     }
 
-    log('InventoryExecutor', 'executeUseKey', `No locked door at (${doorPos.col},${doorPos.row}) or no key`);
+    // Открытие клетки
+    if (tile === TileType.CAGE) {
+      const opened = this.tilesExecutor.openCage(targetPos, this.inventory);
+      if (opened) {
+        return 'ok';
+      }
+    }
+
+    log('InventoryExecutor', 'executeUseKey', `No lock at (${targetPos.col},${targetPos.row}) or no suitable key`);
     return 'ok';
   }
 }
