@@ -1,5 +1,6 @@
 // src/modules/execution/parser.ts
 // AST-парсер: преобразование массива команд в абстрактное синтаксическое дерево
+// Поддерживает: циклы, условия, функции с параметрами, классы с методами, параллелизм.
 
 import { Command } from '../../types/index';
 import { ASTNode } from './types';
@@ -213,35 +214,60 @@ export class ASTParser {
   }
 
   private parseDef(): ASTNode {
-    // DEF имя_функции ... END
+    // DEF имя_функции [PARAM имя1] [PARAM имя2] ... END
     let funcName = '';
+    const paramNames: string[] = [];
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       funcName = nextCmd as unknown as string;
       this.index++;
     }
     this.index++; // пропускаем DEF
+    // Читаем параметры (PARAM)
+    while (this.index < this.commands.length) {
+      const cmd = this.commands[this.index];
+      if (cmd === Command.PARAM && this.index + 1 < this.commands.length) {
+        const paramName = this.commands[this.index + 1] as unknown as string;
+        paramNames.push(paramName);
+        this.index += 2;
+      } else {
+        break;
+      }
+    }
     const children = this.parseBlockUntil(Command.END);
-    logInfo('ASTParser', 'parseDef', `Function definition: ${funcName} with ${children.length} children`);
+    logInfo('ASTParser', 'parseDef', `Function definition: ${funcName} with params ${paramNames.join(', ')} and ${children.length} children`);
     return {
       type: 'function',
       functionName: funcName,
+      parameters: paramNames,
       children,
     };
   }
 
   private parseCall(): ASTNode {
+    // CALL имя_функции [arg1] [arg2] ...
     let funcName = '';
+    const args: any[] = [];
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       funcName = nextCmd as unknown as string;
       this.index++;
     }
-    log('ASTParser', 'parseCall', `Function call: ${funcName}`);
+    this.index++; // пропускаем CALL
+    // Читаем аргументы (простые числа или строки)
+    while (this.index < this.commands.length) {
+      const cmd = this.commands[this.index];
+      if (cmd === Command.PARAM || cmd === Command.END) break;
+      const num = parseFloat(cmd as unknown as string);
+      args.push(isNaN(num) ? (cmd as string) : num);
+      this.index++;
+    }
+    log('ASTParser', 'parseCall', `Function call: ${funcName} with args ${args.join(', ')}`);
     return {
       type: 'command',
       command: Command.CALL,
       functionName: funcName,
+      parameters: args.map(String),
     };
   }
 
@@ -261,6 +287,7 @@ export class ASTParser {
   }
 
   private parseClass(): ASTNode {
+    // CLASS имя_класса ... END
     let className = '';
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
@@ -278,33 +305,57 @@ export class ASTParser {
   }
 
   private parseNew(): ASTNode {
+    // NEW имя_класса [arg1] [arg2] ...
     let className = '';
+    const args: any[] = [];
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       className = nextCmd as unknown as string;
       this.index++;
     }
-    log('ASTParser', 'parseNew', `Create new instance of class: ${className}`);
+    this.index++; // пропускаем NEW
+    while (this.index < this.commands.length) {
+      const cmd = this.commands[this.index];
+      if (cmd === Command.PARAM || cmd === Command.END) break;
+      const num = parseFloat(cmd as unknown as string);
+      args.push(isNaN(num) ? (cmd as string) : num);
+      this.index++;
+    }
+    log('ASTParser', 'parseNew', `Create new instance of class: ${className} with args ${args.join(', ')}`);
     return {
       type: 'command',
       command: Command.NEW,
       className,
+      parameters: args.map(String),
     };
   }
 
   private parseMethod(): ASTNode {
+    // METHOD имя_метода [PARAM имя1] ... END
     let methodName = '';
+    const paramNames: string[] = [];
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       methodName = nextCmd as unknown as string;
       this.index++;
     }
     this.index++; // пропускаем METHOD
+    while (this.index < this.commands.length) {
+      const cmd = this.commands[this.index];
+      if (cmd === Command.PARAM && this.index + 1 < this.commands.length) {
+        const paramName = this.commands[this.index + 1] as unknown as string;
+        paramNames.push(paramName);
+        this.index += 2;
+      } else {
+        break;
+      }
+    }
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseMethod', `Method definition: ${methodName} with ${children.length} children`);
+    log('ASTParser', 'parseMethod', `Method definition: ${methodName} with params ${paramNames.join(', ')} and ${children.length} children`);
     return {
       type: 'method',
       methodName,
+      parameters: paramNames,
       children,
     };
   }
