@@ -57,7 +57,6 @@ export class GameScene extends Scene {
       return;
     }
     
-    // Сохраняем оригинальную копию уровня
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
     
@@ -90,7 +89,6 @@ export class GameScene extends Scene {
 
   private resetLevel(): void {
     if (!this.originalLevelData) return;
-    // Восстанавливаем исходное состояние уровня
     this.level = JSON.parse(JSON.stringify(this.originalLevelData));
     this.playerPos = { ...this.level.startPos };
     this.coinPos = { ...this.level.coinPos };
@@ -110,7 +108,6 @@ export class GameScene extends Scene {
     };
     this.lastDirection = 'right';
     
-    // Очищаем контейнер и перерисовываем
     this.gameContainer.removeAll(true);
     this.drawGrid();
     this.drawPlayer();
@@ -196,6 +193,25 @@ export class GameScene extends Scene {
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
 
+    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#aa8844',
+      padding: { x: 12, y: 6 },
+      depth: 100,
+    }).setInteractive({ useHandCursor: true });
+    autoSolveButton.on('pointerdown', () => {
+      if (!this.level) return;
+      const commands: Command[] = [];
+      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
+      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
+      this.commandPanel.setCommands(commands);
+      this.updateVisualizer();
+      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
+    });
+    autoSolveButton.setScrollFactor(0);
+    autoSolveButton.setDepth(100);
+
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -253,7 +269,6 @@ export class GameScene extends Scene {
       alert('You already won! Start a new game.');
       return;
     }
-    // Сбрасываем уровень перед выполнением новой программы
     this.resetLevel();
     this.isRunning = true;
     this.isBroken = false;
@@ -297,6 +312,20 @@ export class GameScene extends Scene {
       return;
     }
     
+    if (cmd === 'use_key') {
+      this.executeUseKey();
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
+    if (cmd === 'pickup') {
+      this.executePickup();
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
+      return;
+    }
+    
     let dx = 0, dy = 0;
     if (cmd === 'up') { dy = -1; this.lastDirection = 'up'; }
     if (cmd === 'down') { dy = 1; this.lastDirection = 'down'; }
@@ -311,11 +340,51 @@ export class GameScene extends Scene {
     const isWall = tile === TileType.WALL;
     const isHole = tile === TileType.HOLE;
     const isBrick = tile === TileType.BRICK;
+    const isDoorLocked = tile === TileType.DOOR_LOCKED;
+    const isKey = tile === TileType.KEY;
+    const isCorn = tile === TileType.CORN;
+    const isCore = tile === TileType.CORE;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
     logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow})`);
 
-    // Кирпич не даёт пройти
+    // Проверка на закрытую дверь
+    if (isDoorLocked && this.inventory.keys.length === 0) {
+      logger.debug('GameScene', 'executeCommands', `Locked door at (${targetCol},${targetRow}), need key`);
+      this.isBroken = true;
+      this.failedCommandIndex = index;
+      this.commandPanel.highlightCommand(index, 'error');
+      this.showGhostAt(collisionCell);
+      this.showBrokenMessage();
+      this.isRunning = false;
+      return;
+    }
+    
+    // Сбор предметов при движении
+    if (isKey) {
+      this.inventory.keys.push(`key_${targetCol}_${targetRow}`);
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      logger.info('GameScene', 'executeCommands', `Picked up key, total keys: ${this.inventory.keys.length}`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+    
+    if (isCorn) {
+      this.inventory.corn++;
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      logger.info('GameScene', 'executeCommands', `Picked up corn, total: ${this.inventory.corn}`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+    
+    if (isCore) {
+      this.inventory.cores++;
+      this.level.map[targetRow][targetCol] = TileType.PLATFORM;
+      this.redrawCell(targetCol, targetRow);
+      logger.info('GameScene', 'executeCommands', `Picked up core, total: ${this.inventory.cores}`);
+      this.showPickupEffect(targetCol, targetRow);
+    }
+
     if (!isWall && !isHole && !isBrick && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
@@ -337,7 +406,6 @@ export class GameScene extends Scene {
       await this.delay(80);
       this.executeCommands(commands, index + 1);
     } else if (isBrick) {
-      // Если перед нами кирпич, его нужно толкнуть, иначе нельзя пройти
       logger.debug('GameScene', 'executeCommands', `Brick at (${targetCol},${targetRow}), use PUSH command to move it`);
       this.isBroken = true;
       this.failedCommandIndex = index;
@@ -345,6 +413,16 @@ export class GameScene extends Scene {
       this.showGhostAt(collisionCell);
       this.showBrokenMessage();
       this.isRunning = false;
+    } else if (isDoorLocked && this.inventory.keys.length > 0) {
+      // Открываем дверь при движении, если есть ключ
+      this.level.map[targetRow][targetCol] = TileType.DOOR_UNLOCKED;
+      this.redrawCell(targetCol, targetRow);
+      logger.info('GameScene', 'executeCommands', `Door unlocked at (${targetCol},${targetRow})`);
+      // Продолжаем движение
+      this.playerPos = { col: targetCol, row: targetRow };
+      this.drawPlayer();
+      await this.delay(80);
+      this.executeCommands(commands, index + 1);
     } else {
       logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
       this.isBroken = true;
@@ -378,9 +456,60 @@ export class GameScene extends Scene {
       this.redrawCell(brickCol, brickRow);
       this.redrawCell(pushCol, pushRow);
       logger.info('GameScene', 'executePush', `Pushed brick from (${brickCol},${brickRow}) to (${pushCol},${pushRow})`);
-    } else if (isBrick && !isPushFree) {
-      logger.debug('GameScene', 'executePush', `Cannot push brick, space behind is not free`);
     }
+  }
+
+  private executeUseKey(): void {
+    if (!this.level) return;
+    let dx = 0, dy = 0;
+    if (this.lastDirection === 'up') dy = -1;
+    if (this.lastDirection === 'down') dy = 1;
+    if (this.lastDirection === 'left') dx = -1;
+    if (this.lastDirection === 'right') dx = 1;
+    
+    const doorCol = this.playerPos.col + dx;
+    const doorRow = this.playerPos.row + dy;
+    const tile = this.level.map[doorRow]?.[doorCol];
+    
+    if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length > 0) {
+      this.level.map[doorRow][doorCol] = TileType.DOOR_UNLOCKED;
+      this.redrawCell(doorCol, doorRow);
+      this.inventory.keys.pop();
+      logger.info('GameScene', 'executeUseKey', `Door unlocked at (${doorCol},${doorRow})`);
+      this.showPickupEffect(doorCol, doorRow);
+    }
+  }
+
+  private executePickup(): void {
+    if (!this.level) return;
+    const tile = this.level.map[this.playerPos.row][this.playerPos.col];
+    
+    if (tile === TileType.KEY) {
+      this.inventory.keys.push(`key_${this.playerPos.col}_${this.playerPos.row}`);
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      logger.info('GameScene', 'executePickup', `Picked up key, total keys: ${this.inventory.keys.length}`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.CORN) {
+      this.inventory.corn++;
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      logger.info('GameScene', 'executePickup', `Picked up corn, total: ${this.inventory.corn}`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    } else if (tile === TileType.CORE) {
+      this.inventory.cores++;
+      this.level.map[this.playerPos.row][this.playerPos.col] = TileType.PLATFORM;
+      this.redrawCell(this.playerPos.col, this.playerPos.row);
+      logger.info('GameScene', 'executePickup', `Picked up core, total: ${this.inventory.cores}`);
+      this.showPickupEffect(this.playerPos.col, this.playerPos.row);
+    }
+  }
+
+  private showPickupEffect(col: number, row: number): void {
+    const x = this.gameOffsetX + col * this.gridSize;
+    const y = this.gameOffsetY + row * this.gridSize;
+    const effect = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0xffcc00, 0.7);
+    this.time.delayedCall(200, () => effect.destroy());
   }
 
   private redrawCell(col: number, row: number): void {
@@ -392,8 +521,12 @@ export class GameScene extends Scene {
     if (tile === TileType.HOLE) textureKey = 'tile_hole';
     if (tile === TileType.BRICK) textureKey = 'tile_brick';
     if (tile === TileType.GOAL) textureKey = 'tile_coin';
+    if (tile === TileType.KEY) textureKey = 'tile_key';
+    if (tile === TileType.DOOR_LOCKED) textureKey = 'tile_door_locked';
+    if (tile === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
+    if (tile === TileType.CORN) textureKey = 'tile_corn';
+    if (tile === TileType.CORE) textureKey = 'tile_core';
     
-    // Ищем и удаляем старый спрайт
     const children = this.gameContainer.getAll();
     for (const child of children) {
       if (child.x === x && child.y === y) {
@@ -497,6 +630,11 @@ export class GameScene extends Scene {
         if (map[row][col] === TileType.HOLE) textureKey = 'tile_hole';
         if (map[row][col] === TileType.BRICK) textureKey = 'tile_brick';
         if (map[row][col] === TileType.GOAL) textureKey = 'tile_coin';
+        if (map[row][col] === TileType.KEY) textureKey = 'tile_key';
+        if (map[row][col] === TileType.DOOR_LOCKED) textureKey = 'tile_door_locked';
+        if (map[row][col] === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
+        if (map[row][col] === TileType.CORN) textureKey = 'tile_corn';
+        if (map[row][col] === TileType.CORE) textureKey = 'tile_core';
         
         const tile = this.add.image(x, y, textureKey);
         tile.setOrigin(0, 0);
