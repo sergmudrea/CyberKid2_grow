@@ -287,6 +287,32 @@ export class GameScene extends Scene {
     this.executeCommands(commands, 0);
   }
 
+  private async applyConveyorEffect(col: number, row: number): Promise<{ newCol: number; newRow: number; moved: boolean }> {
+    if (!this.level) return { newCol: col, newRow: row, moved: false };
+    const tile = this.level.map[row]?.[col];
+    let dx = 0, dy = 0;
+    
+    if (tile === TileType.CONVEYOR_UP) dy = -1;
+    else if (tile === TileType.CONVEYOR_DOWN) dy = 1;
+    else if (tile === TileType.CONVEYOR_LEFT) dx = -1;
+    else if (tile === TileType.CONVEYOR_RIGHT) dx = 1;
+    else return { newCol: col, newRow: row, moved: false };
+    
+    const newCol = col + dx;
+    const newRow = row + dy;
+    const targetTile = this.level.map[newRow]?.[newCol];
+    const isBlocked = targetTile === TileType.WALL || targetTile === TileType.HOLE || targetTile === TileType.BRICK;
+    
+    if (!isBlocked && newCol >= 0 && newCol < this.level.width && newRow >= 0 && newRow < this.level.height) {
+      this.playerPos = { col: newCol, row: newRow };
+      this.drawPlayer();
+      logger.debug('GameScene', 'applyConveyorEffect', `Conveyor moved player to (${newCol},${newRow})`);
+      return this.applyConveyorEffect(newCol, newRow);
+    }
+    
+    return { newCol: col, newRow: row, moved: false };
+  }
+
   private async executeCommands(commands: Command[], index: number): Promise<void> {
     if (!this.level) return;
     
@@ -401,6 +427,12 @@ export class GameScene extends Scene {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
       
+      // Применяем эффект конвейера после движения
+      const conveyorResult = await this.applyConveyorEffect(this.playerPos.col, this.playerPos.row);
+      if (conveyorResult.moved) {
+        this.drawPlayer();
+      }
+      
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
         this.isVictory = true;
@@ -430,9 +462,14 @@ export class GameScene extends Scene {
       this.level.map[targetRow][targetCol] = TileType.DOOR_UNLOCKED;
       this.redrawCell(targetCol, targetRow);
       logger.info('GameScene', 'executeCommands', `Door unlocked at (${targetCol},${targetRow})`);
-      // Продолжаем движение
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
+      
+      const conveyorResult = await this.applyConveyorEffect(this.playerPos.col, this.playerPos.row);
+      if (conveyorResult.moved) {
+        this.drawPlayer();
+      }
+      
       await this.delay(80);
       this.executeCommands(commands, index + 1);
     } else {
@@ -542,6 +579,15 @@ export class GameScene extends Scene {
     if (tile === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
     if (tile === TileType.CORN) textureKey = 'tile_corn';
     if (tile === TileType.CORE) textureKey = 'tile_core';
+    if (tile === TileType.CONVEYOR_UP) textureKey = 'tile_conveyor_up';
+    if (tile === TileType.CONVEYOR_DOWN) textureKey = 'tile_conveyor_down';
+    if (tile === TileType.CONVEYOR_LEFT) textureKey = 'tile_conveyor_left';
+    if (tile === TileType.CONVEYOR_RIGHT) textureKey = 'tile_conveyor_right';
+    if (tile === TileType.SPRING) textureKey = 'tile_spring';
+    if (tile === TileType.TELEPORT_IN) textureKey = 'tile_teleport_in';
+    if (tile === TileType.TELEPORT_OUT) textureKey = 'tile_teleport_out';
+    if (tile === TileType.LAVA) textureKey = 'tile_lava';
+    if (tile === TileType.WATER) textureKey = 'tile_water';
     
     const children = this.gameContainer.getAll();
     for (const child of children) {
@@ -652,6 +698,15 @@ export class GameScene extends Scene {
         if (map[row][col] === TileType.DOOR_UNLOCKED) textureKey = 'tile_door_unlocked';
         if (map[row][col] === TileType.CORN) textureKey = 'tile_corn';
         if (map[row][col] === TileType.CORE) textureKey = 'tile_core';
+        if (map[row][col] === TileType.CONVEYOR_UP) textureKey = 'tile_conveyor_up';
+        if (map[row][col] === TileType.CONVEYOR_DOWN) textureKey = 'tile_conveyor_down';
+        if (map[row][col] === TileType.CONVEYOR_LEFT) textureKey = 'tile_conveyor_left';
+        if (map[row][col] === TileType.CONVEYOR_RIGHT) textureKey = 'tile_conveyor_right';
+        if (map[row][col] === TileType.SPRING) textureKey = 'tile_spring';
+        if (map[row][col] === TileType.TELEPORT_IN) textureKey = 'tile_teleport_in';
+        if (map[row][col] === TileType.TELEPORT_OUT) textureKey = 'tile_teleport_out';
+        if (map[row][col] === TileType.LAVA) textureKey = 'tile_lava';
+        if (map[row][col] === TileType.WATER) textureKey = 'tile_water';
         
         const tile = this.add.image(x, y, textureKey);
         tile.setOrigin(0, 0);
