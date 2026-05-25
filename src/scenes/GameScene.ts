@@ -28,6 +28,7 @@ export class GameScene extends Scene {
   private gameOffsetY: number = 0;
   private scrollX: number = 0;
   private scrollY: number = 0;
+  private cameraFollowEnabled: boolean = true;
 
   constructor() {
     super('GameScene');
@@ -82,37 +83,45 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
     
-    // Настройка камеры для скролла (перемещение камеры, а не контейнера)
+    // Настройка камеры
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
-    this.cameras.main.centerOn(
-      this.player.getPosition().col * this.gridSize + this.gridSize/2,
-      this.player.getPosition().row * this.gridSize + this.gridSize/2
-    );
+    this.centerCameraOnPlayer();
     
     // Скролл мышью
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
+      this.cameraFollowEnabled = false;
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
       this.clampCamera();
+      // Через 3 секунды возвращаем follow
+      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     
-    // Управление стрелками клавиатуры для перемещения камеры
+    // Управление стрелками клавиатуры
     this.input.keyboard?.on('keydown-LEFT', () => {
+      this.cameraFollowEnabled = false;
       this.cameras.main.scrollX -= 50;
       this.clampCamera();
+      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
+      this.cameraFollowEnabled = false;
       this.cameras.main.scrollX += 50;
       this.clampCamera();
+      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-UP', () => {
+      this.cameraFollowEnabled = false;
       this.cameras.main.scrollY -= 50;
       this.clampCamera();
+      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
+      this.cameraFollowEnabled = false;
       this.cameras.main.scrollY += 50;
       this.clampCamera();
+      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     
     // Панель команд
@@ -125,6 +134,8 @@ export class GameScene extends Scene {
         this.isExecuting = false;
         this.commandPanel.clearHighlight();
         this.updateVisualizer();
+        this.cameraFollowEnabled = true;
+        this.centerCameraOnPlayer();
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -137,26 +148,6 @@ export class GameScene extends Scene {
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
-    
-    // Кнопка AUTO (автоматическое решение)
-    const autoSolveButton = this.add.text(10, 60, '🤖 AUTO', {
-      fontSize: '14px',
-      color: '#ffffff',
-      backgroundColor: '#aa8844',
-      padding: { x: 12, y: 6 },
-      depth: 100,
-    }).setInteractive({ useHandCursor: true });
-    autoSolveButton.on('pointerdown', () => {
-      if (!this.level) return;
-      const commands: Command[] = [];
-      for (let i = 0; i < this.level.coinPos.col; i++) commands.push('right');
-      for (let i = 0; i < this.level.coinPos.row; i++) commands.push('down');
-      this.commandPanel.setCommands(commands);
-      this.updateVisualizer();
-      logger.info('GameScene', 'autoSolve', `Auto-solve program created: ${commands.length} commands`);
-    });
-    autoSolveButton.setScrollFactor(0);
-    autoSolveButton.setDepth(100);
     
     // Кнопка назад
     const backButton = this.add.text(10, 10, '← BACK', {
@@ -187,10 +178,21 @@ export class GameScene extends Scene {
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
   
+  private centerCameraOnPlayer(): void {
+    if (!this.player) return;
+    const pos = this.player.getPosition();
+    const cam = this.cameras.main;
+    cam.centerOn(pos.col * this.gridSize + this.gridSize/2, pos.row * this.gridSize + this.gridSize/2);
+    this.clampCamera();
+  }
+  
   private setupExecutionListeners(): void {
     eventBus.on('PLAYER_MOVED', (payload: any) => {
       if (payload && payload.to && this.player) {
         this.drawPlayer();
+        if (this.cameraFollowEnabled) {
+          this.centerCameraOnPlayer();
+        }
       }
     });
     
@@ -254,6 +256,8 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
     this.updateVisualizer();
+    this.cameraFollowEnabled = true;
+    this.centerCameraOnPlayer();
   }
   
   private async runProgram(commands: Command[]): Promise<void> {
