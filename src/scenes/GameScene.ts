@@ -8,6 +8,7 @@ import { logger } from '../core/Logger';
 
 export class GameScene extends Scene {
   private level: LevelData | null = null;
+  private originalLevelData: LevelData | null = null;
   private levelId: string = '';
   private playerPos: { col: number; row: number };
   private coinPos: { col: number; row: number };
@@ -48,13 +49,17 @@ export class GameScene extends Scene {
   async init(data: { levelId: string }): Promise<void> {
     logger.debug('GameScene', 'init', `Initializing with levelId: ${data.levelId}`);
     this.levelId = data.levelId;
-    this.level = await levelManager.loadLevel(this.levelId);
+    const loadedLevel = await levelManager.loadLevel(this.levelId);
     
-    if (!this.level) {
+    if (!loadedLevel) {
       logger.error('GameScene', 'init', `Level not found: ${this.levelId}`);
       this.scene.start('MainMenu');
       return;
     }
+    
+    // Сохраняем оригинальную копию уровня
+    this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
+    this.level = JSON.parse(JSON.stringify(loadedLevel));
     
     this.playerPos = { ...this.level.startPos };
     this.coinPos = { ...this.level.coinPos };
@@ -83,6 +88,34 @@ export class GameScene extends Scene {
     this.createScene();
   }
 
+  private resetLevel(): void {
+    if (!this.originalLevelData) return;
+    // Восстанавливаем исходное состояние уровня
+    this.level = JSON.parse(JSON.stringify(this.originalLevelData));
+    this.playerPos = { ...this.level.startPos };
+    this.coinPos = { ...this.level.coinPos };
+    this.isBroken = false;
+    this.isVictory = false;
+    this.currentCommandIndex = -1;
+    this.failedCommandIndex = -1;
+    this.inventory = {
+      keys: [],
+      corn: 0,
+      cores: 0,
+      hasDrill: false,
+      hasHook: false,
+      hasWing: false,
+      hasBait: false,
+      tools: [],
+    };
+    this.lastDirection = 'right';
+    
+    // Очищаем контейнер и перерисовываем
+    this.gameContainer.removeAll(true);
+    this.drawGrid();
+    this.drawPlayer();
+  }
+
   private createScene(): void {
     if (!this.level) {
       logger.error('GameScene', 'createScene', 'No level data');
@@ -105,7 +138,6 @@ export class GameScene extends Scene {
     
     this.drawGrid();
     this.drawPlayer();
-    this.spawnItems();
 
     this.needScroll = this.gameBounds.width > this.cameras.main.width || this.gameBounds.height > this.cameras.main.height;
     
@@ -146,14 +178,13 @@ export class GameScene extends Scene {
       this,
       (commands: Command[]) => this.runProgram(commands),
       () => {
-        this.resetRobot();
+        this.resetLevel();
         this.visualizer.clear();
         this.isBroken = false;
         this.isVictory = false;
         this.currentCommandIndex = -1;
         this.failedCommandIndex = -1;
         this.commandPanel.clearHighlight();
-        this.drawPlayer();
         this.updateVisualizer();
         this.resetScroll();
       },
@@ -178,19 +209,6 @@ export class GameScene extends Scene {
     });
     backButton.setScrollFactor(0);
     backButton.setDepth(100);
-  }
-  
-  private async spawnItems(): Promise<void> {
-    if (!this.level || !this.level.items) return;
-    for (const item of this.level.items) {
-      const textureKey = `item_${item.id}`;
-      const x = item.pos.col * this.gridSize;
-      const y = item.pos.row * this.gridSize;
-      const sprite = this.add.image(x, y, textureKey);
-      sprite.setOrigin(0, 0);
-      sprite.setDisplaySize(this.gridSize, this.gridSize);
-      this.gameContainer.add(sprite);
-    }
   }
   
   private updateContainerPosition(): void {
@@ -229,28 +247,19 @@ export class GameScene extends Scene {
     );
   }
 
-  private resetRobot(): void {
-    if (!this.level) return;
-    this.playerPos = { ...this.level.startPos };
-    this.isBroken = false;
-    this.isVictory = false;
-    this.drawPlayer();
-  }
-
   private runProgram(commands: Command[]): void {
     if (this.isRunning) return;
     if (this.isVictory) {
       alert('You already won! Start a new game.');
       return;
     }
+    // Сбрасываем уровень перед выполнением новой программы
+    this.resetLevel();
     this.isRunning = true;
     this.isBroken = false;
     this.currentCommandIndex = -1;
     this.failedCommandIndex = -1;
     this.commandPanel.clearHighlight();
-    if (!this.level) return;
-    this.playerPos = { ...this.level.startPos };
-    this.drawPlayer();
     this.executeCommands(commands, 0);
   }
 
@@ -301,16 +310,15 @@ export class GameScene extends Scene {
     const tile = this.level.map[targetRow]?.[targetCol];
     const isWall = tile === TileType.WALL;
     const isHole = tile === TileType.HOLE;
+    const isBrick = tile === TileType.BRICK;
     const isOutOfBounds = targetCol < 0 || targetCol >= this.level.width || targetRow < 0 || targetRow >= this.level.height;
 
     logger.debug('GameScene', 'executeCommands', `Step ${index + 1}/${commands.length}: ${cmd} from (${this.playerPos.col},${this.playerPos.row}) to (${targetCol},${targetRow})`);
 
-    if (!isWall && !isHole && !isOutOfBounds) {
+    // Кирпич не даёт пройти
+    if (!isWall && !isHole && !isBrick && !isOutOfBounds) {
       this.playerPos = { col: targetCol, row: targetRow };
       this.drawPlayer();
-      
-      // Проверка сбора предметов
-      await this.checkItemPickup();
       
       if (this.playerPos.col === this.coinPos.col && this.playerPos.row === this.coinPos.row) {
         logger.info('GameScene', 'executeCommands', `🏆 VICTORY! Reached coin at (${this.playerPos.col},${this.playerPos.row})`);
@@ -328,6 +336,15 @@ export class GameScene extends Scene {
       
       await this.delay(80);
       this.executeCommands(commands, index + 1);
+    } else if (isBrick) {
+      // Если перед нами кирпич, его нужно толкнуть, иначе нельзя пройти
+      logger.debug('GameScene', 'executeCommands', `Brick at (${targetCol},${targetRow}), use PUSH command to move it`);
+      this.isBroken = true;
+      this.failedCommandIndex = index;
+      this.commandPanel.highlightCommand(index, 'error');
+      this.showGhostAt(collisionCell);
+      this.showBrokenMessage();
+      this.isRunning = false;
     } else {
       logger.warn('GameScene', 'executeCommands', `💥 Collision at step ${index + 1}: ${cmd} to (${targetCol},${targetRow})`);
       this.isBroken = true;
@@ -336,24 +353,6 @@ export class GameScene extends Scene {
       this.showGhostAt(collisionCell);
       this.showBrokenMessage();
       this.isRunning = false;
-    }
-  }
-
-  private async checkItemPickup(): Promise<void> {
-    const itemKey = `item_${this.playerPos.col}_${this.playerPos.row}`;
-    const itemSprite = this.gameContainer.getFirst((obj: any) => obj.name === itemKey);
-    if (itemSprite) {
-      itemSprite.destroy();
-      // Добавляем в инвентарь
-      this.inventory.corn++;
-      logger.info('GameScene', 'checkItemPickup', `Picked up corn, total: ${this.inventory.corn}`);
-      // Визуальный эффект
-      const pickupEffect = this.add.rectangle(
-        this.gameOffsetX + this.playerPos.col * this.gridSize,
-        this.gameOffsetY + this.playerPos.row * this.gridSize,
-        this.gridSize, this.gridSize, 0xffcc00, 0.7
-      );
-      this.time.delayedCall(200, () => pickupEffect.destroy());
     }
   }
 
@@ -378,7 +377,9 @@ export class GameScene extends Scene {
       this.level.map[pushRow][pushCol] = TileType.BRICK;
       this.redrawCell(brickCol, brickRow);
       this.redrawCell(pushCol, pushRow);
-      logger.info('GameScene', 'executePush', `Pushed brick to (${pushCol},${pushRow})`);
+      logger.info('GameScene', 'executePush', `Pushed brick from (${brickCol},${brickRow}) to (${pushCol},${pushRow})`);
+    } else if (isBrick && !isPushFree) {
+      logger.debug('GameScene', 'executePush', `Cannot push brick, space behind is not free`);
     }
   }
 
@@ -392,8 +393,14 @@ export class GameScene extends Scene {
     if (tile === TileType.BRICK) textureKey = 'tile_brick';
     if (tile === TileType.GOAL) textureKey = 'tile_coin';
     
-    const oldTile = this.gameContainer.getAt(row * this.level.width + col);
-    if (oldTile) oldTile.destroy();
+    // Ищем и удаляем старый спрайт
+    const children = this.gameContainer.getAll();
+    for (const child of children) {
+      if (child.x === x && child.y === y) {
+        child.destroy();
+        break;
+      }
+    }
     
     const newTile = this.add.image(x, y, textureKey);
     newTile.setOrigin(0, 0);
