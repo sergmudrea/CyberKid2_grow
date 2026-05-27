@@ -9,6 +9,8 @@ import { ExecutionEngine } from '../modules/execution';
 import { Player } from '../modules/Player';
 import { logger } from '../core/Logger';
 import { gameEvents as eventBus } from '../core/EventBus';
+// Если есть реальный Pathfinder, раскомментируйте импорт
+// import { Pathfinder } from '../modules/Pathfinder';
 
 export class GameScene extends Scene {
   private level: LevelData | null = null;
@@ -24,10 +26,11 @@ export class GameScene extends Scene {
   private isExecuting: boolean = false;
   private gameContainer: Phaser.GameObjects.Container;
   private gameBounds: { width: number; height: number };
-  // Отключаем автоматическое следование при ручном скролле
   private cameraFollowEnabled: boolean = true;
-  // Таймер для восстановления следования
   private followRestoreTimer?: Phaser.Time.TimerEvent;
+
+  // Ширина панели команд (подбирается под ваш UI)
+  private readonly COMMAND_PANEL_WIDTH = 280;
 
   constructor() {
     super('GameScene');
@@ -51,9 +54,6 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
     
-    logger.info('GameScene', 'create', `Level loaded: ${this.levelId} (${this.level.name}), coin at (${this.level.coinPos.col},${this.level.coinPos.row})`);
-    
-    // Создаём игрока
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -66,24 +66,23 @@ export class GameScene extends Scene {
       tileGetter
     );
     
-    // Контейнер для игрового поля – располагаем в (0,0), без смещений
-    this.gameContainer = this.add.container(0, 0);
+    // Игровой контейнер смещаем вправо на ширину панели команд
+    this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
       height: this.level.height * this.gridSize
     };
     
-    // Отрисовка сетки и игрока
     this.drawGrid();
     this.drawPlayer();
     
-    // Настройка камеры: границы по размеру уровня
+    // Камера: границы от 0 до gameBounds.width, но с учётом смещения контейнера
+    // (камера видит мир относительно верхнего левого угла игры, контейнер уже сдвинут)
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
-    // Заставляем камеру следовать за спрайтом игрока
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     
-    // Ручной скролл колёсиком мыши
+    // Скролл (мышь и стрелки)
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
@@ -91,7 +90,6 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
     
-    // Ручной скролл стрелками клавиатуры
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.disableCameraFollowTemporarily();
@@ -114,7 +112,7 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
     
-    // Панель команд
+    // Панель команд теперь рисуется в координатах сцены (не в контейнере), поэтому она всегда видна слева
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -139,7 +137,7 @@ export class GameScene extends Scene {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
     
-    // Кнопка назад (оставляем в левом верхнем углу экрана)
+    // Кнопка BACK
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -153,7 +151,7 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     });
     
-    // 🧪 Кнопка AutoSolve (для разработчиков) – внизу слева, рядом с рюкзаком
+    // Кнопка AutoSolve внизу справа от панели (или внизу слева экрана, но не под панелью)
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -164,16 +162,13 @@ export class GameScene extends Scene {
       this.autoSolve();
     });
     
-    // Подписка на события выполнения
     this.setupExecutionListeners();
   }
   
-  // Временно отключает follow и восстанавливает через 3 секунды бездействия
   private disableCameraFollowTemporarily(): void {
     if (!this.cameraFollowEnabled) return;
     this.cameraFollowEnabled = false;
     this.cameras.main.stopFollow();
-    // Сбрасываем предыдущий таймер
     if (this.followRestoreTimer) {
       this.followRestoreTimer.destroy();
     }
@@ -192,35 +187,61 @@ export class GameScene extends Scene {
   }
   
   private autoSolve(): void {
-    // Заглушка: здесь вы позже вызовете BFS-решатель
-    logger.info('GameScene', 'autoSolve', 'Авторешатель ещё не интегрирован');
-    // Можно показать временное сообщение на экране
-    const msg = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '🧪 AutoSolve not implemented yet', {
-      fontSize: '20px',
-      color: '#ffaa00',
-      backgroundColor: '#000000aa',
-      padding: { x: 15, y: 8 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    if (!this.level || !this.player) return;
+    
+    // Пытаемся использовать реальный Pathfinder, если он есть
+    try {
+      // const pathfinder = new Pathfinder(this.level, this.player);
+      // const solution = pathfinder.findOptimalPath();
+      // if (solution) {
+      //   this.commandPanel.loadCommands(solution);
+      //   this.runProgram(solution);
+      //   return;
+      // }
+    } catch (e) {
+      // Pathfinder не подключён
+    }
+    
+    // Заглушка с подсказкой
+    logger.warn('GameScene', 'autoSolve', 'Модуль Pathfinder не найден. Реализуйте BFS и раскомментируйте код.');
+    const msg = this.add.text(
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      this.cameras.main.centerY,
+      '🧪 AutoSolve: Pathfinder ещё не интегрирован',
+      {
+        fontSize: '18px',
+        color: '#ffaa00',
+        backgroundColor: '#000000aa',
+        padding: { x: 15, y: 8 }
+      }
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
   }
   
   private setupExecutionListeners(): void {
+    // Шаг выполнения
+    eventBus.on('EXECUTION_STEP', (payload: any) => {
+      if (payload && payload.stepIndex !== undefined) {
+        this.commandPanel.highlightCommand(payload.stepIndex, 'running');
+      }
+    });
+    
+    // Ошибка на шаге (коллизия, смерть и т.д.)
+    eventBus.on('EXECUTION_ERROR', (payload: any) => {
+      if (payload && payload.stepIndex !== undefined) {
+        this.commandPanel.highlightCommand(payload.stepIndex, 'error');
+      }
+    });
+    
     eventBus.on('PLAYER_MOVED', (payload: any) => {
       if (payload && payload.to && this.player) {
         this.drawPlayer();
-        // Если следование включено, камера сама подстроится
       }
     });
     
     eventBus.on('INVENTORY_CHANGED', (payload: any) => {
       if (payload && payload.inventory && this.inventoryUI && this.player) {
         this.inventoryUI.updateInventory(payload.inventory);
-      }
-    });
-    
-    eventBus.on('EXECUTION_STEP', (payload: any) => {
-      if (payload && payload.command !== undefined) {
-        this.commandPanel.highlightCommand(payload.stepIndex, 'running');
       }
     });
     
@@ -247,7 +268,7 @@ export class GameScene extends Scene {
       this.level.width,
       this.level.height,
       this.gridSize,
-      0,  // offsetX теперь не нужен
+      this.COMMAND_PANEL_WIDTH, // передаём смещение, чтобы визуализатор рисовал правильно
       0
     );
   }
@@ -294,12 +315,17 @@ export class GameScene extends Scene {
   }
   
   private showVictoryMessage(stars: number, steps: number): void {
-    const msg = this.add.text(this.cameras.main.centerX, 100, `🏆 VICTORY! ★ ${stars} 🏆`, {
-      fontSize: '28px',
-      color: '#ffcc00',
-      backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    const msg = this.add.text(
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      100,
+      `🏆 VICTORY! ★ ${stars} 🏆`,
+      {
+        fontSize: '28px',
+        color: '#ffcc00',
+        backgroundColor: '#000000aa',
+        padding: { x: 20, y: 10 }
+      }
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
     
     this.time.delayedCall(500, () => {
@@ -314,12 +340,17 @@ export class GameScene extends Scene {
   }
   
   private showDefeatMessage(): void {
-    const msg = this.add.text(this.cameras.main.centerX, 100, '💥 DEFEAT! 💥', {
-      fontSize: '28px',
-      color: '#ff0000',
-      backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    const msg = this.add.text(
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      100,
+      '💥 DEFEAT! 💥',
+      {
+        fontSize: '28px',
+        color: '#ff0000',
+        backgroundColor: '#000000aa',
+        padding: { x: 20, y: 10 }
+      }
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
     this.time.delayedCall(500, () => {
       this.resetLevel();
@@ -327,10 +358,7 @@ export class GameScene extends Scene {
   }
   
   private drawGrid(): void {
-    if (!this.level) {
-      logger.error('GameScene', 'drawGrid', 'No level data');
-      return;
-    }
+    if (!this.level) return;
     const { width, height, map } = this.level;
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
@@ -375,7 +403,6 @@ export class GameScene extends Scene {
     this.playerSprite.setStrokeStyle(2, 0xffffff);
     this.gameContainer.add(this.playerSprite);
     
-    // Если камера уже следит за игроком, обновим цель
     if (this.cameraFollowEnabled) {
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     }
