@@ -24,11 +24,10 @@ export class GameScene extends Scene {
   private isExecuting: boolean = false;
   private gameContainer: Phaser.GameObjects.Container;
   private gameBounds: { width: number; height: number };
-  private gameOffsetX: number = 0;
-  private gameOffsetY: number = 0;
-  private scrollX: number = 0;
-  private scrollY: number = 0;
+  // Отключаем автоматическое следование при ручном скролле
   private cameraFollowEnabled: boolean = true;
+  // Таймер для восстановления следования
+  private followRestoreTimer?: Phaser.Time.TimerEvent;
 
   constructor() {
     super('GameScene');
@@ -67,61 +66,52 @@ export class GameScene extends Scene {
       tileGetter
     );
     
-    // Контейнер для игрового поля
+    // Контейнер для игрового поля – располагаем в (0,0), без смещений
     this.gameContainer = this.add.container(0, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
       height: this.level.height * this.gridSize
     };
     
-    // Центрируем контейнер
-    this.gameOffsetX = (this.cameras.main.width - this.gameBounds.width) / 2;
-    this.gameOffsetY = (this.cameras.main.height - this.gameBounds.height) / 2;
-    this.gameContainer.setPosition(this.gameOffsetX, this.gameOffsetY);
-    
-    // Отрисовка
+    // Отрисовка сетки и игрока
     this.drawGrid();
     this.drawPlayer();
     
-    // Настройка камеры
+    // Настройка камеры: границы по размеру уровня
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
-    this.centerCameraOnPlayer();
+    // Заставляем камеру следовать за спрайтом игрока
+    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     
-    // Скролл мышью
+    // Ручной скролл колёсиком мыши
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
-      this.cameraFollowEnabled = false;
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
       this.clampCamera();
-      // Через 3 секунды возвращаем follow
-      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     
-    // Управление стрелками клавиатуры
+    // Ручной скролл стрелками клавиатуры
+    const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
-      this.cameraFollowEnabled = false;
-      this.cameras.main.scrollX -= 50;
+      this.disableCameraFollowTemporarily();
+      this.cameras.main.scrollX -= scrollStep;
       this.clampCamera();
-      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
-      this.cameraFollowEnabled = false;
-      this.cameras.main.scrollX += 50;
+      this.disableCameraFollowTemporarily();
+      this.cameras.main.scrollX += scrollStep;
       this.clampCamera();
-      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-UP', () => {
-      this.cameraFollowEnabled = false;
-      this.cameras.main.scrollY -= 50;
+      this.disableCameraFollowTemporarily();
+      this.cameras.main.scrollY -= scrollStep;
       this.clampCamera();
-      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
-      this.cameraFollowEnabled = false;
-      this.cameras.main.scrollY += 50;
+      this.disableCameraFollowTemporarily();
+      this.cameras.main.scrollY += scrollStep;
       this.clampCamera();
-      this.time.delayedCall(3000, () => { this.cameraFollowEnabled = true; });
     });
     
     // Панель команд
@@ -135,7 +125,7 @@ export class GameScene extends Scene {
         this.commandPanel.clearHighlight();
         this.updateVisualizer();
         this.cameraFollowEnabled = true;
-        this.centerCameraOnPlayer();
+        this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -149,25 +139,48 @@ export class GameScene extends Scene {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
     
-    // Кнопка назад
+    // Кнопка назад (оставляем в левом верхнем углу экрана)
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
-      padding: { x: 12, y: 6 },
-      depth: 100,
-    }).setInteractive({ useHandCursor: true });
+      padding: { x: 12, y: 6 }
+    }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
     backButton.on('pointerdown', () => {
       this.inventoryUI?.destroy();
       this.commandPanel.destroy();
       if (this.executionEngine) this.executionEngine.stop();
       this.scene.start('MainMenu');
     });
-    backButton.setScrollFactor(0);
-    backButton.setDepth(100);
     
-    // Подписка на события
+    // 🧪 Кнопка AutoSolve (для разработчиков) – внизу слева, рядом с рюкзаком
+    const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
+      fontSize: '14px',
+      color: '#00ff00',
+      backgroundColor: '#1a1a3a',
+      padding: { x: 10, y: 5 }
+    }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
+    autoSolveBtn.on('pointerdown', () => {
+      this.autoSolve();
+    });
+    
+    // Подписка на события выполнения
     this.setupExecutionListeners();
+  }
+  
+  // Временно отключает follow и восстанавливает через 3 секунды бездействия
+  private disableCameraFollowTemporarily(): void {
+    if (!this.cameraFollowEnabled) return;
+    this.cameraFollowEnabled = false;
+    this.cameras.main.stopFollow();
+    // Сбрасываем предыдущий таймер
+    if (this.followRestoreTimer) {
+      this.followRestoreTimer.destroy();
+    }
+    this.followRestoreTimer = this.time.delayedCall(3000, () => {
+      this.cameraFollowEnabled = true;
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    });
   }
   
   private clampCamera(): void {
@@ -178,21 +191,24 @@ export class GameScene extends Scene {
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
   
-  private centerCameraOnPlayer(): void {
-    if (!this.player) return;
-    const pos = this.player.getPosition();
-    const cam = this.cameras.main;
-    cam.centerOn(pos.col * this.gridSize + this.gridSize/2, pos.row * this.gridSize + this.gridSize/2);
-    this.clampCamera();
+  private autoSolve(): void {
+    // Заглушка: здесь вы позже вызовете BFS-решатель
+    logger.info('GameScene', 'autoSolve', 'Авторешатель ещё не интегрирован');
+    // Можно показать временное сообщение на экране
+    const msg = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '🧪 AutoSolve not implemented yet', {
+      fontSize: '20px',
+      color: '#ffaa00',
+      backgroundColor: '#000000aa',
+      padding: { x: 15, y: 8 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    this.time.delayedCall(2000, () => msg.destroy());
   }
   
   private setupExecutionListeners(): void {
     eventBus.on('PLAYER_MOVED', (payload: any) => {
       if (payload && payload.to && this.player) {
         this.drawPlayer();
-        if (this.cameraFollowEnabled) {
-          this.centerCameraOnPlayer();
-        }
+        // Если следование включено, камера сама подстроится
       }
     });
     
@@ -231,7 +247,7 @@ export class GameScene extends Scene {
       this.level.width,
       this.level.height,
       this.gridSize,
-      0,  // offsetX – так как камера, а не контейнер
+      0,  // offsetX теперь не нужен
       0
     );
   }
@@ -257,7 +273,7 @@ export class GameScene extends Scene {
     this.drawPlayer();
     this.updateVisualizer();
     this.cameraFollowEnabled = true;
-    this.centerCameraOnPlayer();
+    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
   }
   
   private async runProgram(commands: Command[]): Promise<void> {
@@ -278,13 +294,12 @@ export class GameScene extends Scene {
   }
   
   private showVictoryMessage(stars: number, steps: number): void {
-    const msg = this.add.text(this.cameras.main.width / 2, 100, `🏆 VICTORY! ★ ${stars} 🏆`, {
+    const msg = this.add.text(this.cameras.main.centerX, 100, `🏆 VICTORY! ★ ${stars} 🏆`, {
       fontSize: '28px',
       color: '#ffcc00',
       backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 },
-    }).setOrigin(0.5);
-    msg.setScrollFactor(0);
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
     
     this.time.delayedCall(500, () => {
@@ -299,13 +314,12 @@ export class GameScene extends Scene {
   }
   
   private showDefeatMessage(): void {
-    const msg = this.add.text(this.cameras.main.width / 2, 100, '💥 DEFEAT! 💥', {
+    const msg = this.add.text(this.cameras.main.centerX, 100, '💥 DEFEAT! 💥', {
       fontSize: '28px',
       color: '#ff0000',
       backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 },
-    }).setOrigin(0.5);
-    msg.setScrollFactor(0);
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
     this.time.delayedCall(500, () => {
       this.resetLevel();
@@ -349,7 +363,9 @@ export class GameScene extends Scene {
   }
   
   private drawPlayer(): void {
-    if (this.playerSprite) this.playerSprite.destroy();
+    if (this.playerSprite) {
+      this.playerSprite.destroy();
+    }
     if (!this.level || !this.player) return;
     const pos = this.player.getPosition();
     const x = pos.col * this.gridSize;
@@ -358,5 +374,10 @@ export class GameScene extends Scene {
     this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
     this.playerSprite.setStrokeStyle(2, 0xffffff);
     this.gameContainer.add(this.playerSprite);
+    
+    // Если камера уже следит за игроком, обновим цель
+    if (this.cameraFollowEnabled) {
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    }
   }
 }
