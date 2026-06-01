@@ -1,3 +1,16 @@
+// src/modules/InventoryUI.ts
+// ============================================================================
+// UI ИНВЕНТАРЯ (рюкзак)
+// ============================================================================
+// Отображает содержимое инвентаря игрока:
+// - ключи (список)
+// - количество кукурузы
+// - количество ядер
+// - наличие инструментов (дрель, крюк, крылья, приманка)
+// ============================================================================
+// Появляется по нажатию на кнопку-рюкзак в правом нижнем углу экрана.
+// ============================================================================
+
 import { Scene } from 'phaser';
 import { Inventory } from '../types/index';
 import { logger } from '../core/Logger';
@@ -17,11 +30,11 @@ export class InventoryUI {
   }
 
   private createUI(): void {
-    // Контейнер для UI инвентаря
+    // Контейнер для UI инвентаря (абсолютное позиционирование поверх canvas)
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
     this.container.style.bottom = '20px';
-    this.container.style.right = '240px';
+    this.container.style.right = '240px';  // чтобы не перекрывать панель программы справа
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
@@ -80,8 +93,9 @@ export class InventoryUI {
     title.style.marginBottom = '10px';
     this.backpackWindow.appendChild(title);
 
-    // Ключи
-    const keysSection = this.createSection('🔑 KEYS', this.inventory.keys.length, this.inventory.keys.join(', '));
+    // Ключи (список)
+    const keysText = this.inventory.keys.length > 0 ? this.inventory.keys.join(', ') : 'none';
+    const keysSection = this.createSection('🔑 KEYS', this.inventory.keys.length, keysText);
     this.backpackWindow.appendChild(keysSection);
 
     // Кукуруза
@@ -98,11 +112,10 @@ export class InventoryUI {
     if (this.inventory.hasHook) tools.push('🪝 Hook');
     if (this.inventory.hasWing) tools.push('🪽 Wing');
     if (this.inventory.hasBait) tools.push('🐟 Bait');
-    
     const toolsSection = this.createSection('🛠️ TOOLS', tools.length, tools.join(', '));
     this.backpackWindow.appendChild(toolsSection);
 
-    // Общее количество предметов
+    // Общее количество предметов (сумма)
     const total = this.inventory.keys.length + this.inventory.corn + this.inventory.cores + tools.length;
     const totalSection = this.createSection('📦 TOTAL', total);
     this.backpackWindow.appendChild(totalSection);
@@ -111,6 +124,7 @@ export class InventoryUI {
   private createSection(label: string, value: number, details: string = ''): HTMLDivElement {
     const section = document.createElement('div');
     section.style.display = 'flex';
+    section.style.flexWrap = 'wrap';
     section.style.justifyContent = 'space-between';
     section.style.alignItems = 'center';
     section.style.padding = '5px 8px';
@@ -131,14 +145,13 @@ export class InventoryUI {
     section.appendChild(labelSpan);
     section.appendChild(valueSpan);
 
-    if (details && details.length > 0) {
+    if (details && details.length > 0 && details !== 'none') {
       const detailSpan = document.createElement('div');
       detailSpan.textContent = details;
       detailSpan.style.fontSize = '10px';
       detailSpan.style.color = '#888888';
       detailSpan.style.marginTop = '2px';
-      detailSpan.style.gridColumn = 'span 2';
-      section.style.flexWrap = 'wrap';
+      detailSpan.style.width = '100%';
       section.appendChild(detailSpan);
     }
 
