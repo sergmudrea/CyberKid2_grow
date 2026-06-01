@@ -1,6 +1,14 @@
 // src/modules/execution/parallelism.ts
-// Полная поддержка параллелизма: CLONE, JOIN
-// Клоны выполняются параллельно (чередование шагов), обновляют позиции, суммируют инвентарь при JOIN.
+// ============================================================================
+// ПОДДЕРЖКА ПАРАЛЛЕЛИЗМА: CLONE, JOIN
+// ============================================================================
+// Реализует:
+// - CLONE – создание клона игрока в текущей позиции с копией инвентаря и программы
+// - JOIN  – объединение всех клонов с оригиналом (суммирование инвентаря)
+// ============================================================================
+// Клоны выполняются параллельно (чередование шагов). В текущей реализации
+// клоны хранятся в виде данных, а управление их выполнением происходит в ASTRunner.
+// ============================================================================
 
 import { Point, Inventory } from '../../types/index';
 import { ASTNode, CloneInfo } from './types';
@@ -21,9 +29,9 @@ export class ParallelismExecutor {
     this.backdoorUsed = false;
   }
 
-  /**
-   * CLONE — создать клона
-   */
+  // --------------------------------------------------------------------------
+  // CLONE – создать клона
+  // --------------------------------------------------------------------------
   public createClone(
     playerPos: Point,
     currentInventory: Inventory,
@@ -49,9 +57,9 @@ export class ParallelismExecutor {
     return cloneId;
   }
 
-  /**
-   * Обновить позицию клона
-   */
+  // --------------------------------------------------------------------------
+  // Обновить позицию клона (вызывается из ASTRunner при его движении)
+  // --------------------------------------------------------------------------
   public updateClonePosition(cloneId: string, newPos: Point): void {
     const clone = this.clones.get(cloneId);
     if (clone) {
@@ -60,23 +68,35 @@ export class ParallelismExecutor {
     }
   }
 
-  /**
-   * Получить всех клонов
-   */
+  // --------------------------------------------------------------------------
+  // Обновить AST и индекс клона (продолжение выполнения)
+  // --------------------------------------------------------------------------
+  public updateCloneAST(cloneId: string, ast: ASTNode[], nodeIndex: number): void {
+    const clone = this.clones.get(cloneId);
+    if (clone) {
+      clone.ast = ast;
+      clone.nodeIndex = nodeIndex;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Получить всех клонов
+  // --------------------------------------------------------------------------
   public getClones(): CloneInfo[] {
     return Array.from(this.clones.values());
   }
 
-  /**
-   * Получить клона по ID
-   */
+  // --------------------------------------------------------------------------
+  // Получить клона по ID
+  // --------------------------------------------------------------------------
   public getClone(cloneId: string): CloneInfo | undefined {
     return this.clones.get(cloneId);
   }
 
-  /**
-   * JOIN — объединить всех клонов в основного игрока
-   */
+  // --------------------------------------------------------------------------
+  // JOIN – объединить всех клонов с основным игроком
+  // Инвентарь клонов суммируется, клоны исчезают.
+  // --------------------------------------------------------------------------
   public joinClones(): void {
     if (this.clones.size === 0) {
       log('ParallelismExecutor', 'joinClones', 'No clones to join');
@@ -84,18 +104,21 @@ export class ParallelismExecutor {
     }
 
     for (const [cloneId, clone] of this.clones) {
-      // Суммируем инвентарь
+      // Суммируем ключи (уникальные)
       for (const key of clone.inventory.keys) {
         if (!this.inventory.keys.includes(key)) {
           this.inventory.keys.push(key);
         }
       }
+      // Суммируем кукурузу и ядра
       this.inventory.corn += clone.inventory.corn;
       this.inventory.cores += clone.inventory.cores;
+      // Инструменты (достаточно наличия)
       if (clone.inventory.hasDrill) this.inventory.hasDrill = true;
       if (clone.inventory.hasHook) this.inventory.hasHook = true;
       if (clone.inventory.hasWing) this.inventory.hasWing = true;
       if (clone.inventory.hasBait) this.inventory.hasBait = true;
+      // Добавляем инструменты в массив (избегая дубликатов)
       for (const tool of clone.inventory.tools) {
         if (!this.inventory.tools.includes(tool)) {
           this.inventory.tools.push(tool);
@@ -111,14 +134,17 @@ export class ParallelismExecutor {
     eventBus.emit('CLONES_JOINED');
   }
 
-  /**
-   * Удалить клона
-   */
+  // --------------------------------------------------------------------------
+  // Удалить клона (при смерти или отдельном завершении)
+  // --------------------------------------------------------------------------
   public removeClone(cloneId: string): void {
     this.clones.delete(cloneId);
     log('ParallelismExecutor', 'removeClone', `Clone '${cloneId}' removed`);
   }
 
+  // --------------------------------------------------------------------------
+  // Проверка использования чёрного хода
+  // --------------------------------------------------------------------------
   public isBackdoorUsed(): boolean {
     return this.backdoorUsed;
   }
