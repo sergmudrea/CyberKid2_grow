@@ -1,13 +1,20 @@
 // src/modules/Player.ts
-// Эйдо: Управление персонажем (позиция, направление, инвентарь, клоны, верховая езда).
-// Полностью совместим с новым ExecutionEngine. Поддерживает: движение, телепортацию,
-// эффекты конвейера/пружины, клей, клетку (ловушку), клонирование, верховую езду, инвентарь,
-// смерть/возрождение. Эмитит события через EventBus.
+// ============================================================================
+// КЛАСС ИГРОКА (ROBOT)
+// ============================================================================
+// Управляет состоянием робота: позиция, направление, инвентарь, режимы (призрак, клей, клетка),
+// клонирование, верховая езда на монстре, а также приёмы движения с учётом препятствий.
+// ============================================================================
+// Все изменения публикуются через EventBus (PLAYER_MOVED, INVENTORY_CHANGED, PLAYER_DIED и т.д.)
+// ============================================================================
 
 import { Point, Inventory, Monster, Command } from '../types/index';
 import { gameEvents as eventBus } from '../core/EventBus';
 import { logger } from '../core/Logger';
 
+// ----------------------------------------------------------------------------
+// ИНТЕРФЕЙС ДЛЯ КЛОНОВ
+// ----------------------------------------------------------------------------
 export interface CloneInfo {
   id: string;
   position: Point;
@@ -17,21 +24,27 @@ export interface CloneInfo {
 }
 
 export class Player {
-  private position: Point;
+  // ----- Основные параметры -----
+  private position: Point;                 // текущая клетка
   private direction: 'up' | 'down' | 'left' | 'right';
   private inventory: Inventory;
   private isAlive: boolean = true;
-  private isGhostMode: boolean = false;
-  private clones: CloneInfo[] = [];
-  private riddenMonster: Monster | null = null;
+  private isGhostMode: boolean = false;    // режим исследования (неуязвим)
   private levelBounds: { width: number; height: number };
-  private tileMap: (col: number, row: number) => number;
+  private tileMap: (col: number, row: number) => number;  // функция получения типа тайла
 
-  // Состояния для новых механик
-  private glued: boolean = false;
-  private gluedTurns: number = 0;
-  private trapped: boolean = false;
+  // ----- Продвинутые механики -----
+  private clones: CloneInfo[] = [];         // активные клоны
+  private riddenMonster: Monster | null = null; // монстр, на котором едет игрок
 
+  // ----- Статусные эффекты -----
+  private glued: boolean = false;           // приклеен ли?
+  private gluedTurns: number = 0;           // сколько ходов осталось клеиться
+  private trapped: boolean = false;         // заперт ли в клетке?
+
+  // --------------------------------------------------------------------------
+  // КОНСТРУКТОР
+  // --------------------------------------------------------------------------
   constructor(
     startPos: Point,
     startDir: 'up' | 'down' | 'left' | 'right',
@@ -46,7 +59,9 @@ export class Player {
     this.resetInventory();
   }
 
-  // ---------- Геттеры ----------
+  // --------------------------------------------------------------------------
+  // ГЕТТЕРЫ (для внешних модулей)
+  // --------------------------------------------------------------------------
   public getPosition(): Point {
     return { ...this.position };
   }
@@ -83,50 +98,75 @@ export class Player {
     return this.trapped;
   }
 
-  // ---------- Управление режимами ----------
+  // --------------------------------------------------------------------------
+  // УПРАВЛЕНИЕ РЕЖИМАМИ
+  // --------------------------------------------------------------------------
   public setGhostMode(enabled: boolean): void {
     this.isGhostMode = enabled;
     eventBus.emit('EXPLORATION_TOGGLED', { enabled, penaltyWarningShown: true });
   }
 
-  // ---------- Движение и коллизии ----------
-  public move(direction: 'up' | 'down' | 'left' | 'right'): boolean {
+  // --------------------------------------------------------------------------
+  // ДВИЖЕНИЕ (основное)
+  // --------------------------------------------------------------------------
+  public move(command: Command): boolean {
     if (!this.isAlive) return false;
     if (this.isTrapped()) {
-      logger.debug('Player', 'move', 'Player is trapped in cage, cannot move');
+      logger.debug('Player', 'move', 'Trapped in cage – cannot move');
       return false;
     }
     if (this.isGlued()) {
       this.decrementGlueTurn();
       if (this.isGlued()) {
-        logger.debug('Player', 'move', 'Player is glued, cannot move');
+        logger.debug('Player', 'move', 'Glued – cannot move');
         return false;
       }
     }
 
-    const delta = this.directionToDelta(direction);
-    const newPos = { col: this.position.col + delta.col, row: this.position.row + delta.row };
+    // Преобразуем команду в дельту
+    let delta = { col: 0, row: 0 };
+    let newDir = this.direction;
+    switch (command) {
+      case Command.UP:    delta = { col: 0, row: -1 }; newDir = 'up'; break;
+      case Command.DOWN:  delta = { col: 0, row: 1 };  newDir = 'down'; break;
+      case Command.LEFT:  delta = { col: -1, row: 0 }; newDir = 'left'; break;
+      case Command.RIGHT: delta = { col: 1, row: 0 };  newDir = 'right'; break;
+      default: return false;
+    }
+
+    const newPos = {
+      col: this.position.col + delta.col,
+      row: this.position.row + delta.row,
+    };
+
+    // Проверка границ
     if (!this.isWithinBounds(newPos)) return false;
+
+    // Проверка возможности войти на клетку (стена, яма, лава и т.д.)
     const tile = this.tileMap(newPos.col, newPos.row);
     if (!this.canEnterTile(tile)) return false;
 
+    // Выполняем движение
     const oldPos = { ...this.position };
     this.position = newPos;
-    this.direction = direction;
-    this.direction = direction;
+    this.direction = newDir;
 
     eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
     return true;
   }
 
-  // Принудительная телепортация (без проверок)
+  // --------------------------------------------------------------------------
+  // ПРИНУДИТЕЛЬНАЯ ТЕЛЕПОРТАЦИЯ (без проверок)
+  // --------------------------------------------------------------------------
   public teleport(point: Point): void {
     const oldPos = { ...this.position };
     this.position = { ...point };
     eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
   }
 
-  // Применить эффект конвейера (вызывается из ExecutionEngine)
+  // --------------------------------------------------------------------------
+  // ДВИЖЕНИЕ ОТ КОНВЕЙЕРА (вызывается из TilesExecutor)
+  // --------------------------------------------------------------------------
   public applyConveyor(conveyorDir: 'up' | 'down' | 'left' | 'right'): boolean {
     if (!this.isAlive) return false;
     if (this.isTrapped()) return false;
@@ -135,18 +175,24 @@ export class Player {
       if (this.isGlued()) return false;
     }
 
-    const delta = this.directionToDelta(conveyorDir);
-    const newPos = { col: this.position.col + delta.col, row: this.position.row + delta.row };
+    const delta = this.dirToDelta(conveyorDir);
+    const newPos = {
+      col: this.position.col + delta.col,
+      row: this.position.row + delta.row,
+    };
     if (!this.isWithinBounds(newPos)) return false;
     const tile = this.tileMap(newPos.col, newPos.row);
     if (!this.canEnterTile(tile)) return false;
+
     const oldPos = { ...this.position };
     this.position = newPos;
     eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
     return true;
   }
 
-  // Применить пружину (вызывается из ExecutionEngine)
+  // --------------------------------------------------------------------------
+  // ПРУЖИНА (вызывается из TilesExecutor)
+  // --------------------------------------------------------------------------
   public applySpring(launchDir: 'up' | 'down' | 'left' | 'right', force: number = 3): boolean {
     if (!this.isAlive) return false;
     if (this.isTrapped()) return false;
@@ -157,8 +203,11 @@ export class Player {
 
     let currentPos = { ...this.position };
     for (let i = 0; i < force; i++) {
-      const delta = this.directionToDelta(launchDir);
-      const nextPos = { col: currentPos.col + delta.col, row: currentPos.row + delta.row };
+      const delta = this.dirToDelta(launchDir);
+      const nextPos = {
+        col: currentPos.col + delta.col,
+        row: currentPos.row + delta.row,
+      };
       if (!this.isWithinBounds(nextPos)) return false;
       const tile = this.tileMap(nextPos.col, nextPos.row);
       if (!this.canEnterTile(tile)) return false;
@@ -170,7 +219,9 @@ export class Player {
     return true;
   }
 
-  // ---------- Инвентарь ----------
+  // --------------------------------------------------------------------------
+  // УПРАВЛЕНИЕ ИНВЕНТАРЁМ
+  // --------------------------------------------------------------------------
   public addKey(keyId: string): void {
     if (!this.inventory.keys.includes(keyId)) {
       this.inventory.keys.push(keyId);
@@ -179,9 +230,9 @@ export class Player {
   }
 
   public useKey(keyId: string): boolean {
-    const index = this.inventory.keys.indexOf(keyId);
-    if (index !== -1) {
-      this.inventory.keys.splice(index, 1);
+    const idx = this.inventory.keys.indexOf(keyId);
+    if (idx !== -1) {
+      this.inventory.keys.splice(idx, 1);
       this.emitInventoryChanged();
       return true;
     }
@@ -219,9 +270,9 @@ export class Player {
   public addTool(tool: 'drill' | 'hook' | 'wing' | 'bait'): void {
     switch (tool) {
       case 'drill': this.inventory.hasDrill = true; break;
-      case 'hook': this.inventory.hasHook = true; break;
-      case 'wing': this.inventory.hasWing = true; break;
-      case 'bait': this.inventory.hasBait = true; break;
+      case 'hook':  this.inventory.hasHook = true; break;
+      case 'wing':  this.inventory.hasWing = true; break;
+      case 'bait':  this.inventory.hasBait = true; break;
     }
     if (!this.inventory.tools.includes(tool)) this.inventory.tools.push(tool);
     this.emitInventoryChanged();
@@ -231,9 +282,9 @@ export class Player {
     let has = false;
     switch (tool) {
       case 'drill': has = this.inventory.hasDrill; if (has) this.inventory.hasDrill = false; break;
-      case 'hook': has = this.inventory.hasHook; if (has) this.inventory.hasHook = false; break;
-      case 'wing': has = this.inventory.hasWing; if (has) this.inventory.hasWing = false; break;
-      case 'bait': has = this.inventory.hasBait; if (has) this.inventory.hasBait = false; break;
+      case 'hook':  has = this.inventory.hasHook;  if (has) this.inventory.hasHook = false; break;
+      case 'wing':  has = this.inventory.hasWing;  if (has) this.inventory.hasWing = false; break;
+      case 'bait':  has = this.inventory.hasBait;  if (has) this.inventory.hasBait = false; break;
     }
     if (has) {
       this.inventory.tools = this.inventory.tools.filter(t => t !== tool);
@@ -243,7 +294,9 @@ export class Player {
     return false;
   }
 
-  // ---------- Смерть и сброс ----------
+  // --------------------------------------------------------------------------
+  // СМЕРТЬ И ВОЗРОЖДЕНИЕ
+  // --------------------------------------------------------------------------
   public kill(cause: string): void {
     if (this.isGhostMode) return;
     this.isAlive = false;
@@ -276,7 +329,9 @@ export class Player {
     this.emitInventoryChanged();
   }
 
-  // ---------- Клонирование ----------
+  // --------------------------------------------------------------------------
+  // КЛОНИРОВАНИЕ (параллелизм)
+  // --------------------------------------------------------------------------
   public createClone(cloneId: string, position: Point, commands: Command[]): void {
     const newClone: CloneInfo = {
       id: cloneId,
@@ -299,13 +354,12 @@ export class Player {
 
   public updateClonePosition(cloneId: string, newPos: Point): void {
     const clone = this.getClone(cloneId);
-    if (clone) {
-      clone.position = { ...newPos };
-    }
+    if (clone) clone.position = { ...newPos };
   }
 
   public joinClones(): void {
     for (const clone of this.clones) {
+      // Суммируем инвентарь
       for (const key of clone.inventory.keys) {
         if (!this.inventory.keys.includes(key)) this.inventory.keys.push(key);
       }
@@ -321,10 +375,12 @@ export class Player {
     }
     this.clones = [];
     this.emitInventoryChanged();
-    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position });
+    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position }); // Обновить UI
   }
 
-  // ---------- Верховая езда ----------
+  // --------------------------------------------------------------------------
+  // ВЕРХОВАЯ ЕЗДА
+  // --------------------------------------------------------------------------
   public rideMonster(monster: Monster): void {
     if (this.riddenMonster) this.dismountMonster();
     this.riddenMonster = { ...monster };
@@ -344,12 +400,14 @@ export class Player {
     return this.riddenMonster !== null;
   }
 
-  // ---------- Клей и клетка ----------
+  // --------------------------------------------------------------------------
+  // СТАТУСНЫЕ ЭФФЕКТЫ (клей, клетка)
+  // --------------------------------------------------------------------------
   public setGlued(glued: boolean, turns: number = 3): void {
     this.glued = glued;
     this.gluedTurns = turns;
     if (glued) {
-      logger.info('Player', 'setGlued', `Player glued for ${turns} turns`);
+      logger.info('Player', 'setGlued', `Glued for ${turns} turns`);
       eventBus.emit('PLAYER_GLUED', { duration: turns });
     }
   }
@@ -359,7 +417,7 @@ export class Player {
       this.gluedTurns--;
       if (this.gluedTurns === 0) {
         this.glued = false;
-        logger.info('Player', 'decrementGlueTurn', 'Player no longer glued');
+        logger.info('Player', 'decrementGlueTurn', 'No longer glued');
         eventBus.emit('PLAYER_UNGLUED');
       }
     }
@@ -368,32 +426,38 @@ export class Player {
   public setTrapped(trapped: boolean): void {
     this.trapped = trapped;
     if (trapped) {
-      logger.info('Player', 'setTrapped', 'Player trapped in cage');
+      logger.info('Player', 'setTrapped', 'Trapped in cage');
       eventBus.emit('PLAYER_TRAPPED');
     } else {
-      logger.info('Player', 'setTrapped', 'Player freed from cage');
+      logger.info('Player', 'setTrapped', 'Freed from cage');
       eventBus.emit('PLAYER_FREED');
     }
   }
 
-  // ---------- Приватные вспомогательные методы ----------
-  private directionToDelta(dir: 'up' | 'down' | 'left' | 'right'): { col: number; row: number } {
+  // --------------------------------------------------------------------------
+  // ВСПОМОГАТЕЛЬНЫЕ ПРИВАТНЫЕ МЕТОДЫ
+  // --------------------------------------------------------------------------
+  private dirToDelta(dir: 'up' | 'down' | 'left' | 'right'): { col: number; row: number } {
     switch (dir) {
-      case 'up': return { col: 0, row: -1 };
-      case 'down': return { col: 0, row: 1 };
-      case 'left': return { col: -1, row: 0 };
+      case 'up':    return { col: 0, row: -1 };
+      case 'down':  return { col: 0, row: 1 };
+      case 'left':  return { col: -1, row: 0 };
       case 'right': return { col: 1, row: 0 };
     }
   }
 
   private isWithinBounds(pos: Point): boolean {
-    return pos.col >= 0 && pos.col < this.levelBounds.width && pos.row >= 0 && pos.row < this.levelBounds.height;
+    return pos.col >= 0 && pos.col < this.levelBounds.width &&
+           pos.row >= 0 && pos.row < this.levelBounds.height;
   }
 
   private canEnterTile(tile: number): boolean {
-    if (tile === 4 || tile === 5) return false; // WALL, FAKE_WALL
-    if (tile === 2 && !this.inventory.hasWing && !this.isGhostMode) return false; // HOLE
-    if ((tile === 32 || tile === 33) && !this.isGhostMode) return false; // LAVA, WATER
+    // Стены (включая фальшивые) непроходимы без специальных средств
+    if (tile === 1 || tile === 5) return false;   // WALL, FAKE_WALL (согласно TileType)
+    // Яма, лава, вода – только с крыльями или в режиме призрака
+    if (tile === 2 && !this.inventory.hasWing && !this.isGhostMode) return false;
+    if ((tile === 32 || tile === 33) && !this.inventory.hasWing && !this.isGhostMode) return false;
+    // Остальные тайлы (платформа, ключи, инструменты, цели, механизмы) – проходимы
     return true;
   }
 
