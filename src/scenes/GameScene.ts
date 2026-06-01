@@ -1,23 +1,30 @@
+// src/scenes/GameScene.ts
+// ============================================================================
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА
+// ============================================================================
+// Здесь происходит всё: отрисовка уровня, управление камерой, запуск программы,
+// обработка событий выполнения (шаги, победа, поражение), интеграция с CommandPanel,
+// InventoryUI, ProgramVisualizer и ExecutionEngine.
+// ============================================================================
+
 import { Scene } from 'phaser';
-import { CommandPanel, Command } from '../modules/CommandPanel';
+import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { InventoryUI } from '../modules/InventoryUI';
-import { LevelData, TileType, Inventory } from '../types/index';
+import { LevelData, TileType, Inventory, Command } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { ExecutionEngine } from '../modules/execution';
 import { Player } from '../modules/Player';
 import { logger } from '../core/Logger';
 import { gameEvents as eventBus } from '../core/EventBus';
-// Если есть реальный Pathfinder, раскомментируйте импорт
-// import { Pathfinder } from '../modules/Pathfinder';
 
 export class GameScene extends Scene {
   private level: LevelData | null = null;
   private originalLevelData: LevelData | null = null;
   private levelId: string = '';
   private player: Player | null = null;
-  private gridSize: number = 48;
+  private gridSize: number = 48;            // размер клетки в пикселях
   private playerSprite: Phaser.GameObjects.Rectangle;
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
@@ -29,7 +36,7 @@ export class GameScene extends Scene {
   private cameraFollowEnabled: boolean = true;
   private followRestoreTimer?: Phaser.Time.TimerEvent;
 
-  // Ширина панели команд (подбирается под ваш UI)
+  // Ширина панели команд (нужна для смещения камеры и UI)
   private readonly COMMAND_PANEL_WIDTH = 280;
 
   constructor() {
@@ -38,12 +45,13 @@ export class GameScene extends Scene {
 
   init(data: { levelId: string }): void {
     this.levelId = data.levelId;
-    logger.debug('GameScene', 'init', `levelId set to ${this.levelId}`);
+    logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
   }
 
   async create(): Promise<void> {
     logger.info('GameScene', 'create', 'Loading level...');
     
+    // Загружаем данные уровня
     const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
       logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
@@ -51,9 +59,11 @@ export class GameScene extends Scene {
       return;
     }
     
+    // Сохраняем оригинал для сброса
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
     
+    // Создаём игрока
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -66,23 +76,23 @@ export class GameScene extends Scene {
       tileGetter
     );
     
-    // Игровой контейнер смещаем вправо на ширину панели команд
+    // Контейнер для игровых объектов (сдвинут вправо, чтобы не перекрывать панель команд)
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
       height: this.level.height * this.gridSize
     };
     
+    // Отрисовка сетки и игрока
     this.drawGrid();
     this.drawPlayer();
     
-    // Камера: границы от 0 до gameBounds.width, но с учётом смещения контейнера
-    // (камера видит мир относительно верхнего левого угла игры, контейнер уже сдвинут)
+    // Настройка камеры
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     
-    // Скролл (мышь и стрелки)
+    // Управление камерой мышью и клавишами
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
@@ -112,7 +122,7 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
     
-    // Панель команд теперь рисуется в координатах сцены (не в контейнере), поэтому она всегда видна слева
+    // Панель команд (слева)
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -130,14 +140,16 @@ export class GameScene extends Scene {
       }
     );
     
+    // Визуализатор программы (рисует путь на поле)
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
     this.updateVisualizer();
     
+    // UI инвентаря
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
     
-    // Кнопка BACK
+    // Кнопка возврата в меню
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -151,7 +163,7 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     });
     
-    // Кнопка AutoSolve внизу справа от панели (или внизу слева экрана, но не под панелью)
+    // Кнопка AutoSolve (заглушка)
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -162,16 +174,18 @@ export class GameScene extends Scene {
       this.autoSolve();
     });
     
+    // Подписка на события выполнения
     this.setupExecutionListeners();
   }
   
+  // --------------------------------------------------------------------------
+  // УПРАВЛЕНИЕ КАМЕРОЙ
+  // --------------------------------------------------------------------------
   private disableCameraFollowTemporarily(): void {
     if (!this.cameraFollowEnabled) return;
     this.cameraFollowEnabled = false;
     this.cameras.main.stopFollow();
-    if (this.followRestoreTimer) {
-      this.followRestoreTimer.destroy();
-    }
+    if (this.followRestoreTimer) this.followRestoreTimer.destroy();
     this.followRestoreTimer = this.time.delayedCall(3000, () => {
       this.cameraFollowEnabled = true;
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
@@ -186,28 +200,17 @@ export class GameScene extends Scene {
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
   
+  // --------------------------------------------------------------------------
+  // AUTO SOLVE (ЗАГЛУШКА)
+  // --------------------------------------------------------------------------
   private autoSolve(): void {
     if (!this.level || !this.player) return;
-    
-    // Пытаемся использовать реальный Pathfinder, если он есть
-    try {
-      // const pathfinder = new Pathfinder(this.level, this.player);
-      // const solution = pathfinder.findOptimalPath();
-      // if (solution) {
-      //   this.commandPanel.loadCommands(solution);
-      //   this.runProgram(solution);
-      //   return;
-      // }
-    } catch (e) {
-      // Pathfinder не подключён
-    }
-    
-    // Заглушка с подсказкой
-    logger.warn('GameScene', 'autoSolve', 'Модуль Pathfinder не найден. Реализуйте BFS и раскомментируйте код.');
+    // Здесь должен быть Pathfinder, пока просто сообщение
+    logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
     const msg = this.add.text(
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       this.cameras.main.centerY,
-      '🧪 AutoSolve: Pathfinder ещё не интегрирован',
+      '🧪 AutoSolve: Pathfinder not integrated',
       {
         fontSize: '18px',
         color: '#ffaa00',
@@ -218,36 +221,35 @@ export class GameScene extends Scene {
     this.time.delayedCall(2000, () => msg.destroy());
   }
   
+  // --------------------------------------------------------------------------
+  // ПОДПИСКА НА СОБЫТИЯ ВЫПОЛНЕНИЯ
+  // --------------------------------------------------------------------------
   private setupExecutionListeners(): void {
-    // Шаг выполнения
     eventBus.on('EXECUTION_STEP', (payload: any) => {
-      if (payload && payload.stepIndex !== undefined) {
+      if (payload?.stepIndex !== undefined) {
         this.commandPanel.highlightCommand(payload.stepIndex, 'running');
       }
     });
     
-    // Ошибка на шаге (коллизия, смерть и т.д.)
     eventBus.on('EXECUTION_ERROR', (payload: any) => {
-      if (payload && payload.stepIndex !== undefined) {
+      if (payload?.stepIndex !== undefined) {
         this.commandPanel.highlightCommand(payload.stepIndex, 'error');
       }
     });
     
-    eventBus.on('PLAYER_MOVED', (payload: any) => {
-      if (payload && payload.to && this.player) {
-        this.drawPlayer();
-      }
+    eventBus.on('PLAYER_MOVED', () => {
+      this.drawPlayer();
     });
     
     eventBus.on('INVENTORY_CHANGED', (payload: any) => {
-      if (payload && payload.inventory && this.inventoryUI && this.player) {
+      if (payload?.inventory && this.inventoryUI && this.player) {
         this.inventoryUI.updateInventory(payload.inventory);
       }
     });
     
     eventBus.on('EXECUTION_FINISHED', (payload: any) => {
       this.isExecuting = false;
-      if (payload && payload.success && payload.result) {
+      if (payload?.success && payload.result) {
         const stars = payload.result.stars;
         const steps = payload.result.steps;
         progressManager.completeLevel(this.levelId, stars, steps);
@@ -258,6 +260,9 @@ export class GameScene extends Scene {
     });
   }
   
+  // --------------------------------------------------------------------------
+  // ВИЗУАЛИЗАЦИЯ ПРОГРАММЫ
+  // --------------------------------------------------------------------------
   private updateVisualizer(): void {
     if (!this.level) return;
     const commands = this.commandPanel.getCommands();
@@ -268,11 +273,14 @@ export class GameScene extends Scene {
       this.level.width,
       this.level.height,
       this.gridSize,
-      this.COMMAND_PANEL_WIDTH, // передаём смещение, чтобы визуализатор рисовал правильно
+      this.COMMAND_PANEL_WIDTH,
       0
     );
   }
   
+  // --------------------------------------------------------------------------
+  // СБРОС УРОВНЯ
+  // --------------------------------------------------------------------------
   private resetLevel(): void {
     if (!this.originalLevelData) return;
     this.level = JSON.parse(JSON.stringify(this.originalLevelData));
@@ -297,6 +305,9 @@ export class GameScene extends Scene {
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
   }
   
+  // --------------------------------------------------------------------------
+  // ЗАПУСК ПРОГРАММЫ
+  // --------------------------------------------------------------------------
   private async runProgram(commands: Command[]): Promise<void> {
     if (this.isExecuting) return;
     if (this.executionEngine) {
@@ -308,12 +319,15 @@ export class GameScene extends Scene {
     
     if (!this.player) return;
     
-    this.executionEngine = new ExecutionEngine(this.level, this.player);
+    this.executionEngine = new ExecutionEngine(this.level!, this.player);
     this.executionEngine.loadProgram(commands);
     
     await this.executionEngine.start();
   }
   
+  // --------------------------------------------------------------------------
+  // ПОБЕДА / ПОРАЖЕНИЕ
+  // --------------------------------------------------------------------------
   private showVictoryMessage(stars: number, steps: number): void {
     const msg = this.add.text(
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
@@ -357,6 +371,9 @@ export class GameScene extends Scene {
     });
   }
   
+  // --------------------------------------------------------------------------
+  // ОТРИСОВКА СЕТКИ И ТАЙЛОВ
+  // --------------------------------------------------------------------------
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
@@ -364,8 +381,10 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B;
+        let color = 0x8B5A2B; // платформа по умолчанию
         const tile = map[row][col];
+        
+        // Цветовая схема (временная, потом заменить на спрайты)
         if (tile === TileType.WALL) color = 0x555555;
         else if (tile === TileType.HOLE) color = 0x000000;
         else if (tile === TileType.BRICK) color = 0xA52A2A;
