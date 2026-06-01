@@ -1,7 +1,20 @@
 // src/modules/execution/movement.ts
-// Реализация команд движения (UP, DOWN, LEFT, RIGHT)
-// Обрабатывает: движение, сбор предметов, телепорты, конвейеры, пружины, чёрный ящик, двери,
-// смертельные тайлы, а также новые механики: клей, клетка (ловушка для игрока)
+// ============================================================================
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ
+// ============================================================================
+// Реализует команды:
+// - UP, DOWN, LEFT, RIGHT
+// ============================================================================
+// Обрабатывает:
+// - проверку границ
+// - проверку проходимости клетки (стены, ямы, лава, вода, двери, кирпичи)
+// - сбор предметов при движении
+// - телепорты, конвейеры, пружины, чёрные ящики, кнопки, рычаги, таймеры, сенсоры, сортировщики
+// - клей, клетку (ловушку для игрока)
+// - монстров (столкновение = смерть, если не приручены)
+// ============================================================================
+// Вызывает методы TilesExecutor для специальных тайлов.
+// ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
 import { gameEvents as eventBus } from '../../core/EventBus';
@@ -45,7 +58,14 @@ export class MovementExecutor {
     this.explorationMode = enabled;
   }
 
-  public async execute(cmd: Command, currentDirection: 'up' | 'down' | 'left' | 'right', onDirectionChange: (dir: 'up' | 'down' | 'left' | 'right') => void): Promise<'ok' | 'dead'> {
+  // --------------------------------------------------------------------------
+  // ОСНОВНАЯ ФУНКЦИЯ ВЫПОЛНЕНИЯ КОМАНДЫ ДВИЖЕНИЯ
+  // --------------------------------------------------------------------------
+  public async execute(
+    cmd: Command,
+    currentDirection: 'up' | 'down' | 'left' | 'right',
+    onDirectionChange: (dir: 'up' | 'down' | 'left' | 'right') => void
+  ): Promise<'ok' | 'dead'> {
     let dx = 0, dy = 0;
     let newDirection: 'up' | 'down' | 'left' | 'right' = 'right';
 
@@ -70,6 +90,7 @@ export class MovementExecutor {
         return 'ok';
     }
 
+    // Обновляем направление игрока (для использования другими командами, например USE_KEY)
     onDirectionChange(newDirection);
     this.lastDirection = newDirection;
 
@@ -79,7 +100,7 @@ export class MovementExecutor {
       row: oldPos.row + dy,
     };
 
-    // Проверка границ
+    // 1. Проверка границ
     if (newPos.col < 0 || newPos.col >= this.level.width ||
         newPos.row < 0 || newPos.row >= this.level.height) {
       log('MovementExecutor', 'execute', `Out of bounds at (${newPos.col},${newPos.row})`);
@@ -89,7 +110,7 @@ export class MovementExecutor {
     const tile = this.level.map[newPos.row][newPos.col];
     log('MovementExecutor', 'execute', `Moving from (${oldPos.col},${oldPos.row}) to (${newPos.col},${newPos.row}), tile=${tile}`);
 
-    // Проверка на смертельные тайлы
+    // 2. Проверка на смертельные тайлы (стены, ямы, лава, вода)
     if (!this.explorationMode) {
       if (isWall(tile)) {
         log('MovementExecutor', 'execute', `Wall at (${newPos.col},${newPos.row})`);
@@ -105,48 +126,46 @@ export class MovementExecutor {
       }
     }
 
-    // Проверка на закрытую дверь
+    // 3. Проверка на закрытую дверь (без ключа)
     if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length === 0) {
       log('MovementExecutor', 'execute', `Locked door at (${newPos.col},${newPos.row})`);
       return 'dead';
     }
 
-    // Проверка на кирпич (требуется команда PUSH)
+    // 4. Проверка на кирпич (требуется команда PUSH)
     if (tile === TileType.BRICK) {
       log('MovementExecutor', 'execute', `Brick at (${newPos.col},${newPos.row}) - use PUSH`);
       return 'dead';
     }
 
-    // Проверка на монстра
-    const monsterHere = this.level.objects.monsters?.find((m: any) => m.position.col === newPos.col && m.position.row === newPos.row);
+    // 5. Проверка на монстра
+    const monsterHere = this.level.objects?.monsters?.find((m: any) =>
+      m.position.col === newPos.col && m.position.row === newPos.row
+    );
     if (monsterHere && !this.explorationMode && !monsterHere.isTamed && !monsterHere.isRidden) {
       log('MovementExecutor', 'execute', `Monster at (${newPos.col},${newPos.row})`);
       return 'dead';
     }
 
-    // Новая механика: клей (приклеивание)
-    if (tile === TileType.GLUE && !this.player.isGlued) {
+    // 6. Обработка клея (при входе на GLUE)
+    if (tile === TileType.GLUE && !this.player.isGlued()) {
       this.tilesExecutor.processGlue(newPos);
       // Движение разрешено, но игрок приклеится после входа
     }
 
-    // Новая механика: клетка (ловушка для игрока)
+    // 7. Обработка клетки (ловушка для игрока)
     if (tile === TileType.CAGE) {
-      const cage = this.level.objects?.cages?.find((c: any) => c.position.col === newPos.col && c.position.row === newPos.row);
-      if (cage && !cage.isClosed) {
-        const trapped = this.tilesExecutor.processCage(newPos, 'player');
-        if (trapped) {
-          // Игрок пойман, движение не завершается успешно, но и не смерть (особый статус)
-          // Возвращаем 'dead', чтобы остановить выполнение программы
-          return 'dead';
-        }
+      const trapped = this.tilesExecutor.processCage(newPos, 'player');
+      if (trapped) {
+        // Игрок пойман, выполнение программы прерывается (смерть)
+        return 'dead';
       }
     }
 
-    // Выполняем движение
+    // 8. Выполняем движение
     this.player.move(cmd);
 
-    // Открываем дверь, если есть ключ (при движении)
+    // 9. Открываем дверь, если есть ключ (автоматически при входе)
     if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length > 0) {
       this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
       this.inventory.keys.pop();
@@ -155,34 +174,34 @@ export class MovementExecutor {
       eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
     }
 
-    // Сбор предметов при движении
+    // 10. Сбор предметов при движении
     if (isPickupItem(tile)) {
       this.pickupItem(newPos.col, newPos.row, tile);
     }
 
-    // Обработка телепорта
+    // 11. Обработка телепорта
     if (tile === TileType.TELEPORT_IN) {
       this.tilesExecutor.processTeleport(newPos);
     }
 
-    // Обработка конвейера (после перемещения)
+    // 12. Обработка конвейера (после перемещения)
     const finalPos = this.player.getPosition();
     const finalTile = this.level.map[finalPos.row][finalPos.col];
     if (isConveyor(finalTile)) {
       await this.tilesExecutor.processConveyor(finalPos, cmd);
     }
 
-    // Обработка пружины
+    // 13. Обработка пружины
     if (finalTile === TileType.SPRING) {
       await this.tilesExecutor.processSpring(finalPos, newDirection);
     }
 
-    // Обработка чёрного ящика
+    // 14. Обработка чёрного ящика
     if (finalTile === TileType.BLACK_BOX) {
       this.tilesExecutor.processBlackBox(finalPos);
     }
 
-    // Обработка кнопки, рычага, таймера, сенсора, сортировщика
+    // 15. Обработка кнопки, рычага, таймера, сенсора, сортировщика
     if (finalTile === TileType.BUTTON) {
       this.tilesExecutor.processButton(finalPos);
     }
@@ -202,6 +221,9 @@ export class MovementExecutor {
     return 'ok';
   }
 
+  // --------------------------------------------------------------------------
+  // ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПОДБОРА ПРЕДМЕТОВ
+  // --------------------------------------------------------------------------
   private pickupItem(col: number, row: number, tile: TileType): void {
     switch (tile) {
       case TileType.KEY:
@@ -218,22 +240,22 @@ export class MovementExecutor {
         break;
       case TileType.TOOL_DRILL:
         this.inventory.hasDrill = true;
-        this.inventory.tools.push('drill');
+        if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
         logInfo('MovementExecutor', 'pickupItem', `Picked up drill at (${col},${row})`);
         break;
       case TileType.TOOL_HOOK:
         this.inventory.hasHook = true;
-        this.inventory.tools.push('hook');
+        if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
         logInfo('MovementExecutor', 'pickupItem', `Picked up hook at (${col},${row})`);
         break;
       case TileType.TOOL_WING:
         this.inventory.hasWing = true;
-        this.inventory.tools.push('wing');
+        if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
         logInfo('MovementExecutor', 'pickupItem', `Picked up wing at (${col},${row})`);
         break;
       case TileType.TOOL_BAIT:
         this.inventory.hasBait = true;
-        this.inventory.tools.push('bait');
+        if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
         logInfo('MovementExecutor', 'pickupItem', `Picked up bait at (${col},${row})`);
         break;
       case TileType.CAGE_KEY:
@@ -241,17 +263,21 @@ export class MovementExecutor {
         logInfo('MovementExecutor', 'pickupItem', `Picked up cage key at (${col},${row})`);
         break;
       case TileType.GEM:
-        this.inventory.cores += 5; // драгоценность даёт много ядер
+        this.inventory.cores += 5;
         logInfo('MovementExecutor', 'pickupItem', `Picked up gem at (${col},${row})`);
         break;
       default:
         return;
     }
+    // Очищаем клетку (предмет исчезает)
     this.level.map[row][col] = TileType.PLATFORM;
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
     eventBus.emit('OBJECT_COLLECTED', { objectId: `${tile}_${col}_${row}` });
   }
 
+  // --------------------------------------------------------------------------
+  // ПРОВЕРКА ИСПОЛЬЗОВАНИЯ ЧЁРНОГО ХОДА
+  // --------------------------------------------------------------------------
   public isBackdoorUsed(): boolean {
     return this.backdoorUsed;
   }
