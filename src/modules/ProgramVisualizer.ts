@@ -1,5 +1,14 @@
+// src/modules/ProgramVisualizer.ts
+// ============================================================================
+// ВИЗУАЛИЗАТОР ПРОГРАММЫ (РИСУЕТ ТРАЕКТОРИЮ НА КАРТЕ)
+// ============================================================================
+// Получает список команд (Command[]) и отображает на игровом поле стрелки,
+// показывающие путь, который пройдёт игрок при выполнении программы.
+// Красный крестик обозначает выход за границу или столкновение с препятствием.
+// ============================================================================
+
 import { Scene } from 'phaser';
-import { Command } from './CommandPanel';
+import { Command } from '../types/index';
 
 export class ProgramVisualizer {
   private scene: Scene;
@@ -11,8 +20,21 @@ export class ProgramVisualizer {
     this.gridSize = gridSize;
   }
 
-  public updateVisuals(commands: Command[], startCol: number, startRow: number, width: number, height: number, gridSize: number, offsetX: number, offsetY: number): void {
+  // --------------------------------------------------------------------------
+  // ОСНОВНОЙ МЕТОД: ОБНОВИТЬ ВИЗУАЛИЗАЦИЮ ПО КОМАНДАМ
+  // --------------------------------------------------------------------------
+  public updateVisuals(
+    commands: Command[],
+    startCol: number,
+    startRow: number,
+    width: number,
+    height: number,
+    gridSize: number,
+    offsetX: number,
+    offsetY: number
+  ): void {
     this.clear();
+
     if (!commands.length) return;
 
     let col = startCol;
@@ -21,10 +43,13 @@ export class ProgramVisualizer {
     for (const cmd of commands) {
       let dx = 0, dy = 0;
       let symbol = '';
-      if (cmd === 'up') { dy = -1; symbol = '↑'; }
-      if (cmd === 'down') { dy = 1; symbol = '↓'; }
-      if (cmd === 'left') { dx = -1; symbol = '←'; }
-      if (cmd === 'right') { dx = 1; symbol = '→'; }
+      switch (cmd) {
+        case Command.UP:    dy = -1; symbol = '↑'; break;
+        case Command.DOWN:  dy = 1;  symbol = '↓'; break;
+        case Command.LEFT:  dx = -1; symbol = '←'; break;
+        case Command.RIGHT: dx = 1;  symbol = '→'; break;
+        default: continue; // другие команды не визуализируем
+      }
 
       const newCol = col + dx;
       const newRow = row + dy;
@@ -42,6 +67,7 @@ export class ProgramVisualizer {
         col = newCol;
         row = newRow;
       } else {
+        // Если выход за границы – рисуем крестик в предполагаемой позиции (за границей)
         const x = offsetX + (col + dx) * gridSize + gridSize / 2;
         const y = offsetY + (row + dy) * gridSize + gridSize / 2;
         const cross = this.scene.add.text(x, y, '❌', {
@@ -51,11 +77,14 @@ export class ProgramVisualizer {
           padding: { x: 4, y: 2 },
         }).setOrigin(0.5);
         this.arrows.push(cross);
-        break;
+        break; // дальнейшие команды не рисуем, так как путь прерван
       }
     }
   }
 
+  // --------------------------------------------------------------------------
+  // ОЧИСТКА ВСЕХ НАРИСОВАННЫХ СТРЕЛОК
+  // --------------------------------------------------------------------------
   public clear(): void {
     this.arrows.forEach(arrow => arrow.destroy());
     this.arrows = [];
