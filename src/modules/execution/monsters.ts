@@ -1,38 +1,50 @@
 // src/modules/execution/monsters.ts
-// Обработка монстров: патрулирование, преследование, приручение, оседлывание, отвлечение,
-// а также новые механики: клей (приклеивание), клетка (ловушка), ловушка (превращение в драгоценность)
+// ============================================================================
+// ОБРАБОТЧИК МОНСТРОВ
+// ============================================================================
+// Управляет всеми монстрами на уровне:
+// - движение в зависимости от типа (patrol, chase, tameable, phased, zombie, boss)
+// - взаимодействие с игроком (столкновение = смерть, если не приручен)
+// - приручение (кормление кукурузой)
+// - оседлывание (езда на прирученном монстре)
+// - отвлечение (приманка)
+// - эффекты клея, клетки, ловушки (передаются в TilesExecutor)
+// ============================================================================
 
 import { Point, Inventory, TileType } from '../../types/index';
 import { gameEvents as eventBus } from '../../core/EventBus';
-import { log, logInfo, logError, getFrontPosition, isWall, isHole } from './helpers';
+import { log, logInfo, logError } from './helpers';
 import { TilesExecutor } from './tiles';
 
+// ----------------------------------------------------------------------------
+// ИНТЕРФЕЙС МОНСТРА (расширенный)
+// ----------------------------------------------------------------------------
 export interface Monster {
   id: string;
   type: 'patrol' | 'chase' | 'tameable' | 'phased' | 'zombie' | 'boss';
   position: Point;
   direction: 'up' | 'down' | 'left' | 'right';
-  patrolPath?: Point[];
-  patrolIndex?: number;
-  isTamed: boolean;
-  isRidden: boolean;
-  isDistracted?: boolean;
-  distractedTurns?: number;
-  isGlued?: boolean;
+  patrolPath?: Point[];      // маршрут для патрульных монстров
+  patrolIndex?: number;      // текущий индекс в маршруте
+  isTamed: boolean;          // приручен ли?
+  isRidden: boolean;         // едет ли на нём игрок?
+  isDistracted?: boolean;    // отвлечён ли приманкой?
+  distractedTurns?: number;  // сколько ходов ещё отвлечён
+  isGlued?: boolean;         // приклеен ли?
   gluedTurns?: number;
-  isTrapped?: boolean;
-  health?: number;
-  phaseState?: 'visible' | 'invisible';
+  isTrapped?: boolean;       // пойман ли в клетку?
+  health?: number;           // здоровье (для будущих механик)
+  phaseState?: 'visible' | 'invisible'; // для phased-монстров
 }
 
 export class MonstersExecutor {
-  private level: any;
-  private player: any;
-  private inventory: Inventory;
-  private monsters: Monster[];
+  private level: any;                 // ссылка на объект уровня (map, objects, width, height)
+  private player: any;               // ссылка на игрока (для проверки столкновений и позиции)
+  private inventory: Inventory;      // инвентарь (для проверки наличия приманки и т.д.)
+  private monsters: Monster[];       // массив всех монстров на уровне
   private lastUpdateTime: number = 0;
-  private updateInterval: number = 500;
-  private tilesExecutor: TilesExecutor;
+  private updateInterval: number = 500; // обновление монстров каждые 500 мс
+  private tilesExecutor: TilesExecutor; // для обработки клеток (клей, клетка, ловушка)
 
   constructor(level: any, player: any, inventory: Inventory) {
     this.level = level;
@@ -42,15 +54,18 @@ export class MonstersExecutor {
     this.tilesExecutor = new TilesExecutor(level, player, inventory);
   }
 
-  /**
-   * Обновление всех монстров (вызывается по таймеру)
-   */
+  // --------------------------------------------------------------------------
+  // ПУБЛИЧНЫЙ ЦИКЛ ОБНОВЛЕНИЯ (вызывается из ExecutionEngine по таймеру)
+  // --------------------------------------------------------------------------
   public updateMonsters(currentTime: number): void {
     if (currentTime - this.lastUpdateTime < this.updateInterval) return;
     this.lastUpdateTime = currentTime;
 
     for (const monster of this.monsters) {
+      // Если на монстре едут – он не двигается самостоятельно
       if (monster.isRidden) continue;
+
+      // Если монстр отвлечён – уменьшаем счётчик и пропускаем ход
       if (monster.isDistracted && monster.distractedTurns && monster.distractedTurns > 0) {
         monster.distractedTurns--;
         if (monster.distractedTurns === 0) {
@@ -59,6 +74,8 @@ export class MonstersExecutor {
         }
         continue;
       }
+
+      // Если монстр приклеен – уменьшаем счётчик и не двигаемся
       if (monster.isGlued && monster.gluedTurns && monster.gluedTurns > 0) {
         monster.gluedTurns--;
         if (monster.gluedTurns === 0) {
@@ -67,15 +84,18 @@ export class MonstersExecutor {
         }
         continue;
       }
+
+      // Если монстр в клетке – не двигается
       if (monster.isTrapped) continue;
 
+      // Пытаемся переместить монстра
       this.moveMonster(monster);
     }
   }
 
-  /**
-   * Перемещение монстра в зависимости от типа
-   */
+  // --------------------------------------------------------------------------
+  // ДВИЖЕНИЕ МОНСТРА В ЗАВИСИМОСТИ ОТ ТИПА
+  // --------------------------------------------------------------------------
   private moveMonster(monster: Monster): void {
     const oldPos = { ...monster.position };
     let newPos: Point | null = null;
@@ -109,16 +129,17 @@ export class MonstersExecutor {
       if (!collidingMonster) {
         const tile = this.level.map[newPos.row][newPos.col];
         
-        // Новая механика: клей (приклеивание монстра)
+        // Механика клея для монстров
         if (tile === TileType.GLUE && !monster.isGlued) {
           monster.isGlued = true;
           monster.gluedTurns = 3;
           logInfo('MonstersExecutor', 'moveMonster', `Monster ${monster.id} glued at (${newPos.col},${newPos.row})`);
           eventBus.emit('MONSTER_GLUED', { monsterId: monster.id, pos: newPos });
+          // Монстр не перемещается, остаётся на клею
           return;
         }
 
-        // Новая механика: клетка (ловушка для монстра)
+        // Механика клетки для монстров
         if (tile === TileType.CAGE && !monster.isTrapped) {
           const trapped = this.tilesExecutor.processCage(newPos, 'monster', monster.id);
           if (trapped) {
@@ -127,15 +148,16 @@ export class MonstersExecutor {
           }
         }
 
-        // Новая механика: ловушка (превращение монстра в драгоценность)
+        // Механика ловушки (превращение в драгоценность)
         if (tile === TileType.TRAP && !monster.isTrapped) {
           const transformed = this.tilesExecutor.processTrap(newPos, monster.id);
           if (transformed) {
-            // Монстр удалён из массива в processTrap
+            // Монстр удалён из массива в processTrap, поэтому выходим
             return;
           }
         }
 
+        // Перемещаем монстра
         monster.position = newPos;
         log('MonstersExecutor', 'moveMonster', `Monster ${monster.id} moved from (${oldPos.col},${oldPos.row}) to (${newPos.col},${newPos.row})`);
         eventBus.emit('MONSTER_MOVED', { monsterId: monster.id, from: oldPos, to: newPos });
@@ -151,19 +173,26 @@ export class MonstersExecutor {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // СТРАТЕГИИ ДВИЖЕНИЯ
+  // --------------------------------------------------------------------------
+
+  /** Патрульный монстр: ходит по заданному маршруту (patrolPath) или туда-сюда */
   private getPatrolMove(monster: Monster): Point {
     if (!monster.patrolPath || monster.patrolPath.length === 0) {
+      // Нет маршрута – простой возврат при столкновении со стеной
       let dx = 0, dy = 0;
       switch (monster.direction) {
-        case 'up': dy = -1; break;
-        case 'down': dy = 1; break;
-        case 'left': dx = -1; break;
-        case 'right': dx = 1; break;
+        case 'up':    dy = -1; break;
+        case 'down':  dy = 1;  break;
+        case 'left':  dx = -1; break;
+        case 'right': dx = 1;  break;
       }
       const newPos = { col: monster.position.col + dx, row: monster.position.row + dy };
       if (this.canMonsterMoveTo(monster, newPos)) {
         return newPos;
       } else {
+        // Разворачиваемся
         const opposite: Record<string, 'up' | 'down' | 'left' | 'right'> = {
           up: 'down', down: 'up', left: 'right', right: 'left'
         };
@@ -172,6 +201,7 @@ export class MonstersExecutor {
       }
     }
 
+    // Движение по маршруту
     if (monster.patrolIndex === undefined) monster.patrolIndex = 0;
     const target = monster.patrolPath[monster.patrolIndex];
     if (target) {
@@ -182,11 +212,13 @@ export class MonstersExecutor {
     return monster.position;
   }
 
+  /** Преследующий монстр: двигается к игроку (адаптивно) */
   private getChaseMove(monster: Monster): Point {
     const playerPos = this.player.getPosition();
     const dx = Math.sign(playerPos.col - monster.position.col);
     const dy = Math.sign(playerPos.row - monster.position.row);
     
+    // Сначала пытаемся двигаться по горизонтали
     if (dx !== 0) {
       const newPos = { col: monster.position.col + dx, row: monster.position.row };
       if (this.canMonsterMoveTo(monster, newPos)) {
@@ -194,6 +226,7 @@ export class MonstersExecutor {
         return newPos;
       }
     }
+    // Затем по вертикали
     if (dy !== 0) {
       const newPos = { col: monster.position.col, row: monster.position.row + dy };
       if (this.canMonsterMoveTo(monster, newPos)) {
@@ -204,8 +237,10 @@ export class MonstersExecutor {
     return monster.position;
   }
 
+  /** Бродячий монстр (tameable): случайное движение */
   private getWanderMove(monster: Monster): Point {
     const directions = ['up', 'down', 'left', 'right'];
+    // Перемешиваем массив для случайного порядка
     const shuffled = [...directions];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -214,10 +249,10 @@ export class MonstersExecutor {
     for (const dir of shuffled) {
       let dx = 0, dy = 0;
       switch (dir) {
-        case 'up': dy = -1; break;
-        case 'down': dy = 1; break;
-        case 'left': dx = -1; break;
-        case 'right': dx = 1; break;
+        case 'up':    dy = -1; break;
+        case 'down':  dy = 1;  break;
+        case 'left':  dx = -1; break;
+        case 'right': dx = 1;  break;
       }
       const newPos = { col: monster.position.col + dx, row: monster.position.row + dy };
       if (this.canMonsterMoveTo(monster, newPos)) {
@@ -228,8 +263,10 @@ export class MonstersExecutor {
     return monster.position;
   }
 
+  /** Фазовый монстр: периодически становится невидимым и может проходить сквозь стены */
   private getPhasedMove(monster: Monster): Point {
     if (!monster.phaseState) monster.phaseState = 'visible';
+    // 1% шанс изменить фазу при каждом ходе
     if (Math.random() < 0.01) {
       monster.phaseState = monster.phaseState === 'visible' ? 'invisible' : 'visible';
       log('MonstersExecutor', 'getPhasedMove', `Monster ${monster.id} phase state: ${monster.phaseState}`);
@@ -237,39 +274,58 @@ export class MonstersExecutor {
     return this.getWanderMove(monster);
   }
 
+  /** Зомби: преследует игрока как chase */
   private getZombieMove(monster: Monster): Point {
     return this.getChaseMove(monster);
   }
 
+  /** Босс: преследует игрока как chase (может иметь больше здоровья) */
   private getBossMove(monster: Monster): Point {
     return this.getChaseMove(monster);
   }
 
+  // --------------------------------------------------------------------------
+  // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДВИЖЕНИЯ
+  // --------------------------------------------------------------------------
   private canMonsterMoveTo(monster: Monster, pos: Point): boolean {
+    // Проверка границ
     if (pos.col < 0 || pos.col >= this.level.width || pos.row < 0 || pos.row >= this.level.height) {
       return false;
     }
     const tile = this.level.map[pos.row][pos.col];
+    
+    // Фазовые монстры в невидимом состоянии могут проходить сквозь стены, но не через ямы и кирпичи
     if (monster.type === 'phased' && monster.phaseState === 'invisible') {
       if (tile === TileType.HOLE || tile === TileType.BRICK) return false;
-      return true;
+      return true; // могут проходить даже через стены
     }
+    
+    // Обычные монстры не могут ходить сквозь стены, ямы, кирпичи
     if (tile === TileType.WALL || tile === TileType.HOLE || tile === TileType.BRICK) return false;
+    
+    // Не могут заходить на клетку с другим монстром
     const monsterHere = this.monsters.find(m => m !== monster && m.position.col === pos.col && m.position.row === pos.row);
     return !monsterHere;
   }
 
+  // --------------------------------------------------------------------------
+  // ОБРАБОТКА СТОЛКНОВЕНИЯ С ИГРОКОМ
+  // --------------------------------------------------------------------------
   private handleMonsterCollision(monster: Monster): void {
     if (monster.isTamed || monster.isRidden) return;
     
     logInfo('MonstersExecutor', 'handleMonsterCollision', `Monster ${monster.id} collided with player`);
     eventBus.emit('PLAYER_DIED', { cause: `monster_${monster.type}` });
     
+    // Дополнительный эффект для зомби
     if (monster.type === 'zombie') {
       eventBus.emit('PLAYER_INFECTED', { monsterId: monster.id });
     }
   }
 
+  // --------------------------------------------------------------------------
+  // ПРИРУЧЕНИЕ
+  // --------------------------------------------------------------------------
   public tameMonster(monsterId: string): boolean {
     const monster = this.monsters.find(m => m.id === monsterId);
     if (monster && (monster.type === 'tameable' || monster.type === 'patrol')) {
@@ -281,6 +337,9 @@ export class MonstersExecutor {
     return false;
   }
 
+  // --------------------------------------------------------------------------
+  // ОСЕДЛЫВАНИЕ
+  // --------------------------------------------------------------------------
   public rideMonster(monsterId: string): boolean {
     const monster = this.monsters.find(m => m.id === monsterId);
     if (monster && monster.isTamed && !monster.isRidden) {
@@ -292,6 +351,9 @@ export class MonstersExecutor {
     return false;
   }
 
+  // --------------------------------------------------------------------------
+  // УНИЧТОЖЕНИЕ МОНСТРА (ядром или ловушкой)
+  // --------------------------------------------------------------------------
   public killMonster(monsterId: string): boolean {
     const index = this.monsters.findIndex(m => m.id === monsterId);
     if (index !== -1) {
@@ -304,10 +366,16 @@ export class MonstersExecutor {
     return false;
   }
 
+  // --------------------------------------------------------------------------
+  // ПОЛУЧЕНИЕ СПИСКА МОНСТРОВ
+  // --------------------------------------------------------------------------
   public getMonsters(): Monster[] {
     return this.monsters;
   }
 
+  // --------------------------------------------------------------------------
+  // ОЧИСТКА (при перезагрузке уровня)
+  // --------------------------------------------------------------------------
   public clearMonsters(): void {
     this.monsters = [];
   }
