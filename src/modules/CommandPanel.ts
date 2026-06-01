@@ -1,4 +1,16 @@
-import { Scene } from 'phaser';
+// src/modules/CommandPanel.ts
+// ============================================================================
+// ПАНЕЛЬ КОМАНД (UI ДЛЯ ПРОГРАММИРОВАНИЯ)
+// ============================================================================
+// Предоставляет графический интерфейс для составления программы:
+// - кнопки команд, сгруппированные по категориям
+// - список текущей программы (PROGRAM) с возможностью удаления команд
+// - кнопки RUN, CLEAR, SAVE, LOAD
+// - подсветка выполняемой команды (через highlightCommand)
+// ============================================================================
+// Использует enum Command из types/index.ts для типобезопасности.
+// ============================================================================
+
 import { Command } from '../types/index';
 
 export class CommandPanel {
@@ -11,7 +23,7 @@ export class CommandPanel {
   private commandElements: Map<number, HTMLDivElement> = new Map();
 
   constructor(
-    scene: Scene,
+    scene: any, // Phaser.Scene, но нам не нужно для DOM
     onRun: (commands: Command[]) => void,
     onClear: () => void,
     onAddCommand: (commands: Command[]) => void
@@ -35,13 +47,8 @@ export class CommandPanel {
   public highlightCommand(index: number, type: 'running' | 'error'): void {
     this.commandElements.forEach((element, idx) => {
       if (idx === index) {
-        if (type === 'running') {
-          element.style.backgroundColor = '#00aa44';
-          element.style.transition = 'background-color 0.1s';
-        } else if (type === 'error') {
-          element.style.backgroundColor = '#ff0000';
-          element.style.transition = 'background-color 0.1s';
-        }
+        element.style.backgroundColor = type === 'running' ? '#00aa44' : '#ff0000';
+        element.style.transition = 'background-color 0.1s';
       } else {
         element.style.backgroundColor = '#3a3a5a';
       }
@@ -54,6 +61,9 @@ export class CommandPanel {
     });
   }
 
+  // --------------------------------------------------------------------------
+  // СОЗДАНИЕ DOM-ПАНЕЛИ
+  // --------------------------------------------------------------------------
   private createPanel(): void {
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
@@ -84,78 +94,73 @@ export class CommandPanel {
 
     // Группа: Движение
     this.addGroupTitle('MOVEMENT');
-    this.addCommandButton('↑ Up', 'up');
-    this.addCommandButton('↓ Down', 'down');
-    this.addCommandButton('← Left', 'left');
-    this.addCommandButton('→ Right', 'right');
+    this.addCommandButton('↑ Up', Command.UP);
+    this.addCommandButton('↓ Down', Command.DOWN);
+    this.addCommandButton('← Left', Command.LEFT);
+    this.addCommandButton('→ Right', Command.RIGHT);
     this.addSeparator();
 
     // Группа: Инвентарь и взаимодействие
     this.addGroupTitle('INVENTORY');
-    this.addCommandButton('📦 Push', 'push');
-    this.addCommandButton('🔑 Use Key', 'use_key');
-    this.addCommandButton('📥 Pickup', 'pickup');
-    this.addCommandButton('🗑 Drop', 'drop');
+    this.addCommandButton('📦 Push', Command.PUSH);
+    this.addCommandButton('🔑 Use Key', Command.USE_KEY);
+    this.addCommandButton('📥 Pickup', Command.PICKUP);
+    this.addCommandButton('🗑 Drop', Command.DROP);
     this.addSeparator();
 
     // Группа: Инструменты
     this.addGroupTitle('TOOLS');
-    this.addCommandButton('🔧 Drill', 'drill');
-    this.addCommandButton('🪝 Hook', 'hook');
-    this.addCommandButton('🪽 Wing', 'wing');
-    this.addCommandButton('🐟 Bait', 'bait');
+    this.addCommandButton('🔧 Drill', Command.DRILL);
+    this.addCommandButton('🪝 Hook', Command.HOOK);
+    this.addCommandButton('🪽 Wing', Command.WING);
+    this.addCommandButton('🐟 Bait', Command.BAIT);
     this.addSeparator();
 
     // Группа: Бой
     this.addGroupTitle('COMBAT');
-    this.addCommandButton('🎯 Throw', 'throw');
-    this.addCommandButton('🌽 Feed', 'feed');
+    this.addCommandButton('🎯 Throw', Command.THROW);
+    this.addCommandButton('🌽 Feed', Command.FEED);
     this.addSeparator();
 
     // Группа: Время
     this.addGroupTitle('TIME');
-    this.addCommandButton('🐢 Time Slow', 'time_slow');
-    this.addCommandButton('🐇 Time Fast', 'time_fast');
-    this.addCommandButton('⏳ Wait', 'wait');
+    this.addCommandButton('🐢 Time Slow', Command.TIME_SLOW);
+    this.addCommandButton('🐇 Time Fast', Command.TIME_FAST);
+    this.addCommandButton('⏳ Wait', Command.WAIT);
     this.addSeparator();
 
     // Группа: Функции
     this.addGroupTitle('FUNCTIONS');
-    this.addCommandButton('📞 Call', 'call');
-    this.addCommandButton('↩️ Return', 'return');
-    this.addCommandButton('📥 Param', 'param');
+    this.addCommandButton('📞 Call', Command.CALL);
+    this.addCommandButton('↩️ Return', Command.RETURN);
+    this.addCommandButton('📥 Param', Command.PARAM);
     this.addSeparator();
 
     // Группа: ООП
     this.addGroupTitle('OOP');
-    this.addCommandButton('🏛️ Class', 'class');
-    this.addCommandButton('✨ New', 'new');
-    this.addCommandButton('⚙️ Method', 'method');
+    this.addCommandButton('🏛️ Class', Command.CLASS);
+    this.addCommandButton('✨ New', Command.NEW);
+    this.addCommandButton('⚙️ Method', Command.METHOD);
     this.addSeparator();
 
     // Группа: Параллелизм
     this.addGroupTitle('PARALLELISM');
-    this.addCommandButton('👥 Clone', 'clone');
-    this.addCommandButton('🤝 Join', 'join');
+    this.addCommandButton('👥 Clone', Command.CLONE);
+    this.addCommandButton('🤝 Join', Command.JOIN);
     this.addSeparator();
 
     // Группа: Взаимодействие
     this.addGroupTitle('INTERACTION');
-    this.addCommandButton('🔍 Scan', 'scan');
-    this.addCommandButton('🐎 Ride', 'ride');
+    this.addCommandButton('🔍 Scan', Command.SCAN);
+    this.addCommandButton('🐎 Ride', Command.RIDE);
     this.addSeparator();
 
     // Группа: Чёрный ящик
     this.addGroupTitle('BLACK BOX');
-    this.addCommandButton('📦 Black Box', 'black_box');
+    this.addCommandButton('📦 Black Box', Command.BLACK_BOX);
     this.addSeparator();
 
-    // Группа: Авторешение
-    this.addGroupTitle('AUTO');
-    this.addCommandButton('🤖 AUTO', 'auto');
-    this.addSeparator();
-
-    // Группа: Управление
+    // Группа: Управление программой
     this.addGroupTitle('CONTROL');
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
@@ -230,6 +235,9 @@ export class CommandPanel {
     this.container.appendChild(sep);
   }
 
+  // --------------------------------------------------------------------------
+  // ПАНЕЛЬ ПРОГРАММЫ (список добавленных команд)
+  // --------------------------------------------------------------------------
   private createProgramPanel(): void {
     const programContainer = document.createElement('div');
     programContainer.style.position = 'absolute';
@@ -296,11 +304,20 @@ export class CommandPanel {
     loadBtn.onclick = () => {
       const saved = localStorage.getItem('saved_program');
       if (saved) {
-        this.commands = JSON.parse(saved);
-        this.updateProgramList();
-        this.onClearCallback();
-        this.onAddCommandCallback(this.commands);
-        alert('Program loaded!');
+        try {
+          const loadedCommands = JSON.parse(saved) as Command[];
+          if (Array.isArray(loadedCommands)) {
+            this.commands = loadedCommands;
+            this.updateProgramList();
+            this.onClearCallback();       // сброс состояния выполнения
+            this.onAddCommandCallback(this.commands);
+            alert('Program loaded!');
+          } else {
+            alert('Invalid program format');
+          }
+        } catch (e) {
+          alert('Failed to load program');
+        }
       } else {
         alert('No saved program found');
       }
@@ -312,6 +329,7 @@ export class CommandPanel {
     if (!this.programListDiv) return;
     this.programListDiv.innerHTML = '';
     this.commandElements.clear();
+
     this.commands.forEach((cmd, index) => {
       const cmdDiv = document.createElement('div');
       cmdDiv.style.backgroundColor = '#3a3a5a';
@@ -322,38 +340,8 @@ export class CommandPanel {
       cmdDiv.style.justifyContent = 'space-between';
 
       const cmdText = document.createElement('span');
-      let icon = '';
-      if (cmd === 'up') icon = '↑';
-      else if (cmd === 'down') icon = '↓';
-      else if (cmd === 'left') icon = '←';
-      else if (cmd === 'right') icon = '→';
-      else if (cmd === 'push') icon = '📦';
-      else if (cmd === 'use_key') icon = '🔑';
-      else if (cmd === 'pickup') icon = '📥';
-      else if (cmd === 'drop') icon = '🗑';
-      else if (cmd === 'drill') icon = '🔧';
-      else if (cmd === 'hook') icon = '🪝';
-      else if (cmd === 'wing') icon = '🪽';
-      else if (cmd === 'bait') icon = '🐟';
-      else if (cmd === 'throw') icon = '🎯';
-      else if (cmd === 'feed') icon = '🌽';
-      else if (cmd === 'time_slow') icon = '🐢';
-      else if (cmd === 'time_fast') icon = '🐇';
-      else if (cmd === 'wait') icon = '⏳';
-      else if (cmd === 'call') icon = '📞';
-      else if (cmd === 'return') icon = '↩️';
-      else if (cmd === 'param') icon = '📥';
-      else if (cmd === 'class') icon = '🏛️';
-      else if (cmd === 'new') icon = '✨';
-      else if (cmd === 'method') icon = '⚙️';
-      else if (cmd === 'clone') icon = '👥';
-      else if (cmd === 'join') icon = '🤝';
-      else if (cmd === 'scan') icon = '🔍';
-      else if (cmd === 'ride') icon = '🐎';
-      else if (cmd === 'black_box') icon = '📦';
-      else if (cmd === 'auto') icon = '🤖';
-      else icon = cmd.slice(0,2);
-      
+      // Получаем иконку для команды
+      let icon = this.getIconForCommand(cmd);
       cmdText.textContent = `${icon} ${cmd}`;
       cmdText.style.fontSize = '12px';
       cmdText.style.color = '#fff';
@@ -377,6 +365,40 @@ export class CommandPanel {
       this.programListDiv.appendChild(cmdDiv);
       this.commandElements.set(index, cmdDiv);
     });
+  }
+
+  private getIconForCommand(cmd: Command): string {
+    const icons: Partial<Record<Command, string>> = {
+      [Command.UP]: '↑',
+      [Command.DOWN]: '↓',
+      [Command.LEFT]: '←',
+      [Command.RIGHT]: '→',
+      [Command.PUSH]: '📦',
+      [Command.USE_KEY]: '🔑',
+      [Command.PICKUP]: '📥',
+      [Command.DROP]: '🗑',
+      [Command.DRILL]: '🔧',
+      [Command.HOOK]: '🪝',
+      [Command.WING]: '🪽',
+      [Command.BAIT]: '🐟',
+      [Command.THROW]: '🎯',
+      [Command.FEED]: '🌽',
+      [Command.TIME_SLOW]: '🐢',
+      [Command.TIME_FAST]: '🐇',
+      [Command.WAIT]: '⏳',
+      [Command.CALL]: '📞',
+      [Command.RETURN]: '↩️',
+      [Command.PARAM]: '📥',
+      [Command.CLASS]: '🏛️',
+      [Command.NEW]: '✨',
+      [Command.METHOD]: '⚙️',
+      [Command.CLONE]: '👥',
+      [Command.JOIN]: '🤝',
+      [Command.SCAN]: '🔍',
+      [Command.RIDE]: '🐎',
+      [Command.BLACK_BOX]: '📦',
+    };
+    return icons[cmd] || cmd.slice(0, 2);
   }
 
   public destroy(): void {
