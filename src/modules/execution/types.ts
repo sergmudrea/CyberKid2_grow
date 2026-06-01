@@ -1,9 +1,21 @@
 // src/modules/execution/types.ts
-// Типы данных для ExecutionEngine
+// ============================================================================
+// ТИПЫ ДАННЫХ ДЛЯ EXECUTION ENGINE
+// ============================================================================
+// Содержит внутренние типы, используемые парсером, раннером и подсистемами:
+// - ASTNode – узел абстрактного синтаксического дерева
+// - CallFrame – фрейм вызова функции
+// - ClassDef, Instance – для ООП
+// - CloneInfo – для параллелизма (клоны)
+// - TeleportPair, Conveyor, Spring, BlackBox, Sorter, Button, Lever, Timer, Sensor – описание объектов уровня
+// - ExecutionResult, ExecutionStatus – результаты выполнения
+// ============================================================================
 
 import { Point, Inventory, Command, TileType, Monster } from '../../types/index';
 
-// AST Node types
+// ----------------------------------------------------------------------------
+// 1. AST И БЛОКИ
+// ----------------------------------------------------------------------------
 export interface ASTNode {
   type: 'command' | 'block' | 'function' | 'class' | 'method' | 'condition';
   command?: Command;
@@ -19,17 +31,21 @@ export interface ASTNode {
   propertyName?: string;
 }
 
-// Call frame for functions
+// ----------------------------------------------------------------------------
+// 2. СТЕК ВЫЗОВОВ ФУНКЦИЙ
+// ----------------------------------------------------------------------------
 export interface CallFrame {
   functionName: string;
-  returnNodeIndex: number;
-  localVars: Map<string, any>;
-  nodeStack: ASTNode[];
-  nodeIndex: number;
-  parameters: Map<string, any>;
+  returnNodeIndex: number;      // индекс узла, куда вернуться после RETURN
+  localVars: Map<string, any>;  // локальные переменные (параметры)
+  nodeStack: ASTNode[];         // родительский AST (откуда вызвали)
+  nodeIndex: number;            // текущий индекс в родительском AST
+  parameters: Map<string, any>; // запасной вариант
 }
 
-// Class definition for OOP
+// ----------------------------------------------------------------------------
+// 3. ООП: КЛАССЫ И ЭКЗЕМПЛЯРЫ
+// ----------------------------------------------------------------------------
 export interface ClassDef {
   name: string;
   properties: Map<string, any>;
@@ -37,14 +53,15 @@ export interface ClassDef {
   parentClass?: string;
 }
 
-// Instance of a class
 export interface Instance {
   classId: string;
   properties: Map<string, any>;
   methods: Map<string, ASTNode[]>;
 }
 
-// Clone for parallelism
+// ----------------------------------------------------------------------------
+// 4. ПАРАЛЛЕЛИЗМ: КЛОНЫ
+// ----------------------------------------------------------------------------
 export interface CloneInfo {
   id: string;
   position: Point;
@@ -53,21 +70,21 @@ export interface CloneInfo {
   nodeIndex: number;
 }
 
-// Teleport pair
+// ----------------------------------------------------------------------------
+// 5. ОБЪЕКТЫ УРОВНЯ (ДЛЯ УДОБСТВА)
+// ----------------------------------------------------------------------------
 export interface TeleportPair {
   id: string;
   entry: Point;
   exit: Point;
 }
 
-// Conveyor belt
 export interface Conveyor {
   id: string;
   position: Point;
   direction: 'up' | 'down' | 'left' | 'right';
 }
 
-// Spring
 export interface Spring {
   id: string;
   position: Point;
@@ -75,7 +92,6 @@ export interface Spring {
   force: number;
 }
 
-// Black Box mapping
 export interface BlackBox {
   id: string;
   position: Point;
@@ -84,14 +100,12 @@ export interface BlackBox {
   mapping: string;
 }
 
-// Sorter
 export interface Sorter {
   id: string;
   position: Point;
   order: 'asc' | 'desc' | 'fifo' | 'lifo';
 }
 
-// Button
 export interface Button {
   id: string;
   position: Point;
@@ -99,7 +113,6 @@ export interface Button {
   linkedObjects: string[];
 }
 
-// Lever
 export interface Lever {
   id: string;
   position: Point;
@@ -107,7 +120,6 @@ export interface Lever {
   linkedObjects: string[];
 }
 
-// Timer
 export interface Timer {
   id: string;
   position: Point;
@@ -117,7 +129,6 @@ export interface Timer {
   linkedObjects: string[];
 }
 
-// Sensor
 export interface Sensor {
   id: string;
   position: Point;
@@ -125,7 +136,9 @@ export interface Sensor {
   active: boolean;
 }
 
-// Result of execution
+// ----------------------------------------------------------------------------
+// 6. РЕЗУЛЬТАТЫ И СТАТУСЫ ВЫПОЛНЕНИЯ
+// ----------------------------------------------------------------------------
 export interface ExecutionResult {
   success: boolean;
   steps: number;
@@ -135,7 +148,6 @@ export interface ExecutionResult {
   stars: number;
 }
 
-// Execution status for external use
 export interface ExecutionStatus {
   state: 'idle' | 'running' | 'paused' | 'finished' | 'error';
   currentCommandIndex: number;
