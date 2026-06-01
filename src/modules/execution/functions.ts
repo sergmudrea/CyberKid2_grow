@@ -1,11 +1,21 @@
 // src/modules/execution/functions.ts
-// Полная поддержка функций: DEF, CALL, RETURN, PARAM
-// С параметрами, локальными переменными и возвращаемыми значениями.
+// ============================================================================
+// ПОДДЕРЖКА ФУНКЦИЙ: DEF, CALL, RETURN, PARAM
+// ============================================================================
+// Реализует:
+// - определение функций с параметрами
+// - вызов функций с передачей аргументов
+// - возврат из функции (опционально со значением)
+// - доступ к параметрам внутри тела функции
+// ============================================================================
+// Функции хранятся в Map, каждый вызов создаёт новый фрейм в стеке вызовов.
+// ============================================================================
 
 import { ASTNode, CallFrame } from './types';
 import { log, logInfo, logError } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
 
+// Описание функции: тело (AST) и имена параметров
 export interface FunctionDef {
   nodes: ASTNode[];
   paramNames: string[];
@@ -13,20 +23,27 @@ export interface FunctionDef {
 
 export class FunctionsExecutor {
   private functionDefinitions: Map<string, FunctionDef> = new Map();
-  private globalVariables: Map<string, any> = new Map();
+  private globalVariables: Map<string, any> = new Map(); // глобальные переменные (если нужны)
 
-  /**
-   * DEF — определить функцию с параметрами
-   */
+  // --------------------------------------------------------------------------
+  // DEF – определить функцию
+  // --------------------------------------------------------------------------
   public defineFunction(name: string, body: ASTNode[], paramNames: string[] = []): void {
     this.functionDefinitions.set(name, { nodes: body, paramNames });
     logInfo('FunctionsExecutor', 'defineFunction', `Function '${name}' defined with params: ${paramNames.join(', ')}`);
   }
 
-  /**
-   * CALL — вызвать функцию с аргументами
-   * Возвращает фрейм для помещения в callStack
-   */
+  // --------------------------------------------------------------------------
+  // ПОЛУЧИТЬ ОПРЕДЕЛЕНИЕ ФУНКЦИИ
+  // --------------------------------------------------------------------------
+  public getFunction(name: string): FunctionDef | undefined {
+    return this.functionDefinitions.get(name);
+  }
+
+  // --------------------------------------------------------------------------
+  // CALL – подготовить фрейм для вызова функции
+  // Возвращает объект с новым фреймом и телом функции, либо null, если функции нет.
+  // --------------------------------------------------------------------------
   public prepareCall(
     funcName: string,
     args: any[],
@@ -39,19 +56,22 @@ export class FunctionsExecutor {
       return null;
     }
 
-    // Создаём локальные переменные для параметров
+    // Создаём локальные переменные для параметров (передаём значения аргументов)
     const localVars = new Map<string, any>();
     for (let i = 0; i < funcDef.paramNames.length; i++) {
-      localVars.set(funcDef.paramNames[i], args[i] !== undefined ? args[i] : null);
+      const paramName = funcDef.paramNames[i];
+      const argValue = i < args.length ? args[i] : null;
+      localVars.set(paramName, argValue);
     }
 
+    // Фрейм вызова: хранит информацию для возврата и локальные переменные
     const frame: CallFrame = {
       functionName: funcName,
-      returnNodeIndex: currentNodeIndex,
+      returnNodeIndex: currentNodeIndex,   // куда вернуться (индекс команды после CALL)
       localVars,
-      nodeStack: currentAST,
-      nodeIndex: currentNodeIndex,
-      parameters: new Map(),
+      nodeStack: currentAST,               // AST, из которого был вызван CALL
+      nodeIndex: currentNodeIndex,         // индекс CALL (может пригодиться)
+      parameters: new Map(),               // можно использовать как alias localVars
     };
 
     logInfo('FunctionsExecutor', 'prepareCall', `Calling function '${funcName}' with args: ${args}`);
@@ -59,9 +79,10 @@ export class FunctionsExecutor {
     return { frame, body: funcDef.nodes };
   }
 
-  /**
-   * RETURN — вернуться из функции с возвращаемым значением
-   */
+  // --------------------------------------------------------------------------
+  // RETURN – подготовить возврат из функции
+  // Возвращает новый стек вызовов и значение, которое нужно вернуть.
+  // --------------------------------------------------------------------------
   public prepareReturn(callStack: CallFrame[], returnValue: any = null): { newStack: CallFrame[]; frame: CallFrame; returnValue: any } | null {
     if (callStack.length === 0) {
       log('FunctionsExecutor', 'prepareReturn', 'Return with no call stack');
@@ -74,9 +95,9 @@ export class FunctionsExecutor {
     return { newStack, frame, returnValue };
   }
 
-  /**
-   * PARAM — получить значение параметра (вызывается внутри функции)
-   */
+  // --------------------------------------------------------------------------
+  // PARAM – получить значение параметра (вызывается внутри тела функции)
+  // --------------------------------------------------------------------------
   public getParamValue(paramName: string, callStack: CallFrame[]): any {
     if (callStack.length === 0) {
       log('FunctionsExecutor', 'getParamValue', 'No active function call');
@@ -86,7 +107,14 @@ export class FunctionsExecutor {
     return frame.localVars.get(paramName);
   }
 
-  public getFunction(name: string): FunctionDef | undefined {
-    return this.functionDefinitions.get(name);
+  // --------------------------------------------------------------------------
+  // Установить значение глобальной переменной (опционально)
+  // --------------------------------------------------------------------------
+  public setGlobal(name: string, value: any): void {
+    this.globalVariables.set(name, value);
+  }
+
+  public getGlobal(name: string): any {
+    return this.globalVariables.get(name);
   }
 }
