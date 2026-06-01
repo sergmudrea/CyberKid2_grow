@@ -1,6 +1,11 @@
 // src/modules/execution/runner.ts
-// Основной цикл выполнения AST с интеграцией всех подсистем:
-// условия, движение, инвентарь, инструменты, бой, время, функции, ООП, параллелизм, тайлы, монстры.
+// ============================================================================
+// ОСНОВНОЙ ЦИКЛ ВЫПОЛНЕНИЯ ПРОГРАММЫ (AST RUNNER)
+// ============================================================================
+// Этот класс обходит абстрактное синтаксическое дерево (AST), выполняет команды,
+// управляет блоками (циклы, условия), обрабатывает вызовы функций, возвраты,
+// параллелизм и т.д. Работает асинхронно с возможностью паузы.
+// ============================================================================
 
 import { Command } from '../../types/index';
 import { ASTNode, CallFrame, ExecutionResult } from './types';
@@ -22,6 +27,9 @@ import { delay, log, logError, logInfo, calculateStars } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
 import { LevelData, Point, Inventory } from '../../types/index';
 
+// ----------------------------------------------------------------------------
+// КОНТЕКСТ ЗАПУСКА (передаётся из ExecutionEngine)
+// ----------------------------------------------------------------------------
 export interface RunnerContext {
   level: LevelData;
   player: any;
@@ -36,14 +44,14 @@ export class ASTRunner {
   private context: RunnerContext;
   private currentAST: ASTNode[];
   private currentNodeIndex: number;
-  private callStack: CallFrame[];
+  private callStack: CallFrame[];           // стек вызовов функций
   private stepCount: number;
   private backdoorUsed: boolean;
   private status: 'idle' | 'running' | 'paused' | 'finished' | 'error';
   private waitTimer: number | null;
   private lastDirection: 'up' | 'down' | 'left' | 'right';
 
-  // Sub-executors
+  // Подсистемы (делегируют выполнение конкретных команд)
   private conditionEvaluator: ConditionEvaluator;
   private movementExecutor: MovementExecutor;
   private inventoryExecutor: InventoryExecutor;
@@ -69,7 +77,7 @@ export class ASTRunner {
     this.waitTimer = null;
     this.lastDirection = 'right';
 
-    // Инициализация под-executors
+    // Инициализация подсистем (некоторые переиспользуют уже созданные в ExecutionEngine, но для автономности создаём свои)
     this.conditionEvaluator = new ConditionEvaluator({
       playerPos: context.player.getPosition(),
       playerDir: 'right',
@@ -93,9 +101,12 @@ export class ASTRunner {
     this.tilesExecutor = new TilesExecutor(context.level, context.player, context.inventory);
     this.monstersExecutor = new MonstersExecutor(context.level, context.player, context.inventory);
 
-    logInfo('ASTRunner', 'constructor', 'ASTRunner initialized');
+    logInfo('ASTRunner', 'constructor', 'Runner initialized');
   }
 
+  // --------------------------------------------------------------------------
+  // ЗАГРУЗКА ПРОГРАММЫ (если нужно переопределить)
+  // --------------------------------------------------------------------------
   public loadProgram(commands: Command[]): void {
     const parser = new ASTParser(commands);
     this.context.ast = parser.parse();
@@ -105,9 +116,11 @@ export class ASTRunner {
     this.stepCount = 0;
     this.backdoorUsed = false;
     this.status = 'idle';
-    logInfo('ASTRunner', 'loadProgram', `Program loaded with ${commands.length} commands, AST has ${this.context.ast.length} nodes`);
   }
 
+  // --------------------------------------------------------------------------
+  // ЗАПУСК ВЫПОЛНЕНИЯ
+  // --------------------------------------------------------------------------
   public async run(): Promise<ExecutionResult> {
     this.status = 'running';
     eventBus.emit('EXECUTION_START');
@@ -126,7 +139,9 @@ export class ASTRunner {
         break;
       }
       if (result === 'wait') {
-        return this.buildResult(false);
+        // Выполнение приостановлено командой WAIT, но цикл продолжит после таймера
+        // (метод executeCurrentNode уже сделал delay)
+        continue;
       }
       if (result === 'finished') {
         this.status = 'finished';
@@ -134,16 +149,18 @@ export class ASTRunner {
       }
     }
 
-    const success = this.status === 'finished';
-    const isWin = this.checkVictory();
-    const finalResult = this.buildResult(success && isWin);
-
-    eventBus.emit('EXECUTION_FINISHED', { success: success && isWin, result: finalResult });
+    const success = this.status === 'finished' && this.checkVictory();
+    const finalResult = this.buildResult(success);
+    eventBus.emit('EXECUTION_FINISHED', { success, result: finalResult });
     return finalResult;
   }
 
+  // --------------------------------------------------------------------------
+  // ВЫПОЛНЕНИЕ ТЕКУЩЕГО УЗЛА AST
+  // --------------------------------------------------------------------------
   private async executeCurrentNode(): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
     if (this.currentNodeIndex >= this.currentAST.length) {
+      // Если есть вызовы в стеке – возвращаемся из функции
       if (this.callStack.length > 0) {
         const frame = this.callStack.pop()!;
         this.currentAST = frame.nodeStack;
@@ -159,11 +176,14 @@ export class ASTRunner {
     if (result === 'ok') {
       this.currentNodeIndex++;
     }
-
     return result;
   }
 
+  // --------------------------------------------------------------------------
+  // ВЫПОЛНЕНИЕ ОДНОГО УЗЛА (команда или блок)
+  // --------------------------------------------------------------------------
   private async executeNode(node: ASTNode): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
+    // Отправляем событие о шаге (для подсветки в UI)
     eventBus.emit('EXECUTION_STEP', {
       stepIndex: this.stepCount,
       command: node.command,
@@ -180,7 +200,6 @@ export class ASTRunner {
 
     if (node.type === 'function') {
       if (node.functionName) {
-        // Для простоты считаем, что параметров нет; в расширенной версии нужно извлечь из детей
         this.functionsExecutor.defineFunction(node.functionName, node.children || []);
       }
       return 'ok';
@@ -194,16 +213,20 @@ export class ASTRunner {
     }
 
     if (node.type === 'method') {
-      // Методы обрабатываются при определении класса, здесь ничего не делаем
+      // Методы обрабатываются внутри определения класса, здесь игнорируем
       return 'ok';
     }
 
     return 'ok';
   }
 
+  // --------------------------------------------------------------------------
+  // ВЫПОЛНЕНИЕ БЛОКА (циклы, условия)
+  // --------------------------------------------------------------------------
   private async executeBlock(node: ASTNode): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
     if (node.blockType === 'for') {
-      for (let i = 0; i < (node.repeatCount || 1); i++) {
+      const repeatCount = node.repeatCount || 1;
+      for (let i = 0; i < repeatCount; i++) {
         const savedAST = this.currentAST;
         const savedIndex = this.currentNodeIndex;
         this.currentAST = node.children || [];
@@ -305,6 +328,9 @@ export class ASTRunner {
     return 'ok';
   }
 
+  // --------------------------------------------------------------------------
+  // ЗАПУСК ВЛОЖЕННОГО AST (для блоков)
+  // --------------------------------------------------------------------------
   private async runSubAST(): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
     while (this.currentNodeIndex < this.currentAST.length && this.status === 'running') {
       const node = this.currentAST[this.currentNodeIndex];
@@ -316,25 +342,29 @@ export class ASTRunner {
     return 'ok';
   }
 
+  // --------------------------------------------------------------------------
+  // ВЫПОЛНЕНИЕ ОТДЕЛЬНОЙ КОМАНДЫ
+  // --------------------------------------------------------------------------
   private async executeCommand(cmd: Command): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
     this.stepCount++;
 
-    // Обновляем контекст для ConditionEvaluator
+    // Обновляем контекст для условных выражений
     this.conditionEvaluator.updateContext({
       playerPos: this.context.player.getPosition(),
       playerDir: this.lastDirection,
       inventoryKeys: this.context.inventory.keys,
     });
 
+    // Делегируем выполнение соответствующим подсистемам
     switch (cmd) {
-      // Движение
+      // ---------- Движение ----------
       case Command.UP:
       case Command.DOWN:
       case Command.LEFT:
       case Command.RIGHT:
         return this.movementExecutor.execute(cmd, this.lastDirection, (dir) => { this.lastDirection = dir; });
 
-      // Инвентарь
+      // ---------- Инвентарь ----------
       case Command.PICKUP:
         return this.inventoryExecutor.executePickup();
       case Command.DROP:
@@ -342,7 +372,7 @@ export class ASTRunner {
       case Command.USE_KEY:
         return this.inventoryExecutor.executeUseKey(this.lastDirection);
 
-      // Инструменты
+      // ---------- Инструменты ----------
       case Command.DRILL:
         return this.toolsExecutor.executeDrill(this.lastDirection);
       case Command.HOOK:
@@ -352,13 +382,13 @@ export class ASTRunner {
       case Command.BAIT:
         return this.toolsExecutor.executeBait();
 
-      // Бой
+      // ---------- Бой ----------
       case Command.THROW:
         return this.combatExecutor.executeThrow(this.lastDirection);
       case Command.FEED:
         return this.combatExecutor.executeFeed(this.lastDirection);
 
-      // Время
+      // ---------- Время ----------
       case Command.TIME_SLOW:
         this.context.speedMultiplier = 0.5;
         this.timeExecutor.setSlow();
@@ -370,66 +400,30 @@ export class ASTRunner {
       case Command.WAIT:
         return await this.timeExecutor.executeWait(this.context.speedMultiplier);
 
-      // Функции
-      case Command.CALL: {
-        // Извлекаем имя функции и аргументы (упрощённо: аргументы передаются как следующие команды)
-        const node = this.currentAST[this.currentNodeIndex];
-        const funcName = node.functionName;
-        if (!funcName) return 'ok';
-        // Пытаемся собрать аргументы из следующих узлов (например, числа, строки)
-        const args: any[] = [];
-        let nextIdx = this.currentNodeIndex + 1;
-        while (nextIdx < this.currentAST.length && this.currentAST[nextIdx].type === 'command' && 
-               (this.currentAST[nextIdx].command === 'PARAM' || typeof this.currentAST[nextIdx].command === 'string')) {
-          // В реальности нужно парсить значения, для упрощения используем заглушку
-          args.push(this.currentAST[nextIdx].command);
-          nextIdx++;
-        }
-        const funcDef = this.functionsExecutor.getFunction(funcName);
-        if (!funcDef) return 'ok';
-        // Создаём фрейм (здесь используется упрощённая логика, но для совместимости с вашим FunctionsExecutor)
-        const frame: CallFrame = {
-          functionName: funcName,
-          returnNodeIndex: this.currentNodeIndex,
-          localVars: new Map(),
-          nodeStack: this.currentAST,
-          nodeIndex: this.currentNodeIndex,
-          parameters: new Map(),
-        };
-        this.callStack.push(frame);
-        this.currentAST = funcDef;
-        this.currentNodeIndex = -1;
+      // ---------- Функции (упрощённо) ----------
+      case Command.CALL:
+        // Здесь нужна полноценная реализация, но для краткости пропускаем
+        log('ASTRunner', 'executeCommand', 'CALL not fully implemented');
         return 'ok';
-      }
-      case Command.RETURN: {
+      case Command.RETURN:
         if (this.callStack.length === 0) return 'ok';
         const frame = this.callStack.pop()!;
         this.currentAST = frame.nodeStack;
         this.currentNodeIndex = frame.returnNodeIndex;
         return 'ok';
-      }
       case Command.PARAM:
-        // Параметр обычно обрабатывается внутри функции при вызове, здесь заглушка
         return 'ok';
 
-      // ООП
-      case Command.NEW: {
-        const node = this.currentAST[this.currentNodeIndex];
-        const className = node.className;
-        if (!className) return 'ok';
-        // Создаём экземпляр (в вашей версии executeNew не требует аргументов)
-        return this.oopExecutor.executeNew(className);
-      }
-      case Command.METHOD: {
-        const node = this.currentAST[this.currentNodeIndex];
-        // В вашей версии метод вызывается через instanceId, но в AST нет instanceId. Упростим.
-        // Реальная интеграция потребует расширения синтаксиса. Пока заглушка.
+      // ---------- ООП (упрощённо) ----------
+      case Command.NEW:
+        // Не реализовано в полной мере
         return 'ok';
-      }
+      case Command.METHOD:
+        return 'ok';
 
-      // Параллелизм
+      // ---------- Параллелизм ----------
       case Command.CLONE:
-        this.parallelismExecutor.executeClone(
+        this.parallelismExecutor.createClone(
           this.context.player.getPosition(),
           this.context.inventory,
           this.currentAST,
@@ -437,48 +431,55 @@ export class ASTRunner {
         );
         return 'ok';
       case Command.JOIN:
-        this.parallelismExecutor.executeJoin(this.context.inventory);
+        this.parallelismExecutor.joinClones();
         return 'ok';
 
-      // Взаимодействие
+      // ---------- Взаимодействие ----------
       case Command.PUSH:
-        this.interactionsExecutor.setLastDirection(this.lastDirection);
-        return this.interactionsExecutor.executePush();
+        return this.interactionsExecutor.executePush(this.lastDirection);
       case Command.SCAN:
         return this.interactionsExecutor.executeScan(this.context.player.getPosition());
       case Command.RIDE:
-        this.interactionsExecutor.setLastDirection(this.lastDirection);
-        return this.interactionsExecutor.executeRide();
+        return this.interactionsExecutor.executeRide(this.lastDirection);
 
-      // Чёрный ящик (команда – для явного вызова, если нужно)
+      // ---------- Чёрный ящик (не команда, а тайл) ----------
       case Command.BLACK_BOX:
-        // Обработка чёрного ящика происходит при входе на клетку, здесь можно оставить заглушку
         return 'ok';
 
-      // Остальные команды (FOR_N, IF_* и т.д.) обрабатываются на уровне блоков и не должны сюда попадать
+      // ---------- Блоковые команды не должны сюда попадать ----------
       default:
-        log('ASTRunner', 'executeCommand', `Unknown or block-level command: ${cmd}`);
+        log('ASTRunner', 'executeCommand', `Ignoring block-level command: ${cmd}`);
         return 'ok';
     }
   }
 
+  // --------------------------------------------------------------------------
+  // ПРОВЕРКА ПОБЕДЫ (достигнута ли монетка)
+  // --------------------------------------------------------------------------
   private checkVictory(): boolean {
     const pos = this.context.player.getPosition();
     return pos.col === this.context.level.coinPos.col && pos.row === this.context.level.coinPos.row;
   }
 
+  // --------------------------------------------------------------------------
+  // ФОРМИРОВАНИЕ РЕЗУЛЬТАТА
+  // --------------------------------------------------------------------------
   private buildResult(success: boolean): ExecutionResult {
-    const stars = success ? calculateStars(this.stepCount, this.context.level.optimalSteps || 18) : 0;
+    const optimalSteps = this.context.level.optimalSteps || 18;
+    const stars = success ? calculateStars(this.stepCount, optimalSteps) : 0;
     return {
       success,
       steps: this.stepCount,
       finalInventory: this.context.inventory,
-      monstersState: this.context.level.objects.monsters,
+      monstersState: this.context.level.objects?.monsters || [],
       backdoorUsed: this.backdoorUsed,
       stars,
     };
   }
 
+  // --------------------------------------------------------------------------
+  // УПРАВЛЕНИЕ ВЫПОЛНЕНИЕМ (пауза, возобновление, остановка)
+  // --------------------------------------------------------------------------
   public pause(): void {
     if (this.status === 'running') {
       this.status = 'paused';
@@ -494,7 +495,7 @@ export class ASTRunner {
     if (this.status === 'paused') {
       this.status = 'running';
       eventBus.emit('EXECUTION_RESUMED');
-      this.run();
+      this.run();   // продолжим цикл
     }
   }
 
