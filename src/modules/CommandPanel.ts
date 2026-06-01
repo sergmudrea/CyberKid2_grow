@@ -1,17 +1,19 @@
 // src/modules/CommandPanel.ts
 // ============================================================================
-// ПАНЕЛЬ КОМАНД (UI ДЛЯ ПРОГРАММИРОВАНИЯ)
+// ПАНЕЛЬ КОМАНД (UI ДЛЯ ПРОГРАММИРОВАНИЯ) – С ПОДДЕРЖКОЙ ФИЛЬТРАЦИИ
 // ============================================================================
-// Предоставляет графический интерфейс для составления программы:
-// - кнопки команд, сгруппированные по категориям
-// - список текущей программы (PROGRAM) с возможностью удаления команд
-// - кнопки RUN, CLEAR, SAVE, LOAD
-// - подсветка выполняемой команды (через highlightCommand)
-// ============================================================================
-// Использует enum Command из types/index.ts для типобезопасности.
+// - Отображает только те команды, которые разрешены для текущего уровня (allowedCommands)
+// - Если allowedCommands не указан или пуст, показывает все команды
+// - Группы без разрешённых команд скрываются
 // ============================================================================
 
 import { Command } from '../types/index';
+
+// Определение группы команд
+interface CommandGroup {
+  title: string;
+  commands: Command[];
+}
 
 export class CommandPanel {
   private commands: Command[] = [];
@@ -21,9 +23,26 @@ export class CommandPanel {
   private onClearCallback: () => void;
   private onAddCommandCallback: (commands: Command[]) => void;
   private commandElements: Map<number, HTMLDivElement> = new Map();
+  
+  // Текущий список разрешённых команд (если пустой – показывать всё)
+  private allowedCommands: Command[] = [];
+
+  // Все возможные группы команд
+  private readonly commandGroups: CommandGroup[] = [
+    { title: 'MOVEMENT', commands: [Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT] },
+    { title: 'INVENTORY', commands: [Command.PUSH, Command.USE_KEY, Command.PICKUP, Command.DROP] },
+    { title: 'TOOLS', commands: [Command.DRILL, Command.HOOK, Command.WING, Command.BAIT] },
+    { title: 'COMBAT', commands: [Command.THROW, Command.FEED] },
+    { title: 'TIME', commands: [Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT] },
+    { title: 'FUNCTIONS', commands: [Command.CALL, Command.RETURN, Command.PARAM] },
+    { title: 'OOP', commands: [Command.CLASS, Command.NEW, Command.METHOD] },
+    { title: 'PARALLELISM', commands: [Command.CLONE, Command.JOIN] },
+    { title: 'INTERACTION', commands: [Command.SCAN, Command.RIDE] },
+    { title: 'BLACK BOX', commands: [Command.BLACK_BOX] },
+  ];
 
   constructor(
-    scene: any, // Phaser.Scene, но нам не нужно для DOM
+    scene: any,
     onRun: (commands: Command[]) => void,
     onClear: () => void,
     onAddCommand: (commands: Command[]) => void
@@ -34,38 +53,123 @@ export class CommandPanel {
     this.createPanel();
   }
 
-  public getCommands(): Command[] {
-    return [...this.commands];
+  // --------------------------------------------------------------------------
+  // УСТАНОВИТЬ РАЗРЕШЁННЫЕ КОМАНДЫ (вызывается из GameScene при загрузке уровня)
+  // --------------------------------------------------------------------------
+  public setAllowedCommands(commands: Command[]): void {
+    this.allowedCommands = commands || [];
+    this.refreshPanel(); // пересоздаём панель с учётом фильтрации
   }
 
-  public setCommands(commands: Command[]): void {
-    this.commands = [...commands];
+  // --------------------------------------------------------------------------
+  // ПРОВЕРКА, РАЗРЕШЕНА ЛИ КОМАНДА
+  // --------------------------------------------------------------------------
+  private isCommandAllowed(cmd: Command): boolean {
+    if (this.allowedCommands.length === 0) return true; // нет ограничений – показываем всё
+    return this.allowedCommands.includes(cmd);
+  }
+
+  // --------------------------------------------------------------------------
+  // ПОЛУЧИТЬ ТЕКСТ КНОПКИ ДЛЯ КОМАНДЫ
+  // --------------------------------------------------------------------------
+  private getButtonLabel(cmd: Command): string {
+    const labels: Partial<Record<Command, string>> = {
+      [Command.UP]: '↑ Up',
+      [Command.DOWN]: '↓ Down',
+      [Command.LEFT]: '← Left',
+      [Command.RIGHT]: '→ Right',
+      [Command.PUSH]: '📦 Push',
+      [Command.USE_KEY]: '🔑 Use Key',
+      [Command.PICKUP]: '📥 Pickup',
+      [Command.DROP]: '🗑 Drop',
+      [Command.DRILL]: '🔧 Drill',
+      [Command.HOOK]: '🪝 Hook',
+      [Command.WING]: '🪽 Wing',
+      [Command.BAIT]: '🐟 Bait',
+      [Command.THROW]: '🎯 Throw',
+      [Command.FEED]: '🌽 Feed',
+      [Command.TIME_SLOW]: '🐢 Time Slow',
+      [Command.TIME_FAST]: '🐇 Time Fast',
+      [Command.WAIT]: '⏳ Wait',
+      [Command.CALL]: '📞 Call',
+      [Command.RETURN]: '↩️ Return',
+      [Command.PARAM]: '📥 Param',
+      [Command.CLASS]: '🏛️ Class',
+      [Command.NEW]: '✨ New',
+      [Command.METHOD]: '⚙️ Method',
+      [Command.CLONE]: '👥 Clone',
+      [Command.JOIN]: '🤝 Join',
+      [Command.SCAN]: '🔍 Scan',
+      [Command.RIDE]: '🐎 Ride',
+      [Command.BLACK_BOX]: '📦 Black Box',
+    };
+    return labels[cmd] || cmd;
+  }
+
+  // --------------------------------------------------------------------------
+  // ПОЛУЧИТЬ ИКОНКУ ДЛЯ КОМАНДЫ (ДЛЯ СПИСКА ПРОГРАММЫ)
+  // --------------------------------------------------------------------------
+  private getIconForCommand(cmd: Command): string {
+    const icons: Partial<Record<Command, string>> = {
+      [Command.UP]: '↑',
+      [Command.DOWN]: '↓',
+      [Command.LEFT]: '←',
+      [Command.RIGHT]: '→',
+      [Command.PUSH]: '📦',
+      [Command.USE_KEY]: '🔑',
+      [Command.PICKUP]: '📥',
+      [Command.DROP]: '🗑',
+      [Command.DRILL]: '🔧',
+      [Command.HOOK]: '🪝',
+      [Command.WING]: '🪽',
+      [Command.BAIT]: '🐟',
+      [Command.THROW]: '🎯',
+      [Command.FEED]: '🌽',
+      [Command.TIME_SLOW]: '🐢',
+      [Command.TIME_FAST]: '🐇',
+      [Command.WAIT]: '⏳',
+      [Command.CALL]: '📞',
+      [Command.RETURN]: '↩️',
+      [Command.PARAM]: '📥',
+      [Command.CLASS]: '🏛️',
+      [Command.NEW]: '✨',
+      [Command.METHOD]: '⚙️',
+      [Command.CLONE]: '👥',
+      [Command.JOIN]: '🤝',
+      [Command.SCAN]: '🔍',
+      [Command.RIDE]: '🐎',
+      [Command.BLACK_BOX]: '📦',
+    };
+    return icons[cmd] || cmd.slice(0, 2);
+  }
+
+  // --------------------------------------------------------------------------
+  // ПЕРЕСОЗДАТЬ ПАНЕЛЬ (ПРИ ИЗМЕНЕНИИ allowedCommands)
+  // --------------------------------------------------------------------------
+  private refreshPanel(): void {
+    // Сохраняем текущую программу
+    const currentProgram = [...this.commands];
+    
+    // Полностью пересоздаём DOM-панель
+    const oldContainer = this.container;
+    const newContainer = document.createElement('div');
+    newContainer.style.cssText = oldContainer.style.cssText;
+    oldContainer.parentNode?.replaceChild(newContainer, oldContainer);
+    this.container = newContainer;
+    
+    // Пересоздаём структуру
+    this.createPanelContent();
+    
+    // Восстанавливаем программу
+    this.commands = currentProgram;
     this.updateProgramList();
     this.onAddCommandCallback(this.commands);
   }
 
-  public highlightCommand(index: number, type: 'running' | 'error'): void {
-    this.commandElements.forEach((element, idx) => {
-      if (idx === index) {
-        element.style.backgroundColor = type === 'running' ? '#00aa44' : '#ff0000';
-        element.style.transition = 'background-color 0.1s';
-      } else {
-        element.style.backgroundColor = '#3a3a5a';
-      }
-    });
-  }
-
-  public clearHighlight(): void {
-    this.commandElements.forEach((element) => {
-      element.style.backgroundColor = '#3a3a5a';
-    });
-  }
-
   // --------------------------------------------------------------------------
-  // СОЗДАНИЕ DOM-ПАНЕЛИ
+  // СОЗДАНИЕ СОДЕРЖИМОГО ПАНЕЛИ (С УЧЁТОМ ФИЛЬТРАЦИИ)
   // --------------------------------------------------------------------------
-  private createPanel(): void {
-    this.container = document.createElement('div');
+  private createPanelContent(): void {
     this.container.style.position = 'absolute';
     this.container.style.top = '50%';
     this.container.style.left = '20px';
@@ -81,7 +185,6 @@ export class CommandPanel {
     this.container.style.zIndex = '1000';
     this.container.style.maxHeight = '90vh';
     this.container.style.overflowY = 'auto';
-    document.body.appendChild(this.container);
 
     const title = document.createElement('div');
     title.textContent = 'COMMANDS';
@@ -92,75 +195,19 @@ export class CommandPanel {
     title.style.marginBottom = '10px';
     this.container.appendChild(title);
 
-    // Группа: Движение
-    this.addGroupTitle('MOVEMENT');
-    this.addCommandButton('↑ Up', Command.UP);
-    this.addCommandButton('↓ Down', Command.DOWN);
-    this.addCommandButton('← Left', Command.LEFT);
-    this.addCommandButton('→ Right', Command.RIGHT);
-    this.addSeparator();
+    // Проходим по группам и добавляем только те, у которых есть разрешённые команды
+    for (const group of this.commandGroups) {
+      const enabledCommands = group.commands.filter(cmd => this.isCommandAllowed(cmd));
+      if (enabledCommands.length === 0) continue; // группу пропускаем
 
-    // Группа: Инвентарь и взаимодействие
-    this.addGroupTitle('INVENTORY');
-    this.addCommandButton('📦 Push', Command.PUSH);
-    this.addCommandButton('🔑 Use Key', Command.USE_KEY);
-    this.addCommandButton('📥 Pickup', Command.PICKUP);
-    this.addCommandButton('🗑 Drop', Command.DROP);
-    this.addSeparator();
+      this.addGroupTitle(group.title);
+      for (const cmd of enabledCommands) {
+        this.addCommandButton(this.getButtonLabel(cmd), cmd);
+      }
+      this.addSeparator();
+    }
 
-    // Группа: Инструменты
-    this.addGroupTitle('TOOLS');
-    this.addCommandButton('🔧 Drill', Command.DRILL);
-    this.addCommandButton('🪝 Hook', Command.HOOK);
-    this.addCommandButton('🪽 Wing', Command.WING);
-    this.addCommandButton('🐟 Bait', Command.BAIT);
-    this.addSeparator();
-
-    // Группа: Бой
-    this.addGroupTitle('COMBAT');
-    this.addCommandButton('🎯 Throw', Command.THROW);
-    this.addCommandButton('🌽 Feed', Command.FEED);
-    this.addSeparator();
-
-    // Группа: Время
-    this.addGroupTitle('TIME');
-    this.addCommandButton('🐢 Time Slow', Command.TIME_SLOW);
-    this.addCommandButton('🐇 Time Fast', Command.TIME_FAST);
-    this.addCommandButton('⏳ Wait', Command.WAIT);
-    this.addSeparator();
-
-    // Группа: Функции
-    this.addGroupTitle('FUNCTIONS');
-    this.addCommandButton('📞 Call', Command.CALL);
-    this.addCommandButton('↩️ Return', Command.RETURN);
-    this.addCommandButton('📥 Param', Command.PARAM);
-    this.addSeparator();
-
-    // Группа: ООП
-    this.addGroupTitle('OOP');
-    this.addCommandButton('🏛️ Class', Command.CLASS);
-    this.addCommandButton('✨ New', Command.NEW);
-    this.addCommandButton('⚙️ Method', Command.METHOD);
-    this.addSeparator();
-
-    // Группа: Параллелизм
-    this.addGroupTitle('PARALLELISM');
-    this.addCommandButton('👥 Clone', Command.CLONE);
-    this.addCommandButton('🤝 Join', Command.JOIN);
-    this.addSeparator();
-
-    // Группа: Взаимодействие
-    this.addGroupTitle('INTERACTION');
-    this.addCommandButton('🔍 Scan', Command.SCAN);
-    this.addCommandButton('🐎 Ride', Command.RIDE);
-    this.addSeparator();
-
-    // Группа: Чёрный ящик
-    this.addGroupTitle('BLACK BOX');
-    this.addCommandButton('📦 Black Box', Command.BLACK_BOX);
-    this.addSeparator();
-
-    // Группа: Управление программой
+    // Управляющие кнопки (RUN, CLEAR) добавляем всегда
     this.addGroupTitle('CONTROL');
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
@@ -191,8 +238,6 @@ export class CommandPanel {
       this.onClearCallback();
     };
     this.container.appendChild(clearBtn);
-
-    this.createProgramPanel();
   }
 
   private addGroupTitle(title: string): void {
@@ -309,7 +354,7 @@ export class CommandPanel {
           if (Array.isArray(loadedCommands)) {
             this.commands = loadedCommands;
             this.updateProgramList();
-            this.onClearCallback();       // сброс состояния выполнения
+            this.onClearCallback();
             this.onAddCommandCallback(this.commands);
             alert('Program loaded!');
           } else {
@@ -340,8 +385,7 @@ export class CommandPanel {
       cmdDiv.style.justifyContent = 'space-between';
 
       const cmdText = document.createElement('span');
-      // Получаем иконку для команды
-      let icon = this.getIconForCommand(cmd);
+      const icon = this.getIconForCommand(cmd);
       cmdText.textContent = `${icon} ${cmd}`;
       cmdText.style.fontSize = '12px';
       cmdText.style.color = '#fff';
@@ -367,38 +411,39 @@ export class CommandPanel {
     });
   }
 
-  private getIconForCommand(cmd: Command): string {
-    const icons: Partial<Record<Command, string>> = {
-      [Command.UP]: '↑',
-      [Command.DOWN]: '↓',
-      [Command.LEFT]: '←',
-      [Command.RIGHT]: '→',
-      [Command.PUSH]: '📦',
-      [Command.USE_KEY]: '🔑',
-      [Command.PICKUP]: '📥',
-      [Command.DROP]: '🗑',
-      [Command.DRILL]: '🔧',
-      [Command.HOOK]: '🪝',
-      [Command.WING]: '🪽',
-      [Command.BAIT]: '🐟',
-      [Command.THROW]: '🎯',
-      [Command.FEED]: '🌽',
-      [Command.TIME_SLOW]: '🐢',
-      [Command.TIME_FAST]: '🐇',
-      [Command.WAIT]: '⏳',
-      [Command.CALL]: '📞',
-      [Command.RETURN]: '↩️',
-      [Command.PARAM]: '📥',
-      [Command.CLASS]: '🏛️',
-      [Command.NEW]: '✨',
-      [Command.METHOD]: '⚙️',
-      [Command.CLONE]: '👥',
-      [Command.JOIN]: '🤝',
-      [Command.SCAN]: '🔍',
-      [Command.RIDE]: '🐎',
-      [Command.BLACK_BOX]: '📦',
-    };
-    return icons[cmd] || cmd.slice(0, 2);
+  // --------------------------------------------------------------------------
+  // ПУБЛИЧНЫЕ МЕТОДЫ (для взаимодействия с GameScene)
+  // --------------------------------------------------------------------------
+  public getCommands(): Command[] {
+    return [...this.commands];
+  }
+
+  public setCommands(commands: Command[]): void {
+    this.commands = [...commands];
+    this.updateProgramList();
+    this.onAddCommandCallback(this.commands);
+  }
+
+  public highlightCommand(index: number, type: 'running' | 'error'): void {
+    this.commandElements.forEach((element, idx) => {
+      if (idx === index) {
+        element.style.backgroundColor = type === 'running' ? '#00aa44' : '#ff0000';
+        element.style.transition = 'background-color 0.1s';
+      } else {
+        element.style.backgroundColor = '#3a3a5a';
+      }
+    });
+  }
+
+  public clearHighlight(): void {
+    this.commandElements.forEach((element) => {
+      element.style.backgroundColor = '#3a3a5a';
+    });
+  }
+
+  private createPanel(): void {
+    this.createPanelContent();
+    this.createProgramPanel();
   }
 
   public destroy(): void {
