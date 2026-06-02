@@ -1,16 +1,10 @@
 // src/modules/execution/runner.ts
 // ============================================================================
-// ОСНОВНОЙ ЦИКЛ ВЫПОЛНЕНИЯ ПРОГРАММЫ (AST RUNNER)
+// ОСНОВНОЙ ЦИКЛ ВЫПОЛНЕНИЯ ПРОГРАММЫ – С ПРОВЕРКОЙ ПОБЕДЫ ПОСЛЕ КАЖДОГО ШАГА
 // ============================================================================
-// Этот класс обходит абстрактное синтаксическое дерево (AST), выполняет команды,
-// управляет блоками (циклы, условия), обрабатывает вызовы функций, возвраты,
-// параллелизм и т.д. Работает асинхронно с возможностью паузы.
-// ============================================================================
-// ИСПРАВЛЕНИЯ:
-// - Добавлена задержка между шагами (анимация движения)
-// - Проверка победы после каждого шага (если игрок на монетке, программа завершается)
-// - Подсветка ошибки красным цветом через событие EXECUTION_ERROR
-// - Правильная остановка программы без поражения, если монетка не достигнута
+// - После каждого успешного выполнения команды проверяется, достиг ли игрок монетки
+// - Если монетка достигнута, программа немедленно завершается с победой
+// - Исправлена обработка USE_KEY (передаётся в InventoryExecutor)
 // ============================================================================
 
 import { Command } from '../../types/index';
@@ -56,7 +50,6 @@ export class ASTRunner {
   private status: 'idle' | 'running' | 'paused' | 'finished' | 'error';
   private waitTimer: number | null;
   private lastDirection: 'up' | 'down' | 'left' | 'right';
-  private playerWasAlive: boolean = true; // для отслеживания смерти
 
   // Подсистемы
   private conditionEvaluator: ConditionEvaluator;
@@ -83,7 +76,6 @@ export class ASTRunner {
     this.status = 'idle';
     this.waitTimer = null;
     this.lastDirection = 'right';
-    this.playerWasAlive = context.player.isPlayerAlive();
 
     // Инициализация подсистем
     this.conditionEvaluator = new ConditionEvaluator({
@@ -135,7 +127,7 @@ export class ASTRunner {
         break;
       }
 
-      // Проверка, жив ли игрок (событие PLAYER_DIED могло изменить состояние)
+      // Проверка, жив ли игрок
       if (!this.context.player.isPlayerAlive()) {
         this.status = 'error';
         eventBus.emit('EXECUTION_ERROR', { stepIndex: this.currentNodeIndex, cause: 'player_died' });
@@ -144,6 +136,7 @@ export class ASTRunner {
 
       const result = await this.executeCurrentNode();
 
+      // Если команда вернула 'dead' – смерть
       if (result === 'dead') {
         this.status = 'error';
         break;
@@ -155,7 +148,15 @@ export class ASTRunner {
         this.status = 'finished';
         break;
       }
+      // Если команда вернула 'victory' или после выполнения проверки победы
       if (result === 'victory') {
+        this.status = 'finished';
+        break;
+      }
+
+      // После каждого шага проверяем победу
+      if (this.checkVictory()) {
+        logInfo('ASTRunner', 'run', 'Victory achieved, stopping program');
         this.status = 'finished';
         break;
       }
@@ -183,11 +184,6 @@ export class ASTRunner {
 
     if (result === 'ok') {
       this.currentNodeIndex++;
-      // После каждого успешного шага проверяем победу
-      if (this.checkVictory()) {
-        logInfo('ASTRunner', 'executeCurrentNode', 'Victory achieved!');
-        return 'victory';
-      }
       // Задержка для визуализации (только для команд движения)
       if (node.type === 'command' && this.isMovementCommand(node.command!)) {
         const delayMs = 100 / this.context.speedMultiplier;
@@ -195,6 +191,8 @@ export class ASTRunner {
       }
     } else if (result === 'dead') {
       eventBus.emit('EXECUTION_ERROR', { stepIndex: this.stepCount, command: node.command });
+    } else if (result === 'victory') {
+      return 'victory';
     }
 
     return result;
@@ -234,7 +232,6 @@ export class ASTRunner {
     }
 
     if (node.type === 'method') {
-      // Методы обрабатываются внутри определения класса
       return 'ok';
     }
 
@@ -407,7 +404,6 @@ export class ASTRunner {
         return await this.timeExecutor.executeWait(this.context.speedMultiplier);
 
       case Command.CALL:
-        // Упрощённая заглушка
         log('ASTRunner', 'executeCommand', 'CALL not fully implemented');
         return 'ok';
       case Command.RETURN:
