@@ -1,17 +1,13 @@
 // src/modules/execution/tiles.ts
 // ============================================================================
-// ОБРАБОТЧИК СПЕЦИАЛЬНЫХ ТАЙЛОВ
+// ОБРАБОТЧИК СПЕЦИАЛЬНЫХ ТАЙЛОВ – ПОЛНАЯ ВЕРСИЯ
 // ============================================================================
-// Этот модуль отвечает за все нестандартные взаимодействия с клетками уровня:
-// - телепорты (мгновенное перемещение)
-// - конвейеры (принудительное движение)
-// - пружины (прыжок на несколько клеток)
-// - чёрные ящики (преобразование предметов)
-// - кнопки, рычаги, таймеры (активация мостов/дверей)
-// - сенсоры, сортировщики
-// - новые механики: клей (GLUE), клетка (CAGE), ловушка (TRAP)
+// Отвечает за:
+// - телепорты, конвейеры, пружины
+// - чёрные ящики, кнопки, рычаги, таймеры, сенсоры, сортировщики
+// - клей, клетки, ловушки
 // ============================================================================
-// Все методы вызываются из MovementExecutor после перемещения игрока на соответствующий тайл.
+// ИСПРАВЛЕНИЕ: в processConveyor добавлен счётчик depth для предотвращения бесконечной рекурсии
 // ============================================================================
 
 import { TileType, Point, Inventory } from '../../types/index';
@@ -19,9 +15,10 @@ import { gameEvents as eventBus } from '../../core/EventBus';
 import { log, logInfo, logError, getConveyorDirection, isWall, isHole } from './helpers';
 
 export class TilesExecutor {
-  private level: any;           // ссылка на объект уровня (с map, objects, width, height)
-  private player: any;          // ссылка на игрока (для телепортации, установки glued/trapped)
-  private inventory: Inventory; // инвентарь (для чёрного ящика, сортировщика)
+  private level: any;
+  private player: any;
+  private inventory: Inventory;
+  private timers: Map<string, number> = new Map();
 
   constructor(level: any, player: any, inventory: Inventory) {
     this.level = level;
@@ -32,12 +29,6 @@ export class TilesExecutor {
   // ==========================================================================
   // 1. ТЕЛЕПОРТЫ
   // ==========================================================================
-  /**
-   * Обрабатывает вход в телепорт (TELEPORT_IN).
-   * Ищет соответствующий выход (TELEPORT_OUT) по ID телепорта.
-   * Проверяет, что выход не заблокирован (стена, яма, кирпич).
-   * При успехе перемещает игрока.
-   */
   public processTeleport(entryPos: Point): boolean {
     const teleport = this.level.objects?.teleports?.find((t: any) =>
       t.entry.col === entryPos.col && t.entry.row === entryPos.row
@@ -58,20 +49,19 @@ export class TilesExecutor {
   }
 
   // ==========================================================================
-  // 2. КОНВЕЙЕРЫ
+  // 2. КОНВЕЙЕРЫ (с защитой от бесконечной рекурсии)
   // ==========================================================================
-  /**
-   * Обрабатывает движение по конвейеру (CONVEYOR_*).
-   * Вызывается после того, как игрок встал на конвейер.
-   * Принудительно двигает игрока в направлении конвейера на одну клетку.
-   * Рекурсивно применяется, если следующая клетка тоже конвейер.
-   */
-  public async processConveyor(pos: Point, command: any): Promise<boolean> {
+  public async processConveyor(pos: Point, command: any, depth: number = 0): Promise<boolean> {
+    // Защита от слишком глубокой рекурсии (например, замкнутые конвейеры)
+    if (depth > 50) {
+      logError('TilesExecutor', 'processConveyor', 'Max depth exceeded, stopping to avoid recursion');
+      return false;
+    }
+
     const tile = this.level.map[pos.row][pos.col];
     const direction = getConveyorDirection(tile);
     if (!direction) return false;
 
-    // Преобразуем направление в дельту и команду движения
     let dx = 0, dy = 0;
     let cmd: any;
     switch (direction) {
@@ -86,11 +76,10 @@ export class TilesExecutor {
         newPos.row >= 0 && newPos.row < this.level.height) {
       const targetTile = this.level.map[newPos.row][newPos.col];
       if (!isWall(targetTile) && !isHole(targetTile) && targetTile !== TileType.BRICK) {
-        this.player.move(cmd);   // физическое перемещение
+        this.player.move(cmd);
         log('TilesExecutor', 'processConveyor', `Conveyor moved player to (${newPos.col},${newPos.row})`);
-        // Рекурсивно обрабатываем следующий конвейер (если есть)
         const nextPos = this.player.getPosition();
-        await this.processConveyor(nextPos, cmd);
+        await this.processConveyor(nextPos, cmd, depth + 1);
         return true;
       }
     }
@@ -100,16 +89,10 @@ export class TilesExecutor {
   // ==========================================================================
   // 3. ПРУЖИНЫ
   // ==========================================================================
-  /**
-   * Обрабатывает пружину (SPRING).
-   * Игрок подбрасывается на force клеток в направлении, указанном в данных пружины.
-   * По умолчанию force = 3, направление — направление игрока (или заданное в объекте).
-   */
   public async processSpring(pos: Point, direction: 'up' | 'down' | 'left' | 'right'): Promise<boolean> {
     const tile = this.level.map[pos.row][pos.col];
     if (tile !== TileType.SPRING) return false;
 
-    // Находим объект пружины (может содержать свою силу и направление)
     const spring = this.level.objects?.springs?.find((s: any) =>
       s.position.col === pos.col && s.position.row === pos.row
     );
@@ -142,11 +125,6 @@ export class TilesExecutor {
   // ==========================================================================
   // 4. ЧЁРНЫЙ ЯЩИК
   // ==========================================================================
-  /**
-   * Обрабатывает вход на клетку чёрного ящика (BLACK_BOX).
-   * Применяет преобразование к инвентарю согласно заданному mapping.
-   * Само преобразование выполняется в BlackBoxProcessor.
-   */
   public processBlackBox(pos: Point): void {
     const blackBox = this.level.objects?.blackBoxes?.find((b: any) =>
       b.position.col === pos.col && b.position.row === pos.row
@@ -155,16 +133,12 @@ export class TilesExecutor {
 
     logInfo('TilesExecutor', 'processBlackBox', `BlackBox triggered at (${pos.col},${pos.row}) mapping: ${blackBox.mapping}`);
     eventBus.emit('BLACK_BOX_ACTIVATED', { pos, mapping: blackBox.mapping });
-    // Здесь должен быть вызов BlackBoxProcessor, но он уже используется в ExecutionEngine
-    // (метод applySISO и т.д.). Оставляем заглушку для событий.
+    // Реальное преобразование должно выполняться в BlackBoxProcessor, здесь только событие
   }
 
   // ==========================================================================
   // 5. КНОПКИ, РЫЧАГИ, ТАЙМЕРЫ, СЕНСОРЫ, СОРТИРОВЩИКИ
   // ==========================================================================
-  /**
-   * Кнопка (BUTTON): при нажатии активирует связанные объекты (мосты, двери).
-   */
   public processButton(pos: Point): void {
     const button = this.level.objects?.buttons?.find((b: any) =>
       b.position.col === pos.col && b.position.row === pos.row
@@ -175,7 +149,6 @@ export class TilesExecutor {
     logInfo('TilesExecutor', 'processButton', `Button pressed at (${pos.col},${pos.row})`);
     eventBus.emit('BUTTON_PRESSED', { pos, buttonId: button.id });
 
-    // Активация связанных объектов
     if (button.linkedObjects) {
       for (const objId of button.linkedObjects) {
         const bridge = this.level.objects?.bridges?.find((b: any) => b.id === objId);
@@ -188,9 +161,6 @@ export class TilesExecutor {
     }
   }
 
-  /**
-   * Рычаг (LEVER): переключает состояние (вкл/выкл) и управляет связанными объектами.
-   */
   public processLever(pos: Point): void {
     const lever = this.level.objects?.levers?.find((l: any) =>
       l.position.col === pos.col && l.position.row === pos.row
@@ -213,9 +183,6 @@ export class TilesExecutor {
     }
   }
 
-  /**
-   * Таймер (TIMER): запускает отсчёт, по истечении активирует связанные объекты.
-   */
   public processTimer(pos: Point): void {
     const timer = this.level.objects?.timers?.find((t: any) =>
       t.position.col === pos.col && t.position.row === pos.row
@@ -244,9 +211,6 @@ export class TilesExecutor {
     }, timer.delay);
   }
 
-  /**
-   * Сенсор (SENSOR): проверяет, находится ли игрок в радиусе, и генерирует событие.
-   */
   public processSensor(pos: Point): void {
     const sensor = this.level.objects?.sensors?.find((s: any) =>
       s.position.col === pos.col && s.position.row === pos.row
@@ -261,9 +225,6 @@ export class TilesExecutor {
     }
   }
 
-  /**
-   * Сортировщик (SORTER): сортирует ключи в инвентаре.
-   */
   public processSorter(pos: Point): void {
     const sorter = this.level.objects?.sorters?.find((s: any) =>
       s.position.col === pos.col && s.position.row === pos.row
@@ -293,13 +254,9 @@ export class TilesExecutor {
   // ==========================================================================
   // 6. НОВЫЕ МЕХАНИКИ: КЛЕЙ, КЛЕТКА, ЛОВУШКА
   // ==========================================================================
-  /**
-   * Клей (GLUE): приклеивает игрока на 3 хода.
-   */
   public processGlue(pos: Point): void {
     const tile = this.level.map[pos.row][pos.col];
     if (tile !== TileType.GLUE) return;
-    
     if (!this.player.isGlued()) {
       this.player.setGlued(true, 3);
       logInfo('TilesExecutor', 'processGlue', `Player glued at (${pos.col},${pos.row}) for 3 turns`);
@@ -307,21 +264,12 @@ export class TilesExecutor {
     }
   }
 
-  /**
-   * Клетка (CAGE): ловит игрока или монстра.
-   * entity: 'player' или 'monster'
-   * monsterId: нужен, если entity === 'monster'
-   * Возвращает true, если удалось запереть.
-   */
   public processCage(pos: Point, entity: 'player' | 'monster', monsterId?: string): boolean {
     const tile = this.level.map[pos.row][pos.col];
     if (tile !== TileType.CAGE) return false;
-    
     const cage = this.level.objects?.cages?.find((c: any) => c.position.col === pos.col && c.position.row === pos.row);
-    if (!cage) return false;
-    
-    if (cage.isClosed) return false;
-    
+    if (!cage || cage.isClosed) return false;
+
     if (entity === 'player') {
       cage.isClosed = true;
       cage.prisoner = 'player';
@@ -343,23 +291,15 @@ export class TilesExecutor {
     return false;
   }
 
-  /**
-   * Открытие клетки ключом (CAGE_KEY или обычным ключом).
-   * Вызывается из InventoryExecutor при использовании ключа перед клеткой.
-   */
   public openCage(pos: Point, inventory: Inventory): boolean {
     const tile = this.level.map[pos.row][pos.col];
     if (tile !== TileType.CAGE) return false;
-    
     const cage = this.level.objects?.cages?.find((c: any) => c.position.col === pos.col && c.position.row === pos.row);
     if (!cage || !cage.isClosed) return false;
-    
-    // Проверяем наличие ключа от клетки (или обычного ключа)
+
     if (inventory.keys.some(k => k === 'cage_key' || k === 'key')) {
-      // Удаляем один ключ
       const keyIndex = inventory.keys.findIndex(k => k === 'cage_key' || k === 'key');
       if (keyIndex !== -1) inventory.keys.splice(keyIndex, 1);
-      
       cage.isClosed = false;
       if (cage.prisoner === 'player') {
         this.player.setTrapped(false);
@@ -376,18 +316,12 @@ export class TilesExecutor {
     return false;
   }
 
-  /**
-   * Ловушка (TRAP): превращает монстра в драгоценность (GEM).
-   * Вызывается из MonstersExecutor при движении монстра на клетку с ловушкой.
-   * Возвращает true, если монстр уничтожен и на его месте появилась драгоценность.
-   */
   public processTrap(pos: Point, monsterId: string): boolean {
     const tile = this.level.map[pos.row][pos.col];
     if (tile !== TileType.TRAP) return false;
-    
     const trap = this.level.objects?.traps?.find((t: any) => t.position.col === pos.col && t.position.row === pos.row);
     if (!trap || trap.used) return false;
-    
+
     const monster = this.level.objects.monsters?.find((m: any) => m.id === monsterId);
     if (monster && !monster.isTamed && !monster.isRidden) {
       const monsterIndex = this.level.objects.monsters.findIndex((m: any) => m.id === monsterId);
