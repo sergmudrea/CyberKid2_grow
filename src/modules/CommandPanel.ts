@@ -1,13 +1,19 @@
 // src/modules/CommandPanel.ts
 // ============================================================================
-// ПАНЕЛЬ КОМАНД (UI ДЛЯ ПРОГРАММИРОВАНИЯ)
+// ПАНЕЛЬ КОМАНД – ДИНАМИЧЕСКАЯ, ПОДДЕРЖИВАЕТ allowedCommands
 // ============================================================================
-// Упрощённая версия, которая гарантированно работает.
-// Показывает базовые команды движения, RUN, CLEAR, SAVE, LOAD.
-// Метод setAllowedCommands добавлен как заглушка для совместимости с GameScene.
+// - Показывает только те команды, которые разрешены для текущего уровня
+// - Группы без команд скрываются
+// - При изменении allowedCommands панель перестраивается
 // ============================================================================
 
 import { Command } from '../types/index';
+
+// Описание группы команд
+interface CommandGroup {
+  title: string;
+  commands: Command[];
+}
 
 export class CommandPanel {
   private commands: Command[] = [];
@@ -17,6 +23,21 @@ export class CommandPanel {
   private onClearCallback: () => void;
   private onAddCommandCallback: (commands: Command[]) => void;
   private commandElements: Map<number, HTMLDivElement> = new Map();
+  private allowedCommands: Command[] = []; // текущий список разрешённых
+
+  // Все возможные группы команд (полный набор)
+  private readonly allGroups: CommandGroup[] = [
+    { title: 'MOVEMENT', commands: [Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT] },
+    { title: 'INVENTORY', commands: [Command.PUSH, Command.USE_KEY, Command.PICKUP, Command.DROP] },
+    { title: 'TOOLS', commands: [Command.DRILL, Command.HOOK, Command.WING, Command.BAIT] },
+    { title: 'COMBAT', commands: [Command.THROW, Command.FEED] },
+    { title: 'TIME', commands: [Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT] },
+    { title: 'FUNCTIONS', commands: [Command.CALL, Command.RETURN, Command.PARAM] },
+    { title: 'OOP', commands: [Command.CLASS, Command.NEW, Command.METHOD] },
+    { title: 'PARALLELISM', commands: [Command.CLONE, Command.JOIN] },
+    { title: 'INTERACTION', commands: [Command.SCAN, Command.RIDE] },
+    { title: 'BLACK BOX', commands: [Command.BLACK_BOX] },
+  ];
 
   constructor(
     scene: any,
@@ -60,14 +81,31 @@ export class CommandPanel {
     });
   }
 
-  // Метод-заглушка для совместимости с GameScene (избегаем ошибки "is not a function")
+  // Установить разрешённые команды и перестроить панель
   public setAllowedCommands(commands: Command[]): void {
-    console.log('[CommandPanel] setAllowedCommands (stub) called with', commands);
-    // Здесь можно будет реализовать фильтрацию позже
+    this.allowedCommands = commands || [];
+    this.refreshPanel();
+    console.log('[CommandPanel] Allowed commands updated:', this.allowedCommands);
   }
 
   // --------------------------------------------------------------------------
-  // СОЗДАНИЕ DOM-ПАНЕЛИ
+  // ПЕРЕСТРОЙКА ПАНЕЛИ (при изменении allowedCommands)
+  // --------------------------------------------------------------------------
+  private refreshPanel(): void {
+    // Сохраняем текущую программу
+    const currentProgram = [...this.commands];
+    // Удаляем старый контейнер
+    if (this.container) this.container.remove();
+    // Создаём новый
+    this.createPanel();
+    // Восстанавливаем программу
+    this.commands = currentProgram;
+    this.updateProgramList();
+    this.onAddCommandCallback(this.commands);
+  }
+
+  // --------------------------------------------------------------------------
+  // СОЗДАНИЕ DOM-ПАНЕЛИ (с учётом allowedCommands)
   // --------------------------------------------------------------------------
   private createPanel(): void {
     console.log('[CommandPanel] Creating panel...');
@@ -100,28 +138,29 @@ export class CommandPanel {
     title.style.marginBottom = '10px';
     this.container.appendChild(title);
 
-    // Группа MOVEMENT
-    const moveGroup = document.createElement('div');
-    moveGroup.style.marginBottom = '8px';
-    const moveTitle = document.createElement('div');
-    moveTitle.textContent = 'MOVEMENT';
-    moveTitle.style.color = '#ffaa00';
-    moveTitle.style.fontSize = '12px';
-    moveTitle.style.fontWeight = 'bold';
-    moveGroup.appendChild(moveTitle);
-    this.addCommandButtonToContainer('↑ Up', Command.UP, moveGroup);
-    this.addCommandButtonToContainer('↓ Down', Command.DOWN, moveGroup);
-    this.addCommandButtonToContainer('← Left', Command.LEFT, moveGroup);
-    this.addCommandButtonToContainer('→ Right', Command.RIGHT, moveGroup);
-    this.container.appendChild(moveGroup);
+    // Проходим по группам и добавляем только те, у которых есть разрешённые команды
+    for (const group of this.allGroups) {
+      const enabledCmds = group.commands.filter(cmd => this.isCommandAllowed(cmd));
+      if (enabledCmds.length === 0) continue; // группу пропускаем
 
-    // Разделитель
-    const sep = document.createElement('hr');
-    sep.style.margin = '8px 0';
-    sep.style.borderColor = '#444';
-    this.container.appendChild(sep);
+      const groupDiv = document.createElement('div');
+      groupDiv.style.marginBottom = '8px';
+      const groupTitle = document.createElement('div');
+      groupTitle.textContent = group.title;
+      groupTitle.style.color = '#ffaa00';
+      groupTitle.style.fontSize = '12px';
+      groupTitle.style.fontWeight = 'bold';
+      groupTitle.style.marginBottom = '4px';
+      groupDiv.appendChild(groupTitle);
 
-    // Кнопки RUN и CLEAR
+      for (const cmd of enabledCmds) {
+        this.addCommandButtonToContainer(this.getButtonLabel(cmd), cmd, groupDiv);
+      }
+      this.container.appendChild(groupDiv);
+      this.addSeparator();
+    }
+
+    // Кнопки RUN и CLEAR всегда добавляем
     const runBtn = document.createElement('button');
     runBtn.textContent = '▶ RUN';
     runBtn.style.padding = '8px';
@@ -157,6 +196,45 @@ export class CommandPanel {
     console.log('[CommandPanel] Panel created');
   }
 
+  private isCommandAllowed(cmd: Command): boolean {
+    if (this.allowedCommands.length === 0) return true; // нет ограничений – показываем всё
+    return this.allowedCommands.includes(cmd);
+  }
+
+  private getButtonLabel(cmd: Command): string {
+    const labels: Partial<Record<Command, string>> = {
+      [Command.UP]: '↑ Up',
+      [Command.DOWN]: '↓ Down',
+      [Command.LEFT]: '← Left',
+      [Command.RIGHT]: '→ Right',
+      [Command.PUSH]: '📦 Push',
+      [Command.USE_KEY]: '🔑 Use Key',
+      [Command.PICKUP]: '📥 Pickup',
+      [Command.DROP]: '🗑 Drop',
+      [Command.DRILL]: '🔧 Drill',
+      [Command.HOOK]: '🪝 Hook',
+      [Command.WING]: '🪽 Wing',
+      [Command.BAIT]: '🐟 Bait',
+      [Command.THROW]: '🎯 Throw',
+      [Command.FEED]: '🌽 Feed',
+      [Command.TIME_SLOW]: '🐢 Time Slow',
+      [Command.TIME_FAST]: '🐇 Time Fast',
+      [Command.WAIT]: '⏳ Wait',
+      [Command.CALL]: '📞 Call',
+      [Command.RETURN]: '↩️ Return',
+      [Command.PARAM]: '📥 Param',
+      [Command.CLASS]: '🏛️ Class',
+      [Command.NEW]: '✨ New',
+      [Command.METHOD]: '⚙️ Method',
+      [Command.CLONE]: '👥 Clone',
+      [Command.JOIN]: '🤝 Join',
+      [Command.SCAN]: '🔍 Scan',
+      [Command.RIDE]: '🐎 Ride',
+      [Command.BLACK_BOX]: '📦 Black Box',
+    };
+    return labels[cmd] || cmd;
+  }
+
   private addCommandButtonToContainer(label: string, cmd: Command, container: HTMLDivElement): void {
     const btn = document.createElement('button');
     btn.textContent = label;
@@ -176,6 +254,13 @@ export class CommandPanel {
       this.onAddCommandCallback(this.commands);
     };
     container.appendChild(btn);
+  }
+
+  private addSeparator(): void {
+    const sep = document.createElement('hr');
+    sep.style.margin = '8px 0';
+    sep.style.borderColor = '#444';
+    this.container.appendChild(sep);
   }
 
   private createProgramPanel(): void {
