@@ -1,23 +1,27 @@
 // src/modules/Player.ts
 // ============================================================================
-// КЛАСС ИГРОКА (ROBOT)
+// КЛАСС ИГРОКА (ТАНК) – ПАТЧ 2.0
 // ============================================================================
-// Управляет состоянием робота: позиция, направление, инвентарь, режимы (призрак, клей, клетка),
-// клонирование, верховая езда на монстре, а также приёмы движения с учётом препятствий.
+// Управляет состоянием танка: позиция, направление башни, направление корпуса,
+// инвентарь, режимы (призрак, клей, клетка), клонирование, верховая езда.
 // ============================================================================
-// Все изменения публикуются через EventBus (PLAYER_MOVED, INVENTORY_CHANGED, PLAYER_DIED и т.д.)
+// НОВОЕ В 2.0:
+// - Раздельное управление башней (turretAngle) и корпусом (hullDirection)
+// - Новые команды: TURN_LEFT/RIGHT (поворот башни без движения)
+// - SYNC_BODY – синхронизация корпуса с башней
+// - MOVE_FORWARD/MOVE_BACKWARD – движение вперёд/назад
+// - Полная обратная совместимость через классический режим (controlMode)
 // ============================================================================
 
-import { Point, Inventory, Monster, Command } from '../types/index';
+import { Point, Inventory, Monster, Command, ControlMode } from '../types/index';
 import { gameEvents as eventBus } from '../core/EventBus';
 import { logger } from '../core/Logger';
 
-// ----------------------------------------------------------------------------
-// ИНТЕРФЕЙС ДЛЯ КЛОНОВ
-// ----------------------------------------------------------------------------
 export interface CloneInfo {
   id: string;
   position: Point;
+  turretAngle: number;
+  hullDirection: 'up' | 'down' | 'left' | 'right';
   inventory: Inventory;
   commands: Command[];
   currentCommandIndex: number;
@@ -25,49 +29,60 @@ export interface CloneInfo {
 
 export class Player {
   // ----- Основные параметры -----
-  private position: Point;                 // текущая клетка
-  private direction: 'up' | 'down' | 'left' | 'right';
+  private position: Point;
+  private turretAngle: number;          // 0, 90, 180, 270 градусов
+  private hullDirection: 'up' | 'down' | 'left' | 'right';
   private inventory: Inventory;
   private isAlive: boolean = true;
-  private isGhostMode: boolean = false;    // режим исследования (неуязвим)
+  private isGhostMode: boolean = false;
   private levelBounds: { width: number; height: number };
-  private tileMap: (col: number, row: number) => number;  // функция получения типа тайла
+  private tileMap: (col: number, row: number) => number;
+  private controlMode: ControlMode = ControlMode.SEPARATE; // по умолчанию новое управление
 
   // ----- Продвинутые механики -----
-  private clones: CloneInfo[] = [];         // активные клоны
-  private riddenMonster: Monster | null = null; // монстр, на котором едет игрок
+  private clones: CloneInfo[] = [];
+  private riddenMonster: Monster | null = null;
 
   // ----- Статусные эффекты -----
-  private glued: boolean = false;           // приклеен ли?
-  private gluedTurns: number = 0;           // сколько ходов осталось клеиться
-  private trapped: boolean = false;         // заперт ли в клетке?
+  private glued: boolean = false;
+  private gluedTurns: number = 0;
+  private trapped: boolean = false;
+  private wingActiveTurns: number = 0;     // осталось ходов полёта
 
-  // --------------------------------------------------------------------------
-  // КОНСТРУКТОР
-  // --------------------------------------------------------------------------
+  // ----- Временные эффекты (замедление) -----
+  private slowFactor: number = 1;           // множитель задержки (1 – норма, 2 – вдвое медленнее)
+
   constructor(
     startPos: Point,
     startDir: 'up' | 'down' | 'left' | 'right',
     levelWidth: number,
     levelHeight: number,
-    tileGetter: (col: number, row: number) => number
+    tileGetter: (col: number, row: number) => number,
+    controlMode: ControlMode = ControlMode.SEPARATE,
+    startTurretAngle: number = 0
   ) {
     this.position = { ...startPos };
-    this.direction = startDir;
+    this.hullDirection = startDir;
+    this.turretAngle = startTurretAngle;
+    this.controlMode = controlMode;
     this.levelBounds = { width: levelWidth, height: levelHeight };
     this.tileMap = tileGetter;
     this.resetInventory();
   }
 
   // --------------------------------------------------------------------------
-  // ГЕТТЕРЫ (для внешних модулей)
+  // ГЕТТЕРЫ
   // --------------------------------------------------------------------------
   public getPosition(): Point {
     return { ...this.position };
   }
 
-  public getDirection(): 'up' | 'down' | 'left' | 'right' {
-    return this.direction;
+  public getTurretAngle(): number {
+    return this.turretAngle;
+  }
+
+  public getHullDirection(): 'up' | 'down' | 'left' | 'right' {
+    return this.hullDirection;
   }
 
   public getInventory(): Inventory {
@@ -98,6 +113,14 @@ export class Player {
     return this.trapped;
   }
 
+  public getWingActiveTurns(): number {
+    return this.wingActiveTurns;
+  }
+
+  public getSlowFactor(): number {
+    return this.slowFactor;
+  }
+
   // --------------------------------------------------------------------------
   // УПРАВЛЕНИЕ РЕЖИМАМИ
   // --------------------------------------------------------------------------
@@ -106,57 +129,144 @@ export class Player {
     eventBus.emit('EXPLORATION_TOGGLED', { enabled, penaltyWarningShown: true });
   }
 
-  // --------------------------------------------------------------------------
-  // ДВИЖЕНИЕ (основное)
-  // --------------------------------------------------------------------------
-  public move(command: Command): boolean {
-    if (!this.isAlive) return false;
-    if (this.isTrapped()) {
-      logger.debug('Player', 'move', 'Trapped in cage – cannot move');
-      return false;
-    }
-    if (this.isGlued()) {
-      this.decrementGlueTurn();
-      if (this.isGlued()) {
-        logger.debug('Player', 'move', 'Glued – cannot move');
-        return false;
-      }
-    }
+  public setControlMode(mode: ControlMode): void {
+    this.controlMode = mode;
+  }
 
-    // Преобразуем команду в дельту
-    let delta = { col: 0, row: 0 };
-    let newDir = this.direction;
-    switch (command) {
-      case Command.UP:    delta = { col: 0, row: -1 }; newDir = 'up'; break;
-      case Command.DOWN:  delta = { col: 0, row: 1 };  newDir = 'down'; break;
-      case Command.LEFT:  delta = { col: -1, row: 0 }; newDir = 'left'; break;
-      case Command.RIGHT: delta = { col: 1, row: 0 };  newDir = 'right'; break;
-      default: return false;
-    }
+  // --------------------------------------------------------------------------
+  // НОВЫЕ КОМАНДЫ ДВИЖЕНИЯ И ПОВОРОТА
+  // --------------------------------------------------------------------------
 
+  /**
+   * Повернуть башню влево на 90° (без движения)
+   */
+  public turnTurretLeft(): void {
+    this.turretAngle = (this.turretAngle - 90 + 360) % 360;
+    eventBus.emit('TURRET_TURNED', { angle: this.turretAngle });
+  }
+
+  /**
+   * Повернуть башню вправо на 90°
+   */
+  public turnTurretRight(): void {
+    this.turretAngle = (this.turretAngle + 90) % 360;
+    eventBus.emit('TURRET_TURNED', { angle: this.turretAngle });
+  }
+
+  /**
+   * Развернуть башню на 180°
+   */
+  public turnTurretAround(): void {
+    this.turretAngle = (this.turretAngle + 180) % 360;
+    eventBus.emit('TURRET_TURNED', { angle: this.turretAngle });
+  }
+
+  /**
+   * Установить абсолютный угол башни (0, 90, 180, 270)
+   */
+  public setTurretAngle(angle: number): void {
+    const validAngles = [0, 90, 180, 270];
+    if (validAngles.includes(angle)) {
+      this.turretAngle = angle;
+      eventBus.emit('TURRET_TURNED', { angle: this.turretAngle });
+    }
+  }
+
+  /**
+   * Синхронизировать корпус с башней (развернуть корпус в направлении башни)
+   */
+  public syncBodyWithTurret(): void {
+    const newDir = this.angleToDirection(this.turretAngle);
+    if (newDir) {
+      this.hullDirection = newDir;
+      eventBus.emit('HULL_TURNED', { direction: this.hullDirection });
+    }
+  }
+
+  /**
+   * Движение вперёд (по направлению башни)
+   */
+  public moveForward(): boolean {
+    if (!this.canMove()) return false;
+    const delta = this.angleToDelta(this.turretAngle);
+    if (!delta) return false;
     const newPos = {
-      col: this.position.col + delta.col,
-      row: this.position.row + delta.row,
+      col: this.position.col + delta.dx,
+      row: this.position.row + delta.dy,
     };
+    return this.tryMove(newPos);
+  }
 
-    // Проверка границ
+  /**
+   * Движение назад (кормой)
+   */
+  public moveBackward(): boolean {
+    if (!this.canMove()) return false;
+    const delta = this.directionToDelta(this.hullDirection, -1);
+    if (!delta) return false;
+    const newPos = {
+      col: this.position.col + delta.dx,
+      row: this.position.row + delta.dy,
+    };
+    return this.tryMove(newPos);
+  }
+
+  // --------------------------------------------------------------------------
+  // КЛАССИЧЕСКИЕ КОМАНДЫ (для обратной совместимости)
+  // --------------------------------------------------------------------------
+  /**
+   * Старое движение вверх (сохраняется для ClassicMode, а также используется внутри)
+   */
+  public moveUp(): boolean {
+    return this.moveClassic(0, -1);
+  }
+
+  public moveDown(): boolean {
+    return this.moveClassic(0, 1);
+  }
+
+  public moveLeft(): boolean {
+    return this.moveClassic(-1, 0);
+  }
+
+  public moveRight(): boolean {
+    return this.moveClassic(1, 0);
+  }
+
+  private moveClassic(dx: number, dy: number): boolean {
+    if (!this.canMove()) return false;
+    const newPos = {
+      col: this.position.col + dx,
+      row: this.position.row + dy,
+    };
+    return this.tryMove(newPos);
+  }
+
+  /**
+   * Общий метод для движения (проверка коллизий выполняется в movement.ts)
+   * Здесь только физическое перемещение.
+   */
+  private tryMove(newPos: Point): boolean {
     if (!this.isWithinBounds(newPos)) return false;
-
-    // Проверка возможности войти на клетку (стена, яма, лава и т.д.)
-    const tile = this.tileMap(newPos.col, newPos.row);
-    if (!this.canEnterTile(tile)) return false;
-
-    // Выполняем движение
+    // Проверка проходимости будет в movement.ts, здесь просто перемещаем
     const oldPos = { ...this.position };
     this.position = newPos;
-    this.direction = newDir;
-
     eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
     return true;
   }
 
+  private canMove(): boolean {
+    if (!this.isAlive) return false;
+    if (this.isTrapped()) return false;
+    if (this.isGlued()) {
+      this.decrementGlueTurn();
+      if (this.isGlued()) return false;
+    }
+    return true;
+  }
+
   // --------------------------------------------------------------------------
-  // ПРИНУДИТЕЛЬНАЯ ТЕЛЕПОРТАЦИЯ (без проверок)
+  // ПРИНУДИТЕЛЬНАЯ ТЕЛЕПОРТАЦИЯ
   // --------------------------------------------------------------------------
   public teleport(point: Point): void {
     const oldPos = { ...this.position };
@@ -165,62 +275,39 @@ export class Player {
   }
 
   // --------------------------------------------------------------------------
-  // ДВИЖЕНИЕ ОТ КОНВЕЙЕРА (вызывается из TilesExecutor)
+  // ОБРАБОТКА ЭФФЕКТОВ (конвейер, пружина, клей, клетка и т.д.)
   // --------------------------------------------------------------------------
   public applyConveyor(conveyorDir: 'up' | 'down' | 'left' | 'right'): boolean {
-    if (!this.isAlive) return false;
-    if (this.isTrapped()) return false;
-    if (this.isGlued()) {
-      this.decrementGlueTurn();
-      if (this.isGlued()) return false;
-    }
-
-    const delta = this.dirToDelta(conveyorDir);
+    if (!this.canMove()) return false;
+    const delta = this.directionToDelta(conveyorDir, 1);
+    if (!delta) return false;
     const newPos = {
-      col: this.position.col + delta.col,
-      row: this.position.row + delta.row,
+      col: this.position.col + delta.dx,
+      row: this.position.row + delta.dy,
     };
-    if (!this.isWithinBounds(newPos)) return false;
-    const tile = this.tileMap(newPos.col, newPos.row);
-    if (!this.canEnterTile(tile)) return false;
-
-    const oldPos = { ...this.position };
-    this.position = newPos;
-    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
-    return true;
+    return this.tryMove(newPos);
   }
 
-  // --------------------------------------------------------------------------
-  // ПРУЖИНА (вызывается из TilesExecutor)
-  // --------------------------------------------------------------------------
   public applySpring(launchDir: 'up' | 'down' | 'left' | 'right', force: number = 3): boolean {
-    if (!this.isAlive) return false;
-    if (this.isTrapped()) return false;
-    if (this.isGlued()) {
-      this.decrementGlueTurn();
-      if (this.isGlued()) return false;
-    }
+    if (!this.canMove()) return false;
+    const delta = this.directionToDelta(launchDir, force);
+    if (!delta) return false;
+    const newPos = {
+      col: this.position.col + delta.dx,
+      row: this.position.row + delta.dy,
+    };
+    return this.tryMove(this.clampPoint(newPos));
+  }
 
-    let currentPos = { ...this.position };
-    for (let i = 0; i < force; i++) {
-      const delta = this.dirToDelta(launchDir);
-      const nextPos = {
-        col: currentPos.col + delta.col,
-        row: currentPos.row + delta.row,
-      };
-      if (!this.isWithinBounds(nextPos)) return false;
-      const tile = this.tileMap(nextPos.col, nextPos.row);
-      if (!this.canEnterTile(tile)) return false;
-      currentPos = nextPos;
-    }
-    const oldPos = { ...this.position };
-    this.position = currentPos;
-    eventBus.emit('PLAYER_MOVED', { from: oldPos, to: this.position });
-    return true;
+  private clampPoint(p: Point): Point {
+    return {
+      col: Math.max(0, Math.min(p.col, this.levelBounds.width - 1)),
+      row: Math.max(0, Math.min(p.row, this.levelBounds.height - 1)),
+    };
   }
 
   // --------------------------------------------------------------------------
-  // УПРАВЛЕНИЕ ИНВЕНТАРЁМ
+  // УПРАВЛЕНИЕ ИНВЕНТАРЁМ (без изменений)
   // --------------------------------------------------------------------------
   public addKey(keyId: string): void {
     if (!this.inventory.keys.includes(keyId)) {
@@ -303,9 +390,10 @@ export class Player {
     eventBus.emit('PLAYER_DIED', { cause });
   }
 
-  public revive(startPos: Point, startDir: 'up' | 'down' | 'left' | 'right'): void {
+  public revive(startPos: Point, startDir: 'up' | 'down' | 'left' | 'right', startTurretAngle: number = 0): void {
     this.position = { ...startPos };
-    this.direction = startDir;
+    this.hullDirection = startDir;
+    this.turretAngle = startTurretAngle;
     this.isAlive = true;
     this.resetInventory();
     this.clones = [];
@@ -313,6 +401,8 @@ export class Player {
     this.glued = false;
     this.gluedTurns = 0;
     this.trapped = false;
+    this.wingActiveTurns = 0;
+    this.slowFactor = 1;
   }
 
   public resetInventory(): void {
@@ -330,12 +420,14 @@ export class Player {
   }
 
   // --------------------------------------------------------------------------
-  // КЛОНИРОВАНИЕ (параллелизм)
+  // КЛОНИРОВАНИЕ
   // --------------------------------------------------------------------------
   public createClone(cloneId: string, position: Point, commands: Command[]): void {
     const newClone: CloneInfo = {
       id: cloneId,
       position: { ...position },
+      turretAngle: this.turretAngle,
+      hullDirection: this.hullDirection,
       inventory: JSON.parse(JSON.stringify(this.inventory)),
       commands: [...commands],
       currentCommandIndex: 0,
@@ -359,7 +451,6 @@ export class Player {
 
   public joinClones(): void {
     for (const clone of this.clones) {
-      // Суммируем инвентарь
       for (const key of clone.inventory.keys) {
         if (!this.inventory.keys.includes(key)) this.inventory.keys.push(key);
       }
@@ -375,7 +466,7 @@ export class Player {
     }
     this.clones = [];
     this.emitInventoryChanged();
-    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position }); // Обновить UI
+    eventBus.emit('PLAYER_MOVED', { from: this.position, to: this.position });
   }
 
   // --------------------------------------------------------------------------
@@ -434,31 +525,66 @@ export class Player {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // ВСПОМОГАТЕЛЬНЫЕ ПРИВАТНЫЕ МЕТОДЫ
-  // --------------------------------------------------------------------------
-  private dirToDelta(dir: 'up' | 'down' | 'left' | 'right'): { col: number; row: number } {
-    switch (dir) {
-      case 'up':    return { col: 0, row: -1 };
-      case 'down':  return { col: 0, row: 1 };
-      case 'left':  return { col: -1, row: 0 };
-      case 'right': return { col: 1, row: 0 };
+  // Крылья
+  public activateWing(turns: number = 2): void {
+    this.wingActiveTurns = turns;
+  }
+
+  public decrementWingTurn(): void {
+    if (this.wingActiveTurns > 0) {
+      this.wingActiveTurns--;
+      if (this.wingActiveTurns === 0) {
+        eventBus.emit('WINGS_EXPIRED');
+      }
     }
   }
 
+  // Замедление
+  public setSlowFactor(factor: number): void {
+    this.slowFactor = factor;
+    eventBus.emit('SLOW_FACTOR_CHANGED', { factor });
+  }
+
+  public resetSlowFactor(): void {
+    this.slowFactor = 1;
+  }
+
+  // --------------------------------------------------------------------------
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+  // --------------------------------------------------------------------------
   private isWithinBounds(pos: Point): boolean {
     return pos.col >= 0 && pos.col < this.levelBounds.width &&
            pos.row >= 0 && pos.row < this.levelBounds.height;
   }
 
-  private canEnterTile(tile: number): boolean {
-    // Стены (включая фальшивые) непроходимы без специальных средств
-    if (tile === 1 || tile === 5) return false;   // WALL, FAKE_WALL (согласно TileType)
-    // Яма, лава, вода – только с крыльями или в режиме призрака
-    if (tile === 2 && !this.inventory.hasWing && !this.isGhostMode) return false;
-    if ((tile === 32 || tile === 33) && !this.inventory.hasWing && !this.isGhostMode) return false;
-    // Остальные тайлы (платформа, ключи, инструменты, цели, механизмы) – проходимы
-    return true;
+  private angleToDelta(angle: number): { dx: number; dy: number } | null {
+    switch (angle) {
+      case 0:    return { dx: 0, dy: -1 };
+      case 90:   return { dx: 1, dy: 0 };
+      case 180:  return { dx: 0, dy: 1 };
+      case 270:  return { dx: -1, dy: 0 };
+      default:   return null;
+    }
+  }
+
+  private directionToDelta(dir: 'up' | 'down' | 'left' | 'right', multiplier: number = 1): { dx: number; dy: number } | null {
+    switch (dir) {
+      case 'up':    return { dx: 0, dy: -1 * multiplier };
+      case 'down':  return { dx: 0, dy: 1 * multiplier };
+      case 'left':  return { dx: -1 * multiplier, dy: 0 };
+      case 'right': return { dx: 1 * multiplier, dy: 0 };
+      default:      return null;
+    }
+  }
+
+  private angleToDirection(angle: number): 'up' | 'down' | 'left' | 'right' | null {
+    switch (angle) {
+      case 0:   return 'up';
+      case 90:  return 'right';
+      case 180: return 'down';
+      case 270: return 'left';
+      default:  return null;
+    }
   }
 
   private emitInventoryChanged(): void {
