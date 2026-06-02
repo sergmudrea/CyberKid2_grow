@@ -1,10 +1,12 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ФИНАЛЬНАЯ ВЕРСИЯ
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ИСПРАВЛЕННЫЙ ПОРЯДОК
 // ============================================================================
-// - Загружает уровень, создаёт игрока, сетку, камеру
-// - Управляет панелью команд и визуализатором
-// - Обрабатывает выполнение программы и события
+// - Сначала создаётся всё необходимое (уровень, игрок, сетка, камера)
+// - Затем создаётся visualizer
+// - Затем commandPanel
+// - После создания панели вызывается updateVisualizer()
+// - InventoryUI и кнопки создаются после панели
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -57,6 +59,7 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
 
+    // 1. Игрок
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -69,6 +72,7 @@ export class GameScene extends Scene {
       tileGetter
     );
 
+    // 2. Контейнер и сетка
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
@@ -78,18 +82,18 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
 
+    // 3. Камера
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
 
-    // --- Управление камерой (мышь и клавиши) ---
+    // Управление камерой (мышь/клавиши)
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
       this.clampCamera();
     });
-
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.disableCameraFollowTemporarily();
@@ -112,11 +116,10 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
 
-    // --- ВИЗУАЛИЗАТОР (должен быть создан до панели команд) ---
+    // 4. Визуализатор (пока без вызова updateVisualizer)
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.updateVisualizer();
 
-    // --- ПАНЕЛЬ КОМАНД ---
+    // 5. Панель команд
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -134,12 +137,15 @@ export class GameScene extends Scene {
       }
     );
 
-    // --- UI ИНВЕНТАРЯ ---
+    // 6. Теперь можно вызвать обновление визуализатора (панель уже создана)
+    this.updateVisualizer();
+
+    // 7. UI инвентаря
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
 
-    // --- КНОПКИ UI ---
+    // 8. Кнопки UI
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -241,6 +247,7 @@ export class GameScene extends Scene {
 
   private updateVisualizer(): void {
     if (!this.level) return;
+    if (!this.commandPanel) return; // защита
     const commands = this.commandPanel.getCommands();
     this.visualizer.updateVisuals(
       commands,
@@ -345,7 +352,7 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B; // PLATFORM
+        let color = 0x8B5A2B;
         const tile = map[row][col];
 
         if (tile === TileType.WALL) color = 0x555555;
