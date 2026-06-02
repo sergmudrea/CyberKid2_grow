@@ -1,10 +1,9 @@
 // src/modules/execution/movement.ts
 // ============================================================================
-// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – С ПОДДЕРЖКОЙ ВРЕМЕННЫХ КРЫЛЬЕВ
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – С ЭМИТОМ PLAYER_DIED ПРИ СМЕРТИ
 // ============================================================================
-// - Проверка на ямы/лаву/воду с учётом hasActiveWing()
-// - Полное логирование каждого шага
-// - Сбор предметов из карты и из items
+// - При возврате 'dead' отправляется событие PLAYER_DIED
+// - Все остальные проверки и логи остаются
 // ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
@@ -25,7 +24,7 @@ import {
   logError,
 } from './helpers';
 import { TilesExecutor } from './tiles';
-import { ToolsExecutor } from './tools'; // нужно для проверки активных крыльев
+import { ToolsExecutor } from './tools';
 
 export class MovementExecutor {
   private level: any;
@@ -36,7 +35,7 @@ export class MovementExecutor {
   private tilesExecutor: TilesExecutor;
   private backdoorUsed: boolean;
   private stepCount: number = 0;
-  private toolsExecutor: ToolsExecutor; // добавили ссылку
+  private toolsExecutor: ToolsExecutor;
 
   constructor(level: any, player: any, inventory: Inventory, toolsExecutor: ToolsExecutor) {
     this.level = level;
@@ -83,6 +82,7 @@ export class MovementExecutor {
     if (newPos.col < 0 || newPos.col >= this.level.width ||
         newPos.row < 0 || newPos.row >= this.level.height) {
       console.log(`   ❌ OUT OF BOUNDS -> DEAD`);
+      eventBus.emit('PLAYER_DIED', { cause: 'out_of_bounds', pos: newPos });
       return 'dead';
     }
 
@@ -93,14 +93,17 @@ export class MovementExecutor {
     if (!this.explorationMode) {
       if (isWall(tile)) {
         console.log(`   🧱 WALL -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'wall', pos: newPos });
         return 'dead';
       }
       if (isHole(tile) && !this.toolsExecutor.hasActiveWing()) {
         console.log(`   🕳️ HOLE without active wings -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'hole', pos: newPos });
         return 'dead';
       }
       if (isDeadlyLiquid(tile) && !this.toolsExecutor.hasActiveWing()) {
         console.log(`   🌊 LAVA/WATER without active wings -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'liquid', pos: newPos });
         return 'dead';
       }
     }
@@ -109,12 +112,13 @@ export class MovementExecutor {
     if (tile === TileType.DOOR_LOCKED) {
       if (this.inventory.keys.length === 0) {
         console.log(`   🔒 LOCKED DOOR and no key -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'locked_door', pos: newPos });
         return 'dead';
       } else {
         this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
         const removedKey = this.inventory.keys.pop();
         this.backdoorUsed = true;
-        console.log(`   🔑 DOOR unlocked using key ${removedKey}, remaining keys=${this.inventory.keys.length}`);
+        console.log(`   🔑 DOOR unlocked using key ${removedKey}`);
         eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
         eventBus.emit('DOOR_UNLOCKED', { pos: newPos });
       }
@@ -122,6 +126,7 @@ export class MovementExecutor {
 
     if (tile === TileType.BRICK) {
       console.log(`   🧱 BRICK (needs PUSH) -> DEAD`);
+      eventBus.emit('PLAYER_DIED', { cause: 'brick', pos: newPos });
       return 'dead';
     }
 
@@ -130,6 +135,7 @@ export class MovementExecutor {
     );
     if (monsterHere && !this.explorationMode && !monsterHere.isTamed && !monsterHere.isRidden) {
       console.log(`   👾 MONSTER at (${newPos.col},${newPos.row}) -> DEAD`);
+      eventBus.emit('PLAYER_DIED', { cause: 'monster', pos: newPos, monsterId: monsterHere.id });
       return 'dead';
     }
 
@@ -140,10 +146,13 @@ export class MovementExecutor {
     if (tile === TileType.CAGE) {
       console.log(`   🔐 CAGE - attempting to trap player`);
       const trapped = this.tilesExecutor.processCage(newPos, 'player');
-      if (trapped) return 'dead';
+      if (trapped) {
+        eventBus.emit('PLAYER_DIED', { cause: 'cage', pos: newPos });
+        return 'dead';
+      }
     }
 
-    // Движение
+    // Выполняем движение
     this.player.move(cmd);
     const finalPos = this.player.getPosition();
     console.log(`   ✅ MOVED to (${finalPos.col},${finalPos.row})`);
@@ -161,7 +170,7 @@ export class MovementExecutor {
       this.pickupItem(finalPos.col, finalPos.row, finalTile);
     }
 
-    // Телепорт, конвейер, пружина и механизмы
+    // Телепорт, конвейер, пружина, механизмы
     if (finalTile === TileType.TELEPORT_IN) {
       console.log(`   🌀 TELEPORT_IN - activating teleport`);
       this.tilesExecutor.processTeleport(finalPos);
@@ -208,43 +217,34 @@ export class MovementExecutor {
     switch (tile) {
       case TileType.KEY:
         this.inventory.keys.push(`key_${col}_${row}`);
-        console.log(`      -> key added, keys: ${this.inventory.keys.length}`);
         break;
       case TileType.CORN:
         this.inventory.corn++;
-        console.log(`      -> corn added, total: ${this.inventory.corn}`);
         break;
       case TileType.CORE:
         this.inventory.cores++;
-        console.log(`      -> core added, total: ${this.inventory.cores}`);
         break;
       case TileType.TOOL_DRILL:
         this.inventory.hasDrill = true;
         if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
-        console.log(`      -> drill added`);
         break;
       case TileType.TOOL_HOOK:
         this.inventory.hasHook = true;
         if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
-        console.log(`      -> hook added`);
         break;
       case TileType.TOOL_WING:
         this.inventory.hasWing = true;
         if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
-        console.log(`      -> wings added`);
         break;
       case TileType.TOOL_BAIT:
         this.inventory.hasBait = true;
         if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
-        console.log(`      -> bait added`);
         break;
       case TileType.CAGE_KEY:
         this.inventory.keys.push('cage_key');
-        console.log(`      -> cage key added`);
         break;
       case TileType.GEM:
         this.inventory.cores += 5;
-        console.log(`      -> gem added (+5 cores), cores: ${this.inventory.cores}`);
         break;
       default:
         return;
@@ -258,43 +258,34 @@ export class MovementExecutor {
     switch (itemId) {
       case 'key1': case 'key':
         this.inventory.keys.push(`key_${col}_${row}`);
-        console.log(`      -> key added, keys: ${this.inventory.keys.length}`);
         break;
       case 'corn1': case 'corn':
         this.inventory.corn++;
-        console.log(`      -> corn added, total: ${this.inventory.corn}`);
         break;
       case 'core1': case 'core':
         this.inventory.cores++;
-        console.log(`      -> core added, total: ${this.inventory.cores}`);
         break;
       case 'drill':
         this.inventory.hasDrill = true;
         if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
-        console.log(`      -> drill added`);
         break;
       case 'hook':
         this.inventory.hasHook = true;
         if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
-        console.log(`      -> hook added`);
         break;
       case 'wing':
         this.inventory.hasWing = true;
         if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
-        console.log(`      -> wings added`);
         break;
       case 'bait':
         this.inventory.hasBait = true;
         if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
-        console.log(`      -> bait added`);
         break;
       case 'cage_key':
         this.inventory.keys.push('cage_key');
-        console.log(`      -> cage key added`);
         break;
       case 'gem1': case 'gem':
         this.inventory.cores += 5;
-        console.log(`      -> gem added (+5 cores), cores: ${this.inventory.cores}`);
         break;
     }
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
