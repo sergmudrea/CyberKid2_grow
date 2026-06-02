@@ -1,12 +1,5 @@
 // src/scenes/GameScene.ts
-// ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ИСПРАВЛЕННАЯ
-// ============================================================================
-// - При повторном входе в сцену уничтожаются старые панели команд и инвентаря
-// - Смерть игрока показывает сообщение DEFEAT, а не "Program stopped"
-// - Инвентарь обновляется через события
-// ============================================================================
-
+// Полная исправленная версия с защитой от undefined в камере
 import { Scene } from 'phaser';
 import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
@@ -25,14 +18,14 @@ export class GameScene extends Scene {
   private levelId: string = '';
   private player: Player | null = null;
   private gridSize: number = 48;
-  private playerSprite: Phaser.GameObjects.Text;
+  private playerSprite: Phaser.GameObjects.Text | null = null;
   private commandPanel: CommandPanel | null = null;
   private visualizer: ProgramVisualizer | null = null;
   private inventoryUI: InventoryUI | null = null;
   private executionEngine: ExecutionEngine | null = null;
   private isExecuting: boolean = false;
-  private gameContainer: Phaser.GameObjects.Container;
-  private gameBounds: { width: number; height: number };
+  private gameContainer: Phaser.GameObjects.Container | null = null;
+  private gameBounds: { width: number; height: number } = { width: 0, height: 0 };
   private cameraFollowEnabled: boolean = true;
   private followRestoreTimer?: Phaser.Time.TimerEvent;
   private readonly COMMAND_PANEL_WIDTH = 280;
@@ -44,7 +37,7 @@ export class GameScene extends Scene {
   init(data: { levelId: string }): void {
     this.levelId = data.levelId;
     logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
-    // Уничтожаем старые панели, если они остались от предыдущего раза
+    // Уничтожаем старые панели, если они остались
     if (this.commandPanel) {
       this.commandPanel.destroy();
       this.commandPanel = null;
@@ -97,9 +90,14 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
 
-    this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
-    this.cameras.main.setZoom(1);
-    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    // Убеждаемся, что playerSprite существует перед началом следования камеры
+    if (this.playerSprite) {
+      this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
+      this.cameras.main.setZoom(1);
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    } else {
+      logger.error('GameScene', 'create', 'playerSprite is null, cannot start camera follow');
+    }
 
     // Управление камерой
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
@@ -131,9 +129,7 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
 
-    // Визуализатор
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    // Панель команд
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -144,7 +140,9 @@ export class GameScene extends Scene {
         this.commandPanel?.clearHighlight();
         this.updateVisualizer();
         this.cameraFollowEnabled = true;
-        this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+        if (this.playerSprite) {
+          this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+        }
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -186,9 +184,38 @@ export class GameScene extends Scene {
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
-  private disableCameraFollowTemporarily(): void { /* ... */ }
-  private clampCamera(): void { /* ... */ }
-  private autoSolve(): void { /* ... */ }
+  private disableCameraFollowTemporarily(): void {
+    if (!this.cameraFollowEnabled) return;
+    this.cameraFollowEnabled = false;
+    this.cameras.main.stopFollow();
+    if (this.followRestoreTimer) this.followRestoreTimer.destroy();
+    this.followRestoreTimer = this.time.delayedCall(3000, () => {
+      this.cameraFollowEnabled = true;
+      if (this.playerSprite) {
+        this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+      }
+    });
+  }
+
+  private clampCamera(): void {
+    const cam = this.cameras.main;
+    const maxX = this.gameBounds.width - cam.width;
+    const maxY = this.gameBounds.height - cam.height;
+    cam.scrollX = Math.max(0, Math.min(cam.scrollX, maxX));
+    cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
+  }
+
+  private autoSolve(): void {
+    if (!this.level || !this.player) return;
+    logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
+    const msg = this.add.text(
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      this.cameras.main.centerY,
+      '🧪 AutoSolve: coming soon',
+      { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    this.time.delayedCall(2000, () => msg.destroy());
+  }
 
   private setupExecutionListeners(): void {
     eventBus.on('EXECUTION_STEP', (payload: any) => {
@@ -219,7 +246,6 @@ export class GameScene extends Scene {
         progressManager.completeLevel(this.levelId, stars, steps);
         this.showVictoryMessage(stars, steps);
       } else {
-        // Программа завершилась, но монетка не достигнута – просто остановка (не поражение)
         logger.info('GameScene', 'EXECUTION_FINISHED', 'Program finished without victory');
         const msg = this.add.text(
           this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
@@ -267,12 +293,16 @@ export class GameScene extends Scene {
     if (this.executionEngine) {
       this.executionEngine.reset();
     }
-    this.gameContainer.removeAll(true);
+    if (this.gameContainer) {
+      this.gameContainer.removeAll(true);
+    }
     this.drawGrid();
     this.drawPlayer();
     this.updateVisualizer();
     this.cameraFollowEnabled = true;
-    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    if (this.playerSprite) {
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    }
   }
 
   private async runProgram(commands: Command[]): Promise<void> {
@@ -285,7 +315,8 @@ export class GameScene extends Scene {
     this.isExecuting = true;
     this.commandPanel?.clearHighlight();
     if (!this.player) return;
-    this.executionEngine = new ExecutionEngine(this.level!, this.player);
+    if (!this.level) return;
+    this.executionEngine = new ExecutionEngine(this.level, this.player);
     this.executionEngine.loadProgram(commands);
     await this.executionEngine.start();
   }
@@ -317,9 +348,110 @@ export class GameScene extends Scene {
   }
 
   private drawGrid(): void {
-    // ... (без изменений, иконки уже есть)
+    if (!this.level) return;
+    if (!this.gameContainer) return;
+    const { width, height, map } = this.level;
+    const monsters = this.level.objects?.monsters || [];
+    const items = this.level.items || [];
+
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const x = col * this.gridSize;
+        const y = row * this.gridSize;
+        const tile = map[row][col];
+        let icon = '';
+        let bgColor = '#2d2d3a';
+
+        switch (tile) {
+          case TileType.PLATFORM:   icon = '⬜'; bgColor = '#8B5A2B'; break;
+          case TileType.WALL:       icon = '🧱'; bgColor = '#555555'; break;
+          case TileType.HOLE:       icon = '🕳️'; bgColor = '#000000'; break;
+          case TileType.GOAL:       icon = '💰'; bgColor = '#ffcc00'; break;
+          case TileType.KEY:        icon = '🔑'; bgColor = '#ffaa00'; break;
+          case TileType.DOOR_LOCKED: icon = '🔒'; bgColor = '#8B0000'; break;
+          case TileType.DOOR_UNLOCKED: icon = '🔓'; bgColor = '#228B22'; break;
+          case TileType.CONVEYOR_UP: icon = '⬆️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_DOWN: icon = '⬇️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_LEFT: icon = '⬅️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_RIGHT: icon = '➡️'; bgColor = '#666666'; break;
+          case TileType.SPRING:     icon = '⬆️⬆️'; bgColor = '#ff6600'; break;
+          case TileType.TELEPORT_IN: icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.TELEPORT_OUT: icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.LAVA:        icon = '🌋'; bgColor = '#ff4500'; break;
+          case TileType.WATER:       icon = '💧'; bgColor = '#1E90FF'; break;
+          case TileType.GLUE:        icon = '🩹'; bgColor = '#88cc88'; break;
+          case TileType.CAGE:        icon = '🔐'; bgColor = '#cd7f32'; break;
+          case TileType.TRAP:        icon = '⚠️'; bgColor = '#8b4513'; break;
+          case TileType.GEM:         icon = '💎'; bgColor = '#00ffcc'; break;
+          case TileType.BRICK:       icon = '🧱'; bgColor = '#A52A2A'; break;
+          case TileType.BLACK_BOX:   icon = '📦'; bgColor = '#2F4F4F'; break;
+          case TileType.BUTTON:      icon = '🔘'; bgColor = '#DC143C'; break;
+          case TileType.LEVER:       icon = '🎚️'; bgColor = '#D2691E'; break;
+          case TileType.TIMER:       icon = '⏲️'; bgColor = '#FFD700'; break;
+          case TileType.SENSOR:      icon = '📡'; bgColor = '#00CED1'; break;
+          case TileType.SORTER:      icon = '📊'; bgColor = '#4B0082'; break;
+          default: icon = '⬜'; bgColor = '#8B5A2B'; break;
+        }
+
+        const monsterHere = monsters.find((m: any) => m.position.col === col && m.position.row === row);
+        if (monsterHere) {
+          if (monsterHere.type === 'patrol') icon = '👾';
+          else if (monsterHere.type === 'chase') icon = '👾⚡';
+          else if (monsterHere.type === 'tameable') icon = '👾❤️';
+          else if (monsterHere.type === 'phased') icon = '👾🌫️';
+          else if (monsterHere.type === 'zombie') icon = '🧟';
+          else if (monsterHere.type === 'boss') icon = '👾👑';
+          else icon = '👾';
+          bgColor = '#4a1a4a';
+        }
+
+        const itemHere = items.find((it: any) => it.pos.col === col && it.pos.row === row);
+        if (itemHere) {
+          if (itemHere.id === 'key1') icon = '🔑';
+          else if (itemHere.id === 'corn1') icon = '🌽';
+          else if (itemHere.id === 'core1') icon = '💎';
+          else if (itemHere.id === 'drill') icon = '🔧';
+          else if (itemHere.id === 'hook') icon = '🪝';
+          else if (itemHere.id === 'wing') icon = '🪽';
+          else if (itemHere.id === 'bait') icon = '🐟';
+          else if (itemHere.id === 'cage_key') icon = '🔑';
+          else if (itemHere.id === 'gem1') icon = '💎';
+          bgColor = '#2a5a2a';
+        }
+
+        const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, Phaser.Display.Color.HexStringToColor(bgColor).color, 0.8);
+        bgRect.setOrigin(0, 0);
+        bgRect.setStrokeStyle(1, 0xaaaaaa);
+        this.gameContainer.add(bgRect);
+
+        const iconText = this.add.text(x + this.gridSize / 2, y + this.gridSize / 2, icon, {
+          fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
+          fontFamily: 'Arial',
+          color: '#ffffff',
+          align: 'center',
+        }).setOrigin(0.5);
+        this.gameContainer.add(iconText);
+      }
+    }
   }
+
   private drawPlayer(): void {
-    // ... (без изменений)
+    if (this.playerSprite) {
+      this.playerSprite.destroy();
+      this.playerSprite = null;
+    }
+    if (!this.level || !this.player) return;
+    if (!this.gameContainer) return;
+    const pos = this.player.getPosition();
+    const x = pos.col * this.gridSize + this.gridSize / 2;
+    const y = pos.row * this.gridSize + this.gridSize / 2;
+    this.playerSprite = this.add.text(x, y, '🤖', {
+      fontSize: `${Math.floor(this.gridSize * 0.7)}px`,
+      fontFamily: 'Arial',
+      color: '#00ffcc',
+      backgroundColor: '#000000aa',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5);
+    this.gameContainer.add(this.playerSprite);
   }
 }
