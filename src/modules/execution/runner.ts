@@ -1,10 +1,9 @@
 // src/modules/execution/runner.ts
 // ============================================================================
-// ОСНОВНОЙ ЦИКЛ ВЫПОЛНЕНИЯ ПРОГРАММЫ – С ПРОВЕРКОЙ ПОБЕДЫ ПОСЛЕ КАЖДОГО ШАГА
+// ОСНОВНОЙ ЦИКЛ ВЫПОЛНЕНИЯ – С ПОДДЕРЖКОЙ ВРЕМЕННЫХ КРЫЛЬЕВ И ПРОВЕРКОЙ ПОБЕДЫ
 // ============================================================================
-// - После каждого успешного выполнения команды проверяется, достиг ли игрок монетки
-// - Если монетка достигнута, программа немедленно завершается с победой
-// - Исправлена обработка USE_KEY (передаётся в InventoryExecutor)
+// - После каждого шага уменьшает счётчик активных крыльев
+// - Проверяет победу после каждого шага
 // ============================================================================
 
 import { Command } from '../../types/index';
@@ -27,9 +26,6 @@ import { delay, log, logError, logInfo, calculateStars } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
 import { LevelData, Point, Inventory } from '../../types/index';
 
-// ----------------------------------------------------------------------------
-// КОНТЕКСТ ЗАПУСКА (передаётся из ExecutionEngine)
-// ----------------------------------------------------------------------------
 export interface RunnerContext {
   level: LevelData;
   player: any;
@@ -51,7 +47,6 @@ export class ASTRunner {
   private waitTimer: number | null;
   private lastDirection: 'up' | 'down' | 'left' | 'right';
 
-  // Подсистемы
   private conditionEvaluator: ConditionEvaluator;
   private movementExecutor: MovementExecutor;
   private inventoryExecutor: InventoryExecutor;
@@ -77,7 +72,6 @@ export class ASTRunner {
     this.waitTimer = null;
     this.lastDirection = 'right';
 
-    // Инициализация подсистем
     this.conditionEvaluator = new ConditionEvaluator({
       playerPos: context.player.getPosition(),
       playerDir: 'right',
@@ -88,9 +82,9 @@ export class ASTRunner {
       explorationMode: context.explorationMode,
     });
 
-    this.movementExecutor = new MovementExecutor(context.level, context.player, context.inventory);
-    this.inventoryExecutor = new InventoryExecutor(context.level, context.player, context.inventory);
     this.toolsExecutor = new ToolsExecutor(context.level, context.player, context.inventory);
+    this.movementExecutor = new MovementExecutor(context.level, context.player, context.inventory, this.toolsExecutor);
+    this.inventoryExecutor = new InventoryExecutor(context.level, context.player, context.inventory);
     this.combatExecutor = new CombatExecutor(context.level, context.player, context.inventory);
     this.timeExecutor = new TimeExecutor();
     this.functionsExecutor = new FunctionsExecutor();
@@ -127,7 +121,6 @@ export class ASTRunner {
         break;
       }
 
-      // Проверка, жив ли игрок
       if (!this.context.player.isPlayerAlive()) {
         this.status = 'error';
         eventBus.emit('EXECUTION_ERROR', { stepIndex: this.currentNodeIndex, cause: 'player_died' });
@@ -136,7 +129,6 @@ export class ASTRunner {
 
       const result = await this.executeCurrentNode();
 
-      // Если команда вернула 'dead' – смерть
       if (result === 'dead') {
         this.status = 'error';
         break;
@@ -148,13 +140,15 @@ export class ASTRunner {
         this.status = 'finished';
         break;
       }
-      // Если команда вернула 'victory' или после выполнения проверки победы
       if (result === 'victory') {
         this.status = 'finished';
         break;
       }
 
-      // После каждого шага проверяем победу
+      // После каждого успешного шага – уменьшаем счётчик крыльев
+      this.toolsExecutor.decrementWingTurn();
+
+      // Проверяем победу
       if (this.checkVictory()) {
         logInfo('ASTRunner', 'run', 'Victory achieved, stopping program');
         this.status = 'finished';
@@ -184,15 +178,12 @@ export class ASTRunner {
 
     if (result === 'ok') {
       this.currentNodeIndex++;
-      // Задержка для визуализации (только для команд движения)
       if (node.type === 'command' && this.isMovementCommand(node.command!)) {
         const delayMs = 100 / this.context.speedMultiplier;
         await delay(delayMs);
       }
     } else if (result === 'dead') {
       eventBus.emit('EXECUTION_ERROR', { stepIndex: this.stepCount, command: node.command });
-    } else if (result === 'victory') {
-      return 'victory';
     }
 
     return result;
@@ -212,29 +203,21 @@ export class ASTRunner {
     if (node.type === 'command') {
       return await this.executeCommand(node.command!);
     }
-
     if (node.type === 'block') {
       return await this.executeBlock(node);
     }
-
     if (node.type === 'function') {
       if (node.functionName) {
         this.functionsExecutor.defineFunction(node.functionName, node.children || [], node.parameters || []);
       }
       return 'ok';
     }
-
     if (node.type === 'class') {
       if (node.className) {
         this.oopExecutor.defineClass(node.className, node.children || []);
       }
       return 'ok';
     }
-
-    if (node.type === 'method') {
-      return 'ok';
-    }
-
     return 'ok';
   }
 
@@ -254,7 +237,6 @@ export class ASTRunner {
       }
       return 'ok';
     }
-
     if (node.blockType === 'while') {
       let condition = true;
       while (condition && this.status === 'running') {
@@ -272,7 +254,6 @@ export class ASTRunner {
       }
       return 'ok';
     }
-
     if (node.blockType === 'repeat') {
       while (this.status === 'running') {
         const savedAST = this.currentAST;
@@ -287,7 +268,6 @@ export class ASTRunner {
       }
       return 'ok';
     }
-
     if (node.blockType === 'if') {
       const condition = await this.conditionEvaluator.evaluate(node.condition!);
       if (condition) {
@@ -302,7 +282,6 @@ export class ASTRunner {
       }
       return 'ok';
     }
-
     if (node.blockType === 'else') {
       const savedAST = this.currentAST;
       const savedIndex = this.currentNodeIndex;
@@ -313,7 +292,6 @@ export class ASTRunner {
       this.currentNodeIndex = savedIndex;
       return result;
     }
-
     if (node.blockType === 'if_else' && node.children) {
       const ifNode = node.children[0];
       const elseNode = node.children[1];
@@ -339,7 +317,6 @@ export class ASTRunner {
       }
       return 'ok';
     }
-
     return 'ok';
   }
 
@@ -356,8 +333,6 @@ export class ASTRunner {
 
   private async executeCommand(cmd: Command): Promise<'ok' | 'dead' | 'wait' | 'finished'> {
     this.stepCount++;
-
-    // Обновляем контекст для условий
     this.conditionEvaluator.updateContext({
       playerPos: this.context.player.getPosition(),
       playerDir: this.lastDirection,
@@ -370,14 +345,12 @@ export class ASTRunner {
       case Command.LEFT:
       case Command.RIGHT:
         return this.movementExecutor.execute(cmd, this.lastDirection, (dir) => { this.lastDirection = dir; });
-
       case Command.PICKUP:
         return this.inventoryExecutor.executePickup();
       case Command.DROP:
         return this.inventoryExecutor.executeDrop();
       case Command.USE_KEY:
         return this.inventoryExecutor.executeUseKey(this.lastDirection);
-
       case Command.DRILL:
         return this.toolsExecutor.executeDrill(this.lastDirection);
       case Command.HOOK:
@@ -386,12 +359,10 @@ export class ASTRunner {
         return this.toolsExecutor.executeWing();
       case Command.BAIT:
         return this.toolsExecutor.executeBait();
-
       case Command.THROW:
         return this.combatExecutor.executeThrow(this.lastDirection);
       case Command.FEED:
         return this.combatExecutor.executeFeed(this.lastDirection);
-
       case Command.TIME_SLOW:
         this.context.speedMultiplier = 0.5;
         this.timeExecutor.setSlow();
@@ -402,7 +373,6 @@ export class ASTRunner {
         return 'ok';
       case Command.WAIT:
         return await this.timeExecutor.executeWait(this.context.speedMultiplier);
-
       case Command.CALL:
         log('ASTRunner', 'executeCommand', 'CALL not fully implemented');
         return 'ok';
@@ -414,36 +384,25 @@ export class ASTRunner {
         return 'ok';
       case Command.PARAM:
         return 'ok';
-
       case Command.NEW:
         return 'ok';
       case Command.METHOD:
         return 'ok';
-
       case Command.CLONE:
-        this.parallelismExecutor.createClone(
-          this.context.player.getPosition(),
-          this.context.inventory,
-          this.currentAST,
-          this.currentNodeIndex
-        );
+        this.parallelismExecutor.createClone(this.context.player.getPosition(), this.context.inventory, this.currentAST, this.currentNodeIndex);
         return 'ok';
       case Command.JOIN:
         this.parallelismExecutor.joinClones();
         return 'ok';
-
       case Command.PUSH:
         return this.interactionsExecutor.executePush(this.lastDirection);
       case Command.SCAN:
         return this.interactionsExecutor.executeScan(this.context.player.getPosition());
       case Command.RIDE:
         return this.interactionsExecutor.executeRide(this.lastDirection);
-
       case Command.BLACK_BOX:
         return 'ok';
-
       default:
-        log('ASTRunner', 'executeCommand', `Ignoring block-level command: ${cmd}`);
         return 'ok';
     }
   }
@@ -469,10 +428,7 @@ export class ASTRunner {
   public pause(): void {
     if (this.status === 'running') {
       this.status = 'paused';
-      if (this.waitTimer) {
-        clearTimeout(this.waitTimer);
-        this.waitTimer = null;
-      }
+      if (this.waitTimer) clearTimeout(this.waitTimer);
       eventBus.emit('EXECUTION_PAUSED');
     }
   }
@@ -487,9 +443,6 @@ export class ASTRunner {
 
   public stop(): void {
     this.status = 'finished';
-    if (this.waitTimer) {
-      clearTimeout(this.waitTimer);
-      this.waitTimer = null;
-    }
+    if (this.waitTimer) clearTimeout(this.waitTimer);
   }
 }
