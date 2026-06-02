@@ -27,7 +27,7 @@
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
   ],
   "startPos": { "col": 0, "row": 0 },
-  "coinPos": { "col": 18, "row": 18 },
+  "coinPos": { "col": 19, "row": 18 },
   "optimalSteps": 50,
   "allowedCommands": [
     "up", "down", "left", "right",
