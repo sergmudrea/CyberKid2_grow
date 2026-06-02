@@ -1,5 +1,12 @@
 // src/scenes/GameScene.ts
-// Полная исправленная версия с защитой от undefined в камере
+// ============================================================================
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – СТАБИЛЬНАЯ ВЕРСИЯ
+// ============================================================================
+// - Камера не следует за игроком (чтобы избежать ошибок startFollow)
+// - Все объекты инициализируются корректно
+// - Принудительное обновление инвентаря через события
+// ============================================================================
+
 import { Scene } from 'phaser';
 import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
@@ -25,9 +32,6 @@ export class GameScene extends Scene {
   private executionEngine: ExecutionEngine | null = null;
   private isExecuting: boolean = false;
   private gameContainer: Phaser.GameObjects.Container | null = null;
-  private gameBounds: { width: number; height: number } = { width: 0, height: 0 };
-  private cameraFollowEnabled: boolean = true;
-  private followRestoreTimer?: Phaser.Time.TimerEvent;
   private readonly COMMAND_PANEL_WIDTH = 280;
 
   constructor() {
@@ -37,7 +41,8 @@ export class GameScene extends Scene {
   init(data: { levelId: string }): void {
     this.levelId = data.levelId;
     logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
-    // Уничтожаем старые панели, если они остались
+
+    // Уничтожаем старые панели
     if (this.commandPanel) {
       this.commandPanel.destroy();
       this.commandPanel = null;
@@ -50,6 +55,10 @@ export class GameScene extends Scene {
       this.visualizer.clear();
       this.visualizer = null;
     }
+    if (this.playerSprite) {
+      this.playerSprite.destroy();
+      this.playerSprite = null;
+    }
     this.isExecuting = false;
     if (this.executionEngine) {
       this.executionEngine.stop();
@@ -58,7 +67,7 @@ export class GameScene extends Scene {
   }
 
   async create(): Promise<void> {
-    logger.info('GameScene', 'create', 'Loading level...');
+    logger.info('GameScene', 'create', `Loading level: ${this.levelId}`);
 
     const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
@@ -81,55 +90,48 @@ export class GameScene extends Scene {
       tileGetter
     );
 
+    // Контейнер для игровых объектов (сдвинут вправо)
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
-    this.gameBounds = {
-      width: this.level.width * this.gridSize,
-      height: this.level.height * this.gridSize,
-    };
 
+    // Отрисовка сетки и игрока
     this.drawGrid();
     this.drawPlayer();
 
-    // Убеждаемся, что playerSprite существует перед началом следования камеры
-    if (this.playerSprite) {
-      this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
-      this.cameras.main.setZoom(1);
-      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-    } else {
-      logger.error('GameScene', 'create', 'playerSprite is null, cannot start camera follow');
-    }
+    // Настройка камеры – просто устанавливаем границы, без следования
+    const gameWidth = this.level.width * this.gridSize;
+    const gameHeight = this.level.height * this.gridSize;
+    this.cameras.main.setBounds(0, 0, gameWidth, gameHeight);
+    this.cameras.main.centerOn(gameWidth / 2, gameHeight / 2);
+    this.cameras.main.setZoom(1);
 
-    // Управление камерой
+    // Управление камерой (мышь и клавиши)
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
-      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
-      this.clampCamera();
+      this.clampCamera(gameWidth, gameHeight);
     });
 
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
-      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX -= scrollStep;
-      this.clampCamera();
+      this.clampCamera(gameWidth, gameHeight);
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
-      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += scrollStep;
-      this.clampCamera();
+      this.clampCamera(gameWidth, gameHeight);
     });
     this.input.keyboard?.on('keydown-UP', () => {
-      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollY -= scrollStep;
-      this.clampCamera();
+      this.clampCamera(gameWidth, gameHeight);
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
-      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollY += scrollStep;
-      this.clampCamera();
+      this.clampCamera(gameWidth, gameHeight);
     });
 
+    // Визуализатор
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
+    // Панель команд
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -139,10 +141,6 @@ export class GameScene extends Scene {
         this.isExecuting = false;
         this.commandPanel?.clearHighlight();
         this.updateVisualizer();
-        this.cameraFollowEnabled = true;
-        if (this.playerSprite) {
-          this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-        }
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -169,7 +167,7 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     });
 
-    // AutoSolve (заглушка)
+    // AutoSolve
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -184,23 +182,10 @@ export class GameScene extends Scene {
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
-  private disableCameraFollowTemporarily(): void {
-    if (!this.cameraFollowEnabled) return;
-    this.cameraFollowEnabled = false;
-    this.cameras.main.stopFollow();
-    if (this.followRestoreTimer) this.followRestoreTimer.destroy();
-    this.followRestoreTimer = this.time.delayedCall(3000, () => {
-      this.cameraFollowEnabled = true;
-      if (this.playerSprite) {
-        this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-      }
-    });
-  }
-
-  private clampCamera(): void {
+  private clampCamera(gameWidth: number, gameHeight: number): void {
     const cam = this.cameras.main;
-    const maxX = this.gameBounds.width - cam.width;
-    const maxY = this.gameBounds.height - cam.height;
+    const maxX = gameWidth - cam.width;
+    const maxY = gameHeight - cam.height;
     cam.scrollX = Math.max(0, Math.min(cam.scrollX, maxX));
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
@@ -209,7 +194,7 @@ export class GameScene extends Scene {
     if (!this.level || !this.player) return;
     logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
     const msg = this.add.text(
-      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      this.cameras.main.centerX,
       this.cameras.main.centerY,
       '🧪 AutoSolve: coming soon',
       { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
@@ -219,13 +204,13 @@ export class GameScene extends Scene {
 
   private setupExecutionListeners(): void {
     eventBus.on('EXECUTION_STEP', (payload: any) => {
-      if (payload?.stepIndex !== undefined) {
-        this.commandPanel?.highlightCommand(payload.stepIndex, 'running');
+      if (payload?.stepIndex !== undefined && this.commandPanel) {
+        this.commandPanel.highlightCommand(payload.stepIndex, 'running');
       }
     });
     eventBus.on('EXECUTION_ERROR', (payload: any) => {
-      if (payload?.stepIndex !== undefined) {
-        this.commandPanel?.highlightCommand(payload.stepIndex, 'error');
+      if (payload?.stepIndex !== undefined && this.commandPanel) {
+        this.commandPanel.highlightCommand(payload.stepIndex, 'error');
       }
     });
     eventBus.on('PLAYER_MOVED', () => {
@@ -248,7 +233,7 @@ export class GameScene extends Scene {
       } else {
         logger.info('GameScene', 'EXECUTION_FINISHED', 'Program finished without victory');
         const msg = this.add.text(
-          this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+          this.cameras.main.centerX,
           100,
           '⏹️ Program stopped',
           { fontSize: '20px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
@@ -299,10 +284,6 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
     this.updateVisualizer();
-    this.cameraFollowEnabled = true;
-    if (this.playerSprite) {
-      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-    }
   }
 
   private async runProgram(commands: Command[]): Promise<void> {
@@ -315,15 +296,14 @@ export class GameScene extends Scene {
     this.isExecuting = true;
     this.commandPanel?.clearHighlight();
     if (!this.player) return;
-    if (!this.level) return;
-    this.executionEngine = new ExecutionEngine(this.level, this.player);
+    this.executionEngine = new ExecutionEngine(this.level!, this.player);
     this.executionEngine.loadProgram(commands);
     await this.executionEngine.start();
   }
 
   private showVictoryMessage(stars: number, steps: number): void {
     const msg = this.add.text(
-      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      this.cameras.main.centerX,
       100,
       `🏆 VICTORY! ★ ${stars} 🏆`,
       { fontSize: '28px', color: '#ffcc00', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
@@ -338,7 +318,7 @@ export class GameScene extends Scene {
 
   private showDefeatMessage(): void {
     const msg = this.add.text(
-      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+      this.cameras.main.centerX,
       100,
       '💥 DEFEAT! 💥',
       { fontSize: '28px', color: '#ff0000', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
@@ -349,7 +329,6 @@ export class GameScene extends Scene {
 
   private drawGrid(): void {
     if (!this.level) return;
-    if (!this.gameContainer) return;
     const { width, height, map } = this.level;
     const monsters = this.level.objects?.monsters || [];
     const items = this.level.items || [];
@@ -422,7 +401,7 @@ export class GameScene extends Scene {
         const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, Phaser.Display.Color.HexStringToColor(bgColor).color, 0.8);
         bgRect.setOrigin(0, 0);
         bgRect.setStrokeStyle(1, 0xaaaaaa);
-        this.gameContainer.add(bgRect);
+        this.gameContainer?.add(bgRect);
 
         const iconText = this.add.text(x + this.gridSize / 2, y + this.gridSize / 2, icon, {
           fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
@@ -430,7 +409,7 @@ export class GameScene extends Scene {
           color: '#ffffff',
           align: 'center',
         }).setOrigin(0.5);
-        this.gameContainer.add(iconText);
+        this.gameContainer?.add(iconText);
       }
     }
   }
@@ -441,7 +420,6 @@ export class GameScene extends Scene {
       this.playerSprite = null;
     }
     if (!this.level || !this.player) return;
-    if (!this.gameContainer) return;
     const pos = this.player.getPosition();
     const x = pos.col * this.gridSize + this.gridSize / 2;
     const y = pos.row * this.gridSize + this.gridSize / 2;
@@ -452,6 +430,6 @@ export class GameScene extends Scene {
       backgroundColor: '#000000aa',
       padding: { x: 4, y: 2 },
     }).setOrigin(0.5);
-    this.gameContainer.add(this.playerSprite);
+    this.gameContainer?.add(this.playerSprite);
   }
 }
