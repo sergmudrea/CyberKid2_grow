@@ -1,17 +1,17 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ФИНАЛЬНАЯ ВЕРСИЯ
 // ============================================================================
-// - Загружает уровень, передаёт в CommandPanel список разрешённых команд (allowedCommands)
-// - Отрисовывает тайлы, игрока, управляет камерой
-// - Интегрирует ExecutionEngine, InventoryUI, ProgramVisualizer
+// - Загружает уровень, создаёт игрока, сетку, камеру
+// - Управляет панелью команд и визуализатором
+// - Обрабатывает выполнение программы и события
 // ============================================================================
 
 import { Scene } from 'phaser';
 import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { InventoryUI } from '../modules/InventoryUI';
-import { LevelData, TileType, Inventory, Command } from '../types/index';
+import { LevelData, TileType, Command } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { ExecutionEngine } from '../modules/execution';
@@ -35,7 +35,6 @@ export class GameScene extends Scene {
   private gameBounds: { width: number; height: number };
   private cameraFollowEnabled: boolean = true;
   private followRestoreTimer?: Phaser.Time.TimerEvent;
-
   private readonly COMMAND_PANEL_WIDTH = 280;
 
   constructor() {
@@ -49,17 +48,15 @@ export class GameScene extends Scene {
 
   async create(): Promise<void> {
     logger.info('GameScene', 'create', 'Loading level...');
-    
     const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
       logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
       this.scene.start('MainMenu');
       return;
     }
-    
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
-    
+
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -71,28 +68,28 @@ export class GameScene extends Scene {
       this.level.height,
       tileGetter
     );
-    
+
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
       height: this.level.height * this.gridSize
     };
-    
+
     this.drawGrid();
     this.drawPlayer();
-    
+
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-    
-    // Управление камерой
+
+    // --- Управление камерой (мышь и клавиши) ---
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
       this.clampCamera();
     });
-    
+
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.disableCameraFollowTemporarily();
@@ -114,8 +111,12 @@ export class GameScene extends Scene {
       this.cameras.main.scrollY += scrollStep;
       this.clampCamera();
     });
-    
-    // Панель команд – создаём
+
+    // --- ВИЗУАЛИЗАТОР (должен быть создан до панели команд) ---
+    this.visualizer = new ProgramVisualizer(this, this.gridSize);
+    this.updateVisualizer();
+
+    // --- ПАНЕЛЬ КОМАНД ---
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -132,24 +133,13 @@ export class GameScene extends Scene {
         this.updateVisualizer();
       }
     );
-    
-    // Устанавливаем разрешённые команды для этого уровня
-    if (this.level.allowedCommands) {
-      this.commandPanel.setAllowedCommands(this.level.allowedCommands);
-      logger.debug('GameScene', 'create', `Allowed commands: ${this.level.allowedCommands.join(', ')}`);
-    } else {
-      // Если не указано – показываем все команды (обратная совместимость)
-      this.commandPanel.setAllowedCommands([]);
-    }
-    
-    this.visualizer = new ProgramVisualizer(this, this.gridSize);
-    this.updateVisualizer();
-    
+
+    // --- UI ИНВЕНТАРЯ ---
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
-    
-    // Кнопка BACK
+
+    // --- КНОПКИ UI ---
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -162,8 +152,7 @@ export class GameScene extends Scene {
       if (this.executionEngine) this.executionEngine.stop();
       this.scene.start('MainMenu');
     });
-    
-    // AutoSolve (заглушка)
+
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -173,10 +162,11 @@ export class GameScene extends Scene {
     autoSolveBtn.on('pointerdown', () => {
       this.autoSolve();
     });
-    
+
     this.setupExecutionListeners();
+    logger.info('GameScene', 'create', 'Scene ready');
   }
-  
+
   private disableCameraFollowTemporarily(): void {
     if (!this.cameraFollowEnabled) return;
     this.cameraFollowEnabled = false;
@@ -187,7 +177,7 @@ export class GameScene extends Scene {
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     });
   }
-  
+
   private clampCamera(): void {
     const cam = this.cameras.main;
     const maxX = this.gameBounds.width - cam.width;
@@ -195,7 +185,7 @@ export class GameScene extends Scene {
     cam.scrollX = Math.max(0, Math.min(cam.scrollX, maxX));
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
-  
+
   private autoSolve(): void {
     if (!this.level || !this.player) return;
     logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
@@ -212,30 +202,30 @@ export class GameScene extends Scene {
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
   }
-  
+
   private setupExecutionListeners(): void {
     eventBus.on('EXECUTION_STEP', (payload: any) => {
       if (payload?.stepIndex !== undefined) {
         this.commandPanel.highlightCommand(payload.stepIndex, 'running');
       }
     });
-    
+
     eventBus.on('EXECUTION_ERROR', (payload: any) => {
       if (payload?.stepIndex !== undefined) {
         this.commandPanel.highlightCommand(payload.stepIndex, 'error');
       }
     });
-    
+
     eventBus.on('PLAYER_MOVED', () => {
       this.drawPlayer();
     });
-    
+
     eventBus.on('INVENTORY_CHANGED', (payload: any) => {
       if (payload?.inventory && this.inventoryUI && this.player) {
         this.inventoryUI.updateInventory(payload.inventory);
       }
     });
-    
+
     eventBus.on('EXECUTION_FINISHED', (payload: any) => {
       this.isExecuting = false;
       if (payload?.success && payload.result) {
@@ -248,7 +238,7 @@ export class GameScene extends Scene {
       }
     });
   }
-  
+
   private updateVisualizer(): void {
     if (!this.level) return;
     const commands = this.commandPanel.getCommands();
@@ -263,7 +253,7 @@ export class GameScene extends Scene {
       0
     );
   }
-  
+
   private resetLevel(): void {
     if (!this.originalLevelData) return;
     this.level = JSON.parse(JSON.stringify(this.originalLevelData));
@@ -279,7 +269,7 @@ export class GameScene extends Scene {
     if (this.executionEngine) {
       this.executionEngine.reset();
     }
-    
+
     this.gameContainer.removeAll(true);
     this.drawGrid();
     this.drawPlayer();
@@ -287,7 +277,7 @@ export class GameScene extends Scene {
     this.cameraFollowEnabled = true;
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
   }
-  
+
   private async runProgram(commands: Command[]): Promise<void> {
     if (this.isExecuting) return;
     if (this.executionEngine) {
@@ -296,15 +286,15 @@ export class GameScene extends Scene {
     this.resetLevel();
     this.isExecuting = true;
     this.commandPanel.clearHighlight();
-    
+
     if (!this.player) return;
-    
+
     this.executionEngine = new ExecutionEngine(this.level!, this.player);
     this.executionEngine.loadProgram(commands);
-    
+
     await this.executionEngine.start();
   }
-  
+
   private showVictoryMessage(stars: number, steps: number): void {
     const msg = this.add.text(
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
@@ -318,18 +308,18 @@ export class GameScene extends Scene {
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
-    
+
     this.time.delayedCall(500, () => {
       this.inventoryUI?.destroy();
       this.commandPanel.destroy();
-      this.scene.start('VictoryScreen', { 
-        levelId: this.levelId, 
-        stars: stars, 
-        stepsUsed: steps 
+      this.scene.start('VictoryScreen', {
+        levelId: this.levelId,
+        stars: stars,
+        stepsUsed: steps
       });
     });
   }
-  
+
   private showDefeatMessage(): void {
     const msg = this.add.text(
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
@@ -347,7 +337,7 @@ export class GameScene extends Scene {
       this.resetLevel();
     });
   }
-  
+
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
@@ -355,9 +345,9 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B;
+        let color = 0x8B5A2B; // PLATFORM
         const tile = map[row][col];
-        
+
         if (tile === TileType.WALL) color = 0x555555;
         else if (tile === TileType.HOLE) color = 0x000000;
         else if (tile === TileType.BRICK) color = 0xA52A2A;
@@ -374,14 +364,14 @@ export class GameScene extends Scene {
         else if (tile === TileType.CAGE) color = 0xcd7f32;
         else if (tile === TileType.TRAP) color = 0x8b4513;
         else if (tile === TileType.GEM) color = 0x00ffcc;
-        
+
         const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
         cell.setStrokeStyle(1, 0xaaaaaa);
         this.gameContainer.add(cell);
       }
     }
   }
-  
+
   private drawPlayer(): void {
     if (this.playerSprite) {
       this.playerSprite.destroy();
@@ -394,7 +384,7 @@ export class GameScene extends Scene {
     this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
     this.playerSprite.setStrokeStyle(2, 0xffffff);
     this.gameContainer.add(this.playerSprite);
-    
+
     if (this.cameraFollowEnabled) {
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     }
