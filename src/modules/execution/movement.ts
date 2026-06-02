@@ -1,13 +1,11 @@
 // src/modules/execution/movement.ts
 // ============================================================================
-// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – ПОЛНАЯ ВЕРСИЯ
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – С ПОДДЕРЖКОЙ СБОРА ПРЕДМЕТОВ ИЗ items
 // ============================================================================
-// - Движение в четырёх направлениях
-// - Проверка границ, стен, ям, лавы, воды
-// - Открытие дверей с расходом ключа
-// - Сбор предметов (ключи, кукуруза, ядра, инструменты, ключ от клетки, драгоценности)
-// - Обработка монстров, клея, клетки
-// - Вызов обработчиков телепортов, конвейеров, пружин, чёрных ящиков и механизмов
+// - Добавлена проверка наличия предмета в `level.items` при входе на клетку
+// - Подбор предмета происходит независимо от тайла карты, если на клетке есть item
+// - После подбора предмет удаляется из массива items, клетка очищается
+// - Исправлено зацикливание конвейеров (ограничение глубины уже есть)
 // ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
@@ -103,7 +101,6 @@ export class MovementExecutor {
         logInfo('MovementExecutor', 'execute', `Door unlocked at (${newPos.col},${newPos.row}) using key ${removedKey}`);
         eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
         eventBus.emit('DOOR_UNLOCKED', { pos: newPos });
-        // После открытия двери продолжаем движение (дверь теперь проходима)
       }
     }
 
@@ -131,10 +128,19 @@ export class MovementExecutor {
     // Выполняем движение
     this.player.move(cmd);
 
-    // СБОР ПРЕДМЕТОВ (после перемещения, на клетке, на которую вошли)
+    // СБОР ПРЕДМЕТОВ (после перемещения)
     const finalPos = this.player.getPosition();
     const finalTile = this.level.map[finalPos.row][finalPos.col];
-    if (isPickupItem(finalTile)) {
+
+    // 1. Проверка на предметы из массива items (уровни, загруженные из JSON)
+    const itemIndex = this.level.items?.findIndex((it: any) => it.pos.col === finalPos.col && it.pos.row === finalPos.row);
+    if (itemIndex !== undefined && itemIndex !== -1) {
+      const item = this.level.items[itemIndex];
+      this.pickupItemFromItem(item.id, finalPos.col, finalPos.row);
+      this.level.items.splice(itemIndex, 1); // удаляем предмет
+    }
+    // 2. Если на клетке есть предмет в виде тайла (изначальная карта)
+    else if (isPickupItem(finalTile)) {
       this.pickupItem(finalPos.col, finalPos.row, finalTile);
     }
 
@@ -168,8 +174,9 @@ export class MovementExecutor {
     return 'ok';
   }
 
+  // Подбор предмета, представленного в карте как тайл
   private pickupItem(col: number, row: number, tile: TileType): void {
-    console.log(`[Movement] pickupItem at (${col},${row}) tile=${tile}`);
+    console.log(`[Movement] pickupItem (tile) at (${col},${row}) tile=${tile}`);
     switch (tile) {
       case TileType.KEY:
         this.inventory.keys.push(`key_${col}_${row}`);
@@ -218,6 +225,62 @@ export class MovementExecutor {
     this.level.map[row][col] = TileType.PLATFORM;
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
     eventBus.emit('OBJECT_COLLECTED', { objectId: `${tile}_${col}_${row}` });
+  }
+
+  // Подбор предмета, заданного через поле items (для уровней из JSON)
+  private pickupItemFromItem(itemId: string, col: number, row: number): void {
+    console.log(`[Movement] pickupItemFromItem at (${col},${row}) itemId=${itemId}`);
+    switch (itemId) {
+      case 'key1':
+      case 'key':
+        this.inventory.keys.push(`key_${col}_${row}`);
+        console.log(`[Movement] Picked up key from items, keys: ${this.inventory.keys.length}`);
+        break;
+      case 'corn1':
+      case 'corn':
+        this.inventory.corn++;
+        console.log(`[Movement] Picked up corn from items, total: ${this.inventory.corn}`);
+        break;
+      case 'core1':
+      case 'core':
+        this.inventory.cores++;
+        console.log(`[Movement] Picked up core from items, total: ${this.inventory.cores}`);
+        break;
+      case 'drill':
+        this.inventory.hasDrill = true;
+        if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
+        console.log(`[Movement] Picked up drill from items`);
+        break;
+      case 'hook':
+        this.inventory.hasHook = true;
+        if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
+        console.log(`[Movement] Picked up hook from items`);
+        break;
+      case 'wing':
+        this.inventory.hasWing = true;
+        if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
+        console.log(`[Movement] Picked up wing from items`);
+        break;
+      case 'bait':
+        this.inventory.hasBait = true;
+        if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
+        console.log(`[Movement] Picked up bait from items`);
+        break;
+      case 'cage_key':
+        this.inventory.keys.push('cage_key');
+        console.log(`[Movement] Picked up cage key from items`);
+        break;
+      case 'gem1':
+      case 'gem':
+        this.inventory.cores += 5;
+        console.log(`[Movement] Picked up gem from items, cores: ${this.inventory.cores}`);
+        break;
+      default:
+        console.warn(`[Movement] Unknown item id: ${itemId}`);
+        return;
+    }
+    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+    eventBus.emit('OBJECT_COLLECTED', { objectId: `${itemId}_${col}_${row}` });
   }
 
   public isBackdoorUsed(): boolean {
