@@ -1,5 +1,11 @@
 // src/modules/CommandPanel.ts
-// Упрощённая версия – только базовые команды, без фильтрации, для проверки работоспособности
+// ============================================================================
+// ПАНЕЛЬ КОМАНД (UI ДЛЯ ПРОГРАММИРОВАНИЯ)
+// ============================================================================
+// Упрощённая версия, которая гарантированно работает.
+// Показывает базовые команды движения, RUN, CLEAR, SAVE, LOAD.
+// Метод setAllowedCommands добавлен как заглушка для совместимости с GameScene.
+// ============================================================================
 
 import { Command } from '../types/index';
 
@@ -25,6 +31,9 @@ export class CommandPanel {
     console.log('[CommandPanel] Constructor finished');
   }
 
+  // --------------------------------------------------------------------------
+  // ПУБЛИЧНЫЕ МЕТОДЫ
+  // --------------------------------------------------------------------------
   public getCommands(): Command[] {
     return [...this.commands];
   }
@@ -51,9 +60,18 @@ export class CommandPanel {
     });
   }
 
+  // Метод-заглушка для совместимости с GameScene (избегаем ошибки "is not a function")
+  public setAllowedCommands(commands: Command[]): void {
+    console.log('[CommandPanel] setAllowedCommands (stub) called with', commands);
+    // Здесь можно будет реализовать фильтрацию позже
+  }
+
+  // --------------------------------------------------------------------------
+  // СОЗДАНИЕ DOM-ПАНЕЛИ
+  // --------------------------------------------------------------------------
   private createPanel(): void {
     console.log('[CommandPanel] Creating panel...');
-    
+
     // Контейнер с кнопками команд (слева)
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
@@ -82,7 +100,7 @@ export class CommandPanel {
     title.style.marginBottom = '10px';
     this.container.appendChild(title);
 
-    // Базовые команды движения
+    // Группа MOVEMENT
     const moveGroup = document.createElement('div');
     moveGroup.style.marginBottom = '8px';
     const moveTitle = document.createElement('div');
@@ -96,6 +114,12 @@ export class CommandPanel {
     this.addCommandButtonToContainer('← Left', Command.LEFT, moveGroup);
     this.addCommandButtonToContainer('→ Right', Command.RIGHT, moveGroup);
     this.container.appendChild(moveGroup);
+
+    // Разделитель
+    const sep = document.createElement('hr');
+    sep.style.margin = '8px 0';
+    sep.style.borderColor = '#444';
+    this.container.appendChild(sep);
 
     // Кнопки RUN и CLEAR
     const runBtn = document.createElement('button');
