@@ -1,10 +1,11 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – С ВИЗУАЛЬНЫМИ ИКОНКАМИ ДЛЯ ТАЙЛОВ
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ИСПРАВЛЕННАЯ
 // ============================================================================
-// - Вместо цветных квадратов отображаются эмодзи/символы для каждого типа объекта
-// - Добавлена поддержка монстров, телепортов, конвейеров, пружин и т.д.
-// - При выходе в меню панель команд и инвентарь гарантированно уничтожаются
+// - Правильный повторный запуск программы (сброс перед новым запуском)
+// - Уничтожение панелей при выходе
+// - Поддержка иконок для всех объектов (через drawGrid)
+// - Обработка остановки программы без поражения (если игрок не на монетке)
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -25,7 +26,7 @@ export class GameScene extends Scene {
   private levelId: string = '';
   private player: Player | null = null;
   private gridSize: number = 48;
-  private playerSprite: Phaser.GameObjects.Text; // Используем текст для иконки игрока
+  private playerSprite: Phaser.GameObjects.Text;
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
   private inventoryUI: InventoryUI;
@@ -44,6 +45,12 @@ export class GameScene extends Scene {
   init(data: { levelId: string }): void {
     this.levelId = data.levelId;
     logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
+    // При повторном входе в сцену сбрасываем флаги
+    this.isExecuting = false;
+    if (this.executionEngine) {
+      this.executionEngine.stop();
+      this.executionEngine = null;
+    }
   }
 
   async create(): Promise<void> {
@@ -76,14 +83,14 @@ export class GameScene extends Scene {
       height: this.level.height * this.gridSize,
     };
 
-    this.drawGrid();      // теперь рисует иконки
-    this.drawPlayer();    // игрок тоже иконка
+    this.drawGrid();
+    this.drawPlayer();
 
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
 
-    // Управление камерой (мышь и клавиши)
+    // Управление камерой
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
@@ -137,6 +144,7 @@ export class GameScene extends Scene {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
 
+    // Кнопка BACK
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -150,6 +158,7 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     });
 
+    // AutoSolve (заглушка)
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -190,12 +199,7 @@ export class GameScene extends Scene {
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       this.cameras.main.centerY,
       '🧪 AutoSolve: coming soon',
-      {
-        fontSize: '18px',
-        color: '#ffaa00',
-        backgroundColor: '#000000aa',
-        padding: { x: 15, y: 8 },
-      }
+      { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
   }
@@ -221,14 +225,31 @@ export class GameScene extends Scene {
     });
     eventBus.on('EXECUTION_FINISHED', (payload: any) => {
       this.isExecuting = false;
-      if (payload?.success && payload.result) {
-        const stars = payload.result.stars;
-        const steps = payload.result.steps;
+      // Проверяем, победил ли игрок (на монетке) или просто программа закончилась
+      const pos = this.player?.getPosition();
+      const onCoin = pos && this.level && pos.col === this.level.coinPos.col && pos.row === this.level.coinPos.row;
+      if (payload?.success && onCoin) {
+        const stars = payload.result?.stars || 0;
+        const steps = payload.result?.steps || 0;
         progressManager.completeLevel(this.levelId, stars, steps);
         this.showVictoryMessage(stars, steps);
       } else {
-        this.showDefeatMessage();
+        // Программа завершилась, но монетка не достигнута – это не поражение, просто остановка
+        logger.info('GameScene', 'EXECUTION_FINISHED', 'Program finished without victory');
+        // Можно показать сообщение, что программа выполнена, но уровень не пройден
+        const msg = this.add.text(
+          this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+          100,
+          '⏹️ Program stopped',
+          { fontSize: '20px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+        this.time.delayedCall(2000, () => msg.destroy());
       }
+    });
+    // Событие смерти игрока (от монстра, ямы и т.д.)
+    eventBus.on('PLAYER_DIED', (payload: any) => {
+      this.isExecuting = false;
+      this.showDefeatMessage();
     });
   }
 
@@ -273,15 +294,20 @@ export class GameScene extends Scene {
 
   private async runProgram(commands: Command[]): Promise<void> {
     if (this.isExecuting) return;
+    // Останавливаем предыдущий движок, если был
     if (this.executionEngine) {
       this.executionEngine.stop();
+      this.executionEngine = null;
     }
+    // Сбрасываем уровень в начальное состояние
     this.resetLevel();
     this.isExecuting = true;
     this.commandPanel.clearHighlight();
     if (!this.player) return;
+    // Создаём новый движок
     this.executionEngine = new ExecutionEngine(this.level!, this.player);
     this.executionEngine.loadProgram(commands);
+    // Запускаем выполнение (асинхронно)
     await this.executionEngine.start();
   }
 
@@ -312,12 +338,11 @@ export class GameScene extends Scene {
   }
 
   // ==========================================================================
-  // ОТРИСОВКА СЕТКИ С ИКОНКАМИ (ВМЕСТО ЦВЕТНЫХ КВАДРАТОВ)
+  // ОТРИСОВКА СЕТКИ С ИКОНКАМИ
   // ==========================================================================
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
-    // Дополнительно получаем монстров и предметы из objects, если есть
     const monsters = this.level.objects?.monsters || [];
     const items = this.level.items || [];
 
@@ -327,9 +352,8 @@ export class GameScene extends Scene {
         const y = row * this.gridSize;
         const tile = map[row][col];
         let icon = '';
-        let bgColor = '#2d2d3a'; // тёмный фон
+        let bgColor = '#2d2d3a';
 
-        // Определяем иконку в зависимости от типа тайла
         switch (tile) {
           case TileType.PLATFORM:   icon = '⬜'; bgColor = '#8B5A2B'; break;
           case TileType.WALL:       icon = '🧱'; bgColor = '#555555'; break;
@@ -361,7 +385,6 @@ export class GameScene extends Scene {
           default: icon = '⬜'; bgColor = '#8B5A2B'; break;
         }
 
-        // Переопределяем иконку, если на клетке есть монстр
         const monsterHere = monsters.find((m: any) => m.position.col === col && m.position.row === row);
         if (monsterHere) {
           if (monsterHere.type === 'patrol') icon = '👾';
@@ -374,7 +397,6 @@ export class GameScene extends Scene {
           bgColor = '#4a1a4a';
         }
 
-        // Переопределяем иконку, если на клетке есть предмет (из items)
         const itemHere = items.find((it: any) => it.pos.col === col && it.pos.row === row);
         if (itemHere) {
           if (itemHere.id === 'key1') icon = '🔑';
@@ -389,13 +411,11 @@ export class GameScene extends Scene {
           bgColor = '#2a5a2a';
         }
 
-        // Фоновый прямоугольник (полупрозрачный)
         const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, Phaser.Display.Color.HexStringToColor(bgColor).color, 0.8);
         bgRect.setOrigin(0, 0);
         bgRect.setStrokeStyle(1, 0xaaaaaa);
         this.gameContainer.add(bgRect);
 
-        // Иконка (текст)
         const iconText = this.add.text(x + this.gridSize / 2, y + this.gridSize / 2, icon, {
           fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
           fontFamily: 'Arial',
