@@ -1,9 +1,9 @@
 // src/managers/LevelManager.ts
 // ============================================================================
-// МЕНЕДЖЕР УРОВНЕЙ – ИСПРАВЛЕННАЯ ВЕРСИЯ
+// МЕНЕДЖЕР УРОВНЕЙ – ПОЛНАЯ ВЕРСИЯ С objects: {} И allowedCommands
 // ============================================================================
-// - Добавлено поле objects: {} во все генерируемые уровни
-// - Arcade обновляется при добавлении новых уровней
+// Отвечает за загрузку, кэширование и предоставление данных об уровнях.
+// Генерирует демо-уровни для всех миров с поэтапным добавлением команд.
 // ============================================================================
 
 import { LevelData, TileType, Command } from '../types/index';
@@ -157,18 +157,20 @@ export class LevelManager {
         id: `meadow_${i.toString().padStart(3, '0')}`,
         name: `Meadow ${i}`,
         worldId: 'meadow',
-        width: 10, height: 10,
-        map,
+        width: 10,
+        height: 10,
+        map: map,
         startPos: { col: 0, row: 0 },
         coinPos: { col: 9, row: 9 },
         optimalSteps: 18 + Math.floor(i / 2),
         allowedCommands,
-        objects: {}, // <-- ИСПРАВЛЕНИЕ
+        objects: {},
       };
       this.cache.set(level.id, level);
       if (!this.worldsLevels.has('meadow')) this.worldsLevels.set('meadow', []);
       this.worldsLevels.get('meadow')!.push(level.id);
     }
+    logger.debug('LevelManager', 'generateMeadowLevels', 'Generated 20 meadow levels');
   }
 
   private generateOceanLevels(): void {
@@ -178,57 +180,181 @@ export class LevelManager {
         map[5][5] = TileType.WATER;
         map[5][6] = TileType.TOOL_WING;
       }
-      const allowedCommands: Command[] = [ /* ... полный набор ... */ ];
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+      ];
       const level: LevelData = {
         id: `ocean_${i.toString().padStart(3, '0')}`,
         name: `Ocean ${i}`,
         worldId: 'ocean',
-        width: 12, height: 12,
-        map,
+        width: 12,
+        height: 12,
+        map: map,
         startPos: { col: 0, row: 0 },
         coinPos: { col: 11, row: 11 },
         optimalSteps: 22,
         allowedCommands,
-        objects: {}, // <-- ИСПРАВЛЕНИЕ
+        objects: {},
       };
       this.cache.set(level.id, level);
       if (!this.worldsLevels.has('ocean')) this.worldsLevels.set('ocean', []);
       this.worldsLevels.get('ocean')!.push(level.id);
     }
+    logger.debug('LevelManager', 'generateOceanLevels', 'Generated 20 ocean levels');
   }
 
   private generateCloudsLevels(): void {
     for (let i = 1001; i <= 1020; i++) {
       const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
-      const allowedCommands: Command[] = [ /* ... полный набор ... */ ];
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+      ];
       const level: LevelData = {
         id: `clouds_${i.toString().padStart(4, '0')}`,
         name: `Clouds ${i}`,
         worldId: 'clouds',
-        width: 14, height: 14,
-        map,
+        width: 14,
+        height: 14,
+        map: map,
         startPos: { col: 0, row: 0 },
         coinPos: { col: 13, row: 13 },
         optimalSteps: 26,
         allowedCommands,
-        objects: {}, // <-- ИСПРАВЛЕНИЕ
+        objects: {},
       };
       this.cache.set(level.id, level);
       if (!this.worldsLevels.has('clouds')) this.worldsLevels.set('clouds', []);
       this.worldsLevels.get('clouds')!.push(level.id);
     }
+    logger.debug('LevelManager', 'generateCloudsLevels', 'Generated 20 clouds levels');
   }
 
   private generateFairytaleLevels(): void {
-    // аналогично, добавить objects: {}
+    for (let i = 1501; i <= 1520; i++) {
+      const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+      ];
+      const level: LevelData = {
+        id: `fairytale_${i.toString().padStart(4, '0')}`,
+        name: `Fairytale ${i}`,
+        worldId: 'fairytale',
+        width: 14,
+        height: 14,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 13, row: 13 },
+        optimalSteps: 26,
+        allowedCommands,
+        objects: {},
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('fairytale')) this.worldsLevels.set('fairytale', []);
+      this.worldsLevels.get('fairytale')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateFairytaleLevels', 'Generated 20 fairytale levels');
   }
 
   private generateVolcanoLevels(): void {
-    // аналогично, добавить objects: {}
+    for (let i = 2001; i <= 2020; i++) {
+      const map = Array(16).fill(null).map(() => Array(16).fill(TileType.PLATFORM));
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+      ];
+      const level: LevelData = {
+        id: `volcano_${i.toString().padStart(4, '0')}`,
+        name: `Volcano ${i}`,
+        worldId: 'volcano',
+        width: 16,
+        height: 16,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 15, row: 15 },
+        optimalSteps: 30,
+        allowedCommands,
+        objects: {},
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('volcano')) this.worldsLevels.set('volcano', []);
+      this.worldsLevels.get('volcano')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateVolcanoLevels', 'Generated 20 volcano levels');
   }
 
   private generateBonusLevels(): void {
-    // аналогично, добавить objects: {}
+    for (let i = 2501; i <= 2520; i++) {
+      const map = Array(20).fill(null).map(() => Array(20).fill(TileType.PLATFORM));
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.IF_MONSTER, Command.IF_COIN, Command.IF_KEY, Command.IF_NO_KEY,
+        Command.WHILE_WALL, Command.WHILE_HOLE, Command.WHILE_MONSTER,
+        Command.FOR_N, Command.FOR_LOOP, Command.REPEAT,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+        Command.BLACK_BOX
+      ];
+      const level: LevelData = {
+        id: `bonus_${i.toString().padStart(4, '0')}`,
+        name: `Bonus ${i}`,
+        worldId: 'bonus',
+        width: 20,
+        height: 20,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 19, row: 19 },
+        optimalSteps: 38,
+        allowedCommands,
+        objects: {},
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('bonus')) this.worldsLevels.set('bonus', []);
+      this.worldsLevels.get('bonus')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateBonusLevels', 'Generated 20 bonus levels');
   }
 
   private generateArcadeLevels(): void {
@@ -237,11 +363,18 @@ export class LevelManager {
     for (const levelId of allLevels) {
       this.worldsLevels.get('arcade')!.push(levelId);
     }
+    logger.debug('LevelManager', 'generateArcadeLevels', `Arcade now has ${this.worldsLevels.get('arcade')!.length} levels`);
   }
 
   public async loadLevel(levelId: string): Promise<LevelData | null> {
     if (!this.initialized) await this.initialize();
-    return this.cache.get(levelId) || null;
+    const level = this.cache.get(levelId);
+    if (level) {
+      logger.debug('LevelManager', 'loadLevel', `Loaded ${levelId}`);
+    } else {
+      logger.error('LevelManager', 'loadLevel', `Level ${levelId} not found`);
+    }
+    return level || null;
   }
 
   public getLevelIdsForWorld(worldId: string): string[] {
@@ -252,7 +385,9 @@ export class LevelManager {
     const worldId = currentLevelId.split('_')[0];
     const levelIds = this.worldsLevels.get(worldId) || [];
     const idx = levelIds.indexOf(currentLevelId);
-    if (idx !== -1 && idx + 1 < levelIds.length) return levelIds[idx + 1];
+    if (idx !== -1 && idx + 1 < levelIds.length) {
+      return levelIds[idx + 1];
+    }
     return null;
   }
 
