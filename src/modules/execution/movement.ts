@@ -1,10 +1,10 @@
 // src/modules/execution/movement.ts
 // ============================================================================
-// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – ИСПРАВЛЕННАЯ ВЕРСИЯ
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – ИСПРАВЛЕННАЯ
 // ============================================================================
-// - Добавлена правильная обработка подбора предметов (PICKUP)
-// - Добавлено событие INVENTORY_CHANGED после изменения инвентаря
-// - Исправлена работа с конвейерами (ограничение глубины уже в tiles.ts)
+// - При входе на запертую дверь, если есть ключ, дверь открывается и ключ расходуется
+// - При подборе предмета инвентарь обновляется через событие
+// - Добавлена проверка на сбор предметов при движении
 // ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
@@ -87,9 +87,24 @@ export class MovementExecutor {
       if (isDeadlyLiquid(tile) && !this.inventory.hasWing) return 'dead';
     }
 
-    // Дверь без ключа
-    if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length === 0) return 'dead';
-    // Кирпич
+    // Дверь без ключа – смерть
+    if (tile === TileType.DOOR_LOCKED) {
+      if (this.inventory.keys.length === 0) {
+        log('MovementExecutor', 'execute', `Locked door at (${newPos.col},${newPos.row}) and no key`);
+        return 'dead';
+      } else {
+        // Есть ключ – открываем дверь, расходуем ключ
+        this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
+        const removedKey = this.inventory.keys.pop();
+        this.backdoorUsed = true;
+        logInfo('MovementExecutor', 'execute', `Door unlocked at (${newPos.col},${newPos.row}) using key ${removedKey}`);
+        eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+        eventBus.emit('DOOR_UNLOCKED', { pos: newPos });
+        // После открытия двери продолжаем движение (дверь теперь проходима)
+      }
+    }
+
+    // Кирпич – смерть (требуется PUSH)
     if (tile === TileType.BRICK) return 'dead';
 
     // Монстры
@@ -113,27 +128,19 @@ export class MovementExecutor {
     // Выполняем движение
     this.player.move(cmd);
 
-    // Автооткрытие двери, если есть ключ
-    if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length > 0) {
-      this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
-      this.inventory.keys.pop();
-      this.backdoorUsed = true;
-      eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-    }
-
-    // ** ПОДБОР ПРЕДМЕТОВ **
-    if (isPickupItem(tile)) {
-      this.pickupItem(newPos.col, newPos.row, tile);
-    }
-
-    // Телепорт
-    if (tile === TileType.TELEPORT_IN) {
-      this.tilesExecutor.processTeleport(newPos);
-    }
-
-    // Конвейер (с ограничением глубины уже внутри)
+    // СБОР ПРЕДМЕТОВ (уже после перемещения, но на клетке, на которую вошли)
     const finalPos = this.player.getPosition();
     const finalTile = this.level.map[finalPos.row][finalPos.col];
+    if (isPickupItem(finalTile)) {
+      this.pickupItem(finalPos.col, finalPos.row, finalTile);
+    }
+
+    // Телепорт (если наступили на вход)
+    if (finalTile === TileType.TELEPORT_IN) {
+      this.tilesExecutor.processTeleport(finalPos);
+    }
+
+    // Конвейер (с ограничением глубины)
     if (isConveyor(finalTile)) {
       await this.tilesExecutor.processConveyor(finalPos, cmd);
     }
