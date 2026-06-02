@@ -1,36 +1,25 @@
 // tools/generator/levelGenerator.ts
 // ============================================================================
-// ГЕНЕРАТОР УРОВНЕЙ С BFS, УЧИТЫВАЮЩИЙ ИНВЕНТАРЬ И БЭКДОРЫ
+// ГЕНЕРАТОР УРОВНЕЙ ДЛЯ CYBERKID: ТАНКИСТ (ПАТЧ 2.0)
 // ============================================================================
-// - Генерация карты с множественными путями (Normal, Shortcut, Backdoor)
-// - BFS-валидатор, моделирующий инвентарь (ключи, инструменты, корн, ядра)
-// - Автоматическая классификация путей и расчёт чёрных звёзд
+// - Поддерживает раздельное управление башней и корпусом
+// - Генерирует уровни с начальным углом башни и направлением корпуса
+// - Добавляет магниты, замедляющие поля, бэкдоры и множественные пути
+// - Использует BFS-валидатор с учётом инвентаря и углов
 // ============================================================================
 
 import seedrandom from 'seedrandom';
-import { Command, TileType, Point } from '../../src/types/index';
+import { Command, TileType, Point, ControlMode, Magnet, SlowField } from '../../src/types/index';
+import { InventoryAwareBFS, FoundPath, BackdoorType } from './pathfinder';
 
 // ----------------------------------------------------------------------------
-// ТИПЫ И ИНТЕРФЕЙСЫ
+// ИНТЕРФЕЙСЫ ДЛЯ ГЕНЕРАТОРА
 // ----------------------------------------------------------------------------
-
-export enum BackdoorType {
-  DRILL = 'drill',
-  HOOK = 'hook',
-  WING = 'wing',
-  BAIT = 'bait',
-  FEED = 'feed',
-  TELEPORT = 'teleport',
-  CLONE = 'clone',
-  BLACKBOX = 'blackbox',
-  BUTTON = 'button',
-  LEVER = 'lever',
-}
 
 export interface GenerationRequest {
   stage: 1 | 2 | 3 | 4;
   theme: 'meadow' | 'ocean' | 'clouds' | 'fairy' | 'volcano' | 'arcade';
-  difficulty: number;
+  difficulty: number;           // 1..100
   requiredCommands?: Command[];
   forbiddenCommands?: Command[];
   targetTimeSeconds?: number;
@@ -38,6 +27,11 @@ export interface GenerationRequest {
   allowBackdoors?: boolean;
   backdoorCount?: number;
   backdoorMechanics?: BackdoorType[];
+  controlMode?: ControlMode;     // 'separate' (по умолч.) или 'classic'
+  magnetsEnabled?: boolean;      // добавлять ли магниты
+  slowFieldsEnabled?: boolean;   // добавлять ли замедляющие поля
+  startTurretAngle?: number;     // 0,90,180,270 (если не задан – генерируется)
+  hullDirection?: 'up'|'down'|'left'|'right';
 }
 
 export interface GeneratedLevel {
@@ -46,10 +40,29 @@ export interface GeneratedLevel {
   stage: number;
   difficulty: number;
   size: { width: number; height: number };
-  start: { x: number; y: number; direction: 'up' | 'down' | 'left' | 'right' };
+  start: { x: number; y: number; direction: 'up'|'down'|'left'|'right' };
+  startTurretAngle: number;
+  controlMode: ControlMode;
   goal: { type: 'star'; x: number; y: number };
   tiles: TileType[][];
-  objects: any[];
+  objects: {
+    items?: { type: string; x: number; y: number }[];
+    monsters?: any[];
+    teleports?: any[];
+    conveyors?: any[];
+    springs?: any[];
+    blackBoxes?: any[];
+    buttons?: any[];
+    levers?: any[];
+    timers?: any[];
+    sensors?: any[];
+    sorters?: any[];
+    bridges?: any[];
+    cages?: any[];
+    traps?: any[];
+    magnets?: Magnet[];
+    slowFields?: SlowField[];
+  };
   availableCommands: Command[];
   solutionHints: {
     optimalSteps: number;
@@ -63,105 +76,127 @@ export interface GeneratedLevel {
   seed: number;
 }
 
-// Состояние для BFS (упрощённый инвентарь)
-interface SearchState {
-  x: number;
-  y: number;
-  keys: boolean;        // есть ли обычный ключ (для упрощения – булево)
-  hasDrill: boolean;
-  hasHook: boolean;
-  hasWing: boolean;
-  hasBait: boolean;
-  hasCorn: boolean;
-  hasCore: boolean;
-  backdoorFlags: Set<string>; // какие бэкдоры уже задействованы
-}
-
 // ----------------------------------------------------------------------------
-// ОСНОВНОЙ ГЕНЕРАТОР
+// ОСНОВНОЙ КЛАСС ГЕНЕРАТОРА
 // ----------------------------------------------------------------------------
 
 export class LevelGenerator {
   private rng: () => number;
+  private width: number;
+  private height: number;
 
   constructor(seed?: number) {
     this.rng = seedrandom(seed?.toString() || Math.random().toString());
+    this.width = 8;
+    this.height = 8;
   }
 
   public generate(req: GenerationRequest): GeneratedLevel {
-    // 1. Размер поля
-    const { width, height } = this.determineSize(req.difficulty);
-    let tiles: TileType[][] = Array(height).fill(null).map(() => Array(width).fill(TileType.PLATFORM));
+    // 1. Размер поля в зависимости от сложности
+    const size = this.determineSize(req.difficulty);
+    this.width = size.width;
+    this.height = size.height;
+
+    // 2. Определяем режим управления
+    const controlMode = req.controlMode || (req.difficulty > 30 ? ControlMode.SEPARATE : ControlMode.CLASSIC);
     
-    // 2. Старт и цель
-    const start = { x: 0, y: 0 };
-    const goal = { x: width - 1, y: height - 1 };
-    
-    // 3. Генерация основного длинного пути
-    const mainPath = this.generateMainPath(start, goal);
+    // 3. Начальная позиция и угол башни
+    const startPos = { x: 0, y: 0 };
+    const startDir: 'up'|'down'|'left'|'right' = 'right';
+    const startTurretAngle = req.startTurretAngle !== undefined ? req.startTurretAngle : (this.rng() < 0.3 ? 90 : 0);
+    const hullDirection = req.hullDirection || startDir;
+
+    // 4. Цель – противоположный угол (можно позже сместить)
+    const goalPos = { x: this.width - 1, y: this.height - 1 };
+
+    // 5. Генерация карты (платформы, потом препятствия)
+    let tiles: TileType[][] = Array(this.height).fill(null).map(() => Array(this.width).fill(TileType.PLATFORM));
+
+    // 6. Генерация основного длинного пути (без предметов)
+    const mainPath = this.generateMainPath(startPos, goalPos);
     this.markPath(tiles, mainPath, TileType.PLATFORM);
-    
-    // 4. Генерация коротких путей и бэкдоров
+
+    // 7. Генерация коротких путей и бэкдоров (если разрешены)
     let backdoors: BackdoorInfo[] = [];
     if (req.allowBackdoors && req.difficulty > 20) {
       const count = req.backdoorCount || Math.min(3, Math.floor(req.difficulty / 20));
-      backdoors = this.generateBackdoors(start, goal, width, height, count, req.backdoorMechanics);
+      backdoors = this.generateBackdoors(startPos, goalPos, this.width, this.height, count, req.backdoorMechanics);
       for (const bd of backdoors) {
         this.markPath(tiles, bd.shortcutPath, TileType.PLATFORM);
-        // Размещаем препятствие (стена, яма, монстр)
         if (bd.obstaclePos) {
+          // Устанавливаем препятствие (стена или монстр)
           tiles[bd.obstaclePos.y][bd.obstaclePos.x] = TileType.WALL;
         }
       }
     }
-    
-    // 5. Размещение предметов (объектов)
-    const objects = this.placeObjects(req, backdoors);
-    
-    // 6. Заполнение остального поля препятствиями (но не перекрывая пути)
+
+    // 8. Размещение предметов (обычных и для бэкдоров)
+    const items = this.placeItems(req, backdoors);
+
+    // 9. Генерация объектов: монстры, телепорты, конвейеры, пружины, механизмы, мосты, клетки, ловушки, магниты, замедляющие поля
+    const monsters = this.placeMonsters(req.difficulty);
+    const magnets = req.magnetsEnabled && req.difficulty > 30 ? this.placeMagnets(1) : [];
+    const slowFields = req.slowFieldsEnabled && req.difficulty > 40 ? this.placeSlowFields(1) : [];
+
+    const objects = {
+      items,
+      monsters,
+      magnets,
+      slowFields,
+      // другие объекты – для простоты оставляем пустыми, но можно добавить
+    };
+
+    // 10. Заполнение остального поля препятствиями (не перекрывая пути)
     tiles = this.fillObstacles(tiles, mainPath, backdoors, req.difficulty, req.theme);
-    
-    // 7. BFS-валидация с учётом инвентаря
-    const paths = this.bfsWithInventory(tiles, start, goal, objects, req);
+
+    // 11. Поиск решений с помощью BFS (учитывая башню, инвентарь, углы)
+    const bfs = new InventoryAwareBFS(
+      tiles, items, monsters, [], [], [], [], [], [], [],
+      { maxDepth: 500, maxPaths: 5, allowBackdoors: req.allowBackdoors, debug: false }
+    );
+    const paths = bfs.findPaths(startPos, goalPos, startDir, startTurretAngle);
     if (paths.length === 0) {
-      // Нет решения – перегенерируем с другим seed
+      // Нет решения – регенерируем с другим seed
       return this.generate({ ...req, seed: (req.seed || 0) + 1 });
     }
-    
-    // 8. Классификация путей
-    const normalPath = paths.find(p => !p.isBackdoor && !p.requiresItems);
-    const shortcutPaths = paths.filter(p => !p.isBackdoor && p.requiresItems && p.requiresItems.length > 0);
-    const backdoorPaths = paths.filter(p => p.isBackdoor);
+
+    // 12. Классификация путей
     const optimalSteps = Math.min(...paths.map(p => p.steps));
-    
-    // 9. Формирование результата
-    return {
-      id: `gen_${Date.now()}_${Math.floor(this.rng() * 10000)}`,
-      name: `${this.themeName(req.theme)} ${Math.floor(this.rng() * 1000) + 1}`,
+    const backdoorPaths = paths.filter(p => p.isBackdoor).map(p => ({
+      type: (p.usedBackdoors?.[0] as BackdoorType) || BackdoorType.DRILL,
+      steps: p.steps,
+      requiredItems: p.requiredItems || [],
+    }));
+
+    // 13. Формирование результата
+    const levelId = `${req.theme}_${Math.floor(Date.now() / 1000)}_${Math.floor(this.rng() * 10000)}`;
+    const level: GeneratedLevel = {
+      id: levelId,
+      name: `${this.themeName(req.theme)} #${Math.floor(this.rng() * 1000) + 1}`,
       stage: req.stage,
       difficulty: req.difficulty,
-      size: { width, height },
-      start: { x: start.x, y: start.y, direction: 'right' },
-      goal: { type: 'star', x: goal.x, y: goal.y },
+      size: { width: this.width, height: this.height },
+      start: { x: startPos.x, y: startPos.y, direction: startDir },
+      startTurretAngle,
+      controlMode,
+      goal: { type: 'star', x: goalPos.x, y: goalPos.y },
       tiles,
       objects,
-      availableCommands: this.determineAvailableCommands(req.stage, req.difficulty),
+      availableCommands: this.determineAvailableCommands(req.stage, req.difficulty, controlMode),
       solutionHints: {
         optimalSteps,
         expectedConcepts: this.getExpectedConcepts(req.difficulty),
-        backdoorPaths: backdoorPaths.map(bp => ({
-          type: bp.backdoorType!,
-          steps: bp.steps,
-          requiredItems: bp.requiredItems || [],
-        })),
+        backdoorPaths: backdoorPaths.length ? backdoorPaths : undefined,
       },
       seed: req.seed || 0,
     };
+    return level;
   }
 
   // --------------------------------------------------------------------------
-  // ГЕОМЕТРИЧЕСКИЕ ВСПОМОГАТЕЛЬНЫЕ
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
   // --------------------------------------------------------------------------
+
   private determineSize(difficulty: number): { width: number; height: number } {
     if (difficulty <= 20) return { width: 8, height: 8 };
     if (difficulty <= 50) return { width: 12, height: 12 };
@@ -192,27 +227,26 @@ export class LevelGenerator {
 
   private generateBackdoors(start: Point, goal: Point, width: number, height: number, count: number, mechanics?: BackdoorType[]): BackdoorInfo[] {
     const backdoors: BackdoorInfo[] = [];
-    const allMech = mechanics || Object.values(BackdoorType);
-    for (let i = 0; i < count && i < allMech.length; i++) {
-      const type = allMech[i];
+    const usedPositions = new Set<string>();
+    for (let i = 0; i < count; i++) {
+      const type = mechanics ? mechanics[i % mechanics.length] : BackdoorType.DRILL;
       const shortcut = this.createShortcut(start, goal, i);
-      const obstaclePos = this.findFreePosition(width, height, []);
-      const requiredItemPos = this.findFreePosition(width, height, [obstaclePos]);
-      backdoors.push({
-        type,
-        shortcutPath: shortcut,
-        requiredItemPos,
-        obstaclePos,
-      });
+      let obstaclePos = this.findFreePosition(width, height, Array.from(usedPositions).map(pos => {
+        const [x,y] = pos.split(',').map(Number);
+        return { x, y };
+      }));
+      usedPositions.add(`${obstaclePos.x},${obstaclePos.y}`);
+      let requiredItemPos = this.findFreePosition(width, height, [{ x: obstaclePos.x, y: obstaclePos.y }]);
+      usedPositions.add(`${requiredItemPos.x},${requiredItemPos.y}`);
+      backdoors.push({ type, shortcutPath: shortcut, requiredItemPos, obstaclePos });
     }
     return backdoors;
   }
 
   private createShortcut(start: Point, goal: Point, variant: number): Point[] {
-    // Диагональный путь, слегка искривлённый
     const path: Point[] = [];
     const steps = Math.min(goal.x - start.x, goal.y - start.y) - variant;
-    for (let i = 1; i <= steps; i++) {
+    for (let i = 1; i <= steps && i < 10; i++) {
       path.push({ x: start.x + i, y: start.y + i });
     }
     return path;
@@ -227,34 +261,75 @@ export class LevelGenerator {
     return { x, y };
   }
 
-  private placeObjects(req: GenerationRequest, backdoors: BackdoorInfo[]): any[] {
-    const objects: any[] = [];
+  private placeItems(req: GenerationRequest, backdoors: BackdoorInfo[]): { type: string; x: number; y: number }[] {
+    const items: { type: string; x: number; y: number }[] = [];
     for (const bd of backdoors) {
       switch (bd.type) {
         case BackdoorType.DRILL:
-          objects.push({ type: 'drill', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'drill', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
           break;
         case BackdoorType.HOOK:
-          objects.push({ type: 'hook', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'hook', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
           break;
         case BackdoorType.WING:
-          objects.push({ type: 'wing', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'wing', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
           break;
         case BackdoorType.BAIT:
-          objects.push({ type: 'bait', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'bait', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
           break;
         case BackdoorType.FEED:
-          objects.push({ type: 'corn', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'corn', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
           break;
         default:
-          objects.push({ type: 'key', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
+          items.push({ type: 'key', x: bd.requiredItemPos.x, y: bd.requiredItemPos.y });
       }
     }
-    // Добавляем пару случайных ключей для обычных путей
-    if (req.difficulty > 30) {
-      objects.push({ type: 'key', x: Math.floor(this.rng() * 10), y: Math.floor(this.rng() * 10) });
+    // Добавляем пару случайных ключей на длинный путь
+    if (req.difficulty > 30 && this.rng() < 0.5) {
+      items.push({ type: 'key', x: Math.floor(this.rng() * this.width), y: Math.floor(this.rng() * this.height) });
     }
-    return objects;
+    return items;
+  }
+
+  private placeMonsters(difficulty: number): any[] {
+    const count = difficulty > 70 ? 3 : difficulty > 40 ? 2 : difficulty > 20 ? 1 : 0;
+    const monsters = [];
+    for (let i = 0; i < count; i++) {
+      const type = difficulty > 80 ? 'chase' : (difficulty > 60 ? 'tameable' : 'patrol');
+      monsters.push({
+        id: `mon_${i}`,
+        type,
+        position: { x: Math.floor(this.rng() * this.width), y: Math.floor(this.rng() * this.height) },
+        direction: 'right',
+        isTamed: false,
+        isRidden: false,
+      });
+    }
+    return monsters;
+  }
+
+  private placeMagnets(count: number): Magnet[] {
+    const magnets: Magnet[] = [];
+    for (let i = 0; i < count; i++) {
+      magnets.push({
+        id: `magnet_${i}`,
+        position: { x: Math.floor(this.rng() * this.width), y: Math.floor(this.rng() * this.height) },
+        strength: 1,
+      });
+    }
+    return magnets;
+  }
+
+  private placeSlowFields(count: number): SlowField[] {
+    const fields: SlowField[] = [];
+    for (let i = 0; i < count; i++) {
+      fields.push({
+        id: `slow_${i}`,
+        position: { x: Math.floor(this.rng() * this.width), y: Math.floor(this.rng() * this.height) },
+        factor: 2,
+      });
+    }
+    return fields;
   }
 
   private fillObstacles(tiles: TileType[][], mainPath: Point[], backdoors: BackdoorInfo[], difficulty: number, theme: string): TileType[][] {
@@ -281,135 +356,22 @@ export class LevelGenerator {
     return false;
   }
 
-  // --------------------------------------------------------------------------
-  // BFS С УЧЁТОМ ИНВЕНТАРЯ
-  // --------------------------------------------------------------------------
-  private bfsWithInventory(tiles: TileType[][], start: Point, goal: Point, objects: any[], req: GenerationRequest): PathInfo[] {
-    // Преобразуем массив объектов в карту (item → координаты)
-    const itemPositions = new Map<string, Point>();
-    for (const obj of objects) {
-      itemPositions.set(obj.type, { x: obj.x, y: obj.y });
+  private determineAvailableCommands(stage: number, difficulty: number, controlMode: ControlMode): Command[] {
+    const base: Command[] = [];
+    if (controlMode === ControlMode.SEPARATE) {
+      base.push(Command.MOVE_FORWARD, Command.MOVE_BACKWARD, Command.TURN_LEFT, Command.TURN_RIGHT);
+    } else {
+      base.push(Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT);
     }
-    
-    // Начальное состояние
-    const initialState: SearchState = {
-      x: start.x,
-      y: start.y,
-      keys: false,
-      hasDrill: false,
-      hasHook: false,
-      hasWing: false,
-      hasBait: false,
-      hasCorn: false,
-      hasCore: false,
-      backdoorFlags: new Set(),
-    };
-    
-    // Очередь для BFS
-    const queue: { state: SearchState; path: Point[]; steps: number }[] = [{ state: initialState, path: [start], steps: 0 }];
-    const visited = new Set<string>();
-    const results: PathInfo[] = [];
-    
-    while (queue.length > 0) {
-      const { state, path, steps } = queue.shift()!;
-      const key = `${state.x},${state.y},${state.keys},${state.hasDrill},${state.hasHook},${state.hasWing},${state.hasBait},${state.hasCorn},${state.hasCore},${Array.from(state.backdoorFlags).sort().join(',')}`;
-      if (visited.has(key)) continue;
-      visited.add(key);
-      
-      // Проверка цели
-      if (state.x === goal.x && state.y === goal.y) {
-        // Классифицируем путь
-        const isBackdoor = state.backdoorFlags.size > 0;
-        const requiredItems = this.deriveRequiredItems(state);
-        results.push({
-          steps,
-          isBackdoor,
-          backdoorType: isBackdoor ? Array.from(state.backdoorFlags)[0] as BackdoorType : undefined,
-          requiredItems,
-        });
-        if (results.length >= 5) break; // не ищем больше 5 путей
-        continue;
-      }
-      
-      // Генерация соседей (4 направления)
-      const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
-      for (const [dx, dy] of dirs) {
-        const nx = state.x + dx;
-        const ny = state.y + dy;
-        if (nx < 0 || nx >= tiles[0].length || ny < 0 || ny >= tiles.length) continue;
-        const tile = tiles[ny][nx];
-        
-        // Проверка проходимости с учётом инвентаря
-        let passable = true;
-        if (tile === TileType.WALL && !state.hasDrill) passable = false;
-        if (tile === TileType.HOLE && !state.hasWing) passable = false;
-        if (tile === TileType.LAVA && !state.hasWing) passable = false;
-        if (tile === TileType.WATER && !state.hasWing) passable = false;
-        if (tile === TileType.DOOR_LOCKED && !state.keys) passable = false;
-        if (!passable) continue;
-        
-        // Новое состояние
-        const newState = { ...state, x: nx, y: ny };
-        // Подбор предметов
-        for (const [item, pos] of itemPositions.entries()) {
-          if (pos.x === nx && pos.y === ny) {
-            switch (item) {
-              case 'key': newState.keys = true; break;
-              case 'drill': newState.hasDrill = true; break;
-              case 'hook': newState.hasHook = true; break;
-              case 'wing': newState.hasWing = true; break;
-              case 'bait': newState.hasBait = true; break;
-              case 'corn': newState.hasCorn = true; break;
-              case 'core': newState.hasCore = true; break;
-            }
-            // Если предмет – бэкдорная механика, отмечаем флаг
-            if (this.isBackdoorItem(item)) {
-              newState.backdoorFlags.add(item as BackdoorType);
-            }
-          }
-        }
-        // Использование предметов для преодоления препятствий (дрель, ключ и т.д.)
-        if (tile === TileType.WALL && state.hasDrill) {
-          newState.hasDrill = false; // расходуется
-          newState.backdoorFlags.add(BackdoorType.DRILL);
-        }
-        if (tile === TileType.DOOR_LOCKED && state.keys) {
-          newState.keys = false; // расходуется
-        }
-        
-        queue.push({ state: newState, path: [...path, { x: nx, y: ny }], steps: steps + 1 });
-      }
-    }
-    return results;
-  }
-
-  private isBackdoorItem(item: string): boolean {
-    return ['drill', 'hook', 'wing', 'bait', 'corn', 'core'].includes(item);
-  }
-
-  private deriveRequiredItems(state: SearchState): string[] {
-    const items: string[] = [];
-    if (state.hasDrill) items.push('drill');
-    if (state.hasHook) items.push('hook');
-    if (state.hasWing) items.push('wing');
-    if (state.hasBait) items.push('bait');
-    if (state.hasCorn) items.push('corn');
-    if (state.hasCore) items.push('core');
-    if (state.keys) items.push('key');
-    return items;
-  }
-
-  // --------------------------------------------------------------------------
-  // ОПРЕДЕЛЕНИЕ КОМАНД И КОНЦЕПЦИЙ
-  // --------------------------------------------------------------------------
-  private determineAvailableCommands(stage: number, difficulty: number): Command[] {
-    const base: Command[] = [Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT];
     if (stage >= 2) base.push(Command.IF_WALL, Command.IF_HOLE);
     if (stage >= 3) base.push(Command.WHILE_WALL, Command.DEF, Command.CALL);
     if (stage >= 4) base.push(Command.CLASS, Command.NEW, Command.METHOD);
     if (difficulty > 30) base.push(Command.PICKUP, Command.DROP, Command.USE_KEY);
     if (difficulty > 50) base.push(Command.DRILL, Command.HOOK);
     if (difficulty > 70) base.push(Command.CLONE, Command.JOIN);
+    if (difficulty > 40 && controlMode === ControlMode.SEPARATE) {
+      base.push(Command.SET_ANGLE, Command.IF_ANGLE, Command.WHILE_NOT_FACING);
+    }
     return base;
   }
 
@@ -417,11 +379,11 @@ export class LevelGenerator {
     if (difficulty <= 20) return ['movement', 'loops'];
     if (difficulty <= 50) return ['conditions', 'functions', 'inventory'];
     if (difficulty <= 80) return ['recursion', 'tools', 'backdoors'];
-    return ['OOP', 'parallelism', 'complex backdoors'];
+    return ['OOP', 'parallelism', 'turret control', 'magnets'];
   }
 
   private themeName(theme: string): string {
-    const map: Record<string, string> = {
+    const names: Record<string, string> = {
       meadow: '🌾 Meadow',
       ocean: '🌊 Ocean',
       clouds: '☁️ Clouds',
@@ -429,7 +391,7 @@ export class LevelGenerator {
       volcano: '🌋 Volcano',
       arcade: '🎮 Arcade',
     };
-    return map[theme] || 'Unknown';
+    return names[theme] || 'Unknown';
   }
 }
 
@@ -441,11 +403,4 @@ interface BackdoorInfo {
   shortcutPath: Point[];
   requiredItemPos: Point;
   obstaclePos: Point;
-}
-
-interface PathInfo {
-  steps: number;
-  isBackdoor: boolean;
-  backdoorType?: BackdoorType;
-  requiredItems?: string[];
 }
