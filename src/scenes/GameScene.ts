@@ -1,12 +1,10 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ПОЛНАЯ ВЕРСИЯ С ПРАВИЛЬНЫМ ПОРЯДКОМ ИНИЦИАЛИЗАЦИИ
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – С ВИЗУАЛЬНЫМИ ИКОНКАМИ ДЛЯ ТАЙЛОВ
 // ============================================================================
-// - Загружает уровень, создаёт игрока, сетку, камеру
-// - Создаёт визуализатор ПЕРЕД панелью команд
-// - Создаёт панель команд, затем вызывает setAllowedCommands
-// - Обрабатывает выполнение программы и события
-// - Отображает инвентарь, кнопки управления
+// - Вместо цветных квадратов отображаются эмодзи/символы для каждого типа объекта
+// - Добавлена поддержка монстров, телепортов, конвейеров, пружин и т.д.
+// - При выходе в меню панель команд и инвентарь гарантированно уничтожаются
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -27,7 +25,7 @@ export class GameScene extends Scene {
   private levelId: string = '';
   private player: Player | null = null;
   private gridSize: number = 48;
-  private playerSprite: Phaser.GameObjects.Rectangle;
+  private playerSprite: Phaser.GameObjects.Text; // Используем текст для иконки игрока
   private commandPanel: CommandPanel;
   private visualizer: ProgramVisualizer;
   private inventoryUI: InventoryUI;
@@ -60,7 +58,6 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
 
-    // 1. СОЗДАНИЕ ИГРОКА
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -73,17 +70,15 @@ export class GameScene extends Scene {
       tileGetter
     );
 
-    // 2. КОНТЕЙНЕР И СЕТКА
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
       height: this.level.height * this.gridSize,
     };
 
-    this.drawGrid();
-    this.drawPlayer();
+    this.drawGrid();      // теперь рисует иконки
+    this.drawPlayer();    // игрок тоже иконка
 
-    // 3. КАМЕРА
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
@@ -118,10 +113,7 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
 
-    // 4. ВИЗУАЛИЗАТОР (ДО ПАНЕЛИ КОМАНД)
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
-
-    // 5. ПАНЕЛЬ КОМАНД
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -138,19 +130,13 @@ export class GameScene extends Scene {
         this.updateVisualizer();
       }
     );
-
-    // Устанавливаем разрешённые команды для этого уровня
     this.commandPanel.setAllowedCommands(this.level?.allowedCommands || []);
-
-    // 6. ОБНОВЛЕНИЕ ВИЗУАЛИЗАТОРА (теперь панель уже существует)
     this.updateVisualizer();
 
-    // 7. UI ИНВЕНТАРЯ
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
 
-    // 8. КНОПКИ UI
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
@@ -174,9 +160,7 @@ export class GameScene extends Scene {
       this.autoSolve();
     });
 
-    // 9. ПОДПИСКА НА СОБЫТИЯ ВЫПОЛНЕНИЯ
     this.setupExecutionListeners();
-
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
@@ -222,23 +206,19 @@ export class GameScene extends Scene {
         this.commandPanel.highlightCommand(payload.stepIndex, 'running');
       }
     });
-
     eventBus.on('EXECUTION_ERROR', (payload: any) => {
       if (payload?.stepIndex !== undefined) {
         this.commandPanel.highlightCommand(payload.stepIndex, 'error');
       }
     });
-
     eventBus.on('PLAYER_MOVED', () => {
       this.drawPlayer();
     });
-
     eventBus.on('INVENTORY_CHANGED', (payload: any) => {
       if (payload?.inventory && this.inventoryUI && this.player) {
         this.inventoryUI.updateInventory(payload.inventory);
       }
     });
-
     eventBus.on('EXECUTION_FINISHED', (payload: any) => {
       this.isExecuting = false;
       if (payload?.success && payload.result) {
@@ -254,7 +234,7 @@ export class GameScene extends Scene {
 
   private updateVisualizer(): void {
     if (!this.level) return;
-    if (!this.commandPanel) return; // защита
+    if (!this.commandPanel) return;
     const commands = this.commandPanel.getCommands();
     this.visualizer.updateVisuals(
       commands,
@@ -283,7 +263,6 @@ export class GameScene extends Scene {
     if (this.executionEngine) {
       this.executionEngine.reset();
     }
-
     this.gameContainer.removeAll(true);
     this.drawGrid();
     this.drawPlayer();
@@ -300,12 +279,9 @@ export class GameScene extends Scene {
     this.resetLevel();
     this.isExecuting = true;
     this.commandPanel.clearHighlight();
-
     if (!this.player) return;
-
     this.executionEngine = new ExecutionEngine(this.level!, this.player);
     this.executionEngine.loadProgram(commands);
-
     await this.executionEngine.start();
   }
 
@@ -314,23 +290,13 @@ export class GameScene extends Scene {
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       100,
       `🏆 VICTORY! ★ ${stars} 🏆`,
-      {
-        fontSize: '28px',
-        color: '#ffcc00',
-        backgroundColor: '#000000aa',
-        padding: { x: 20, y: 10 },
-      }
+      { fontSize: '28px', color: '#ffcc00', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
-
     this.time.delayedCall(500, () => {
       this.inventoryUI?.destroy();
       this.commandPanel.destroy();
-      this.scene.start('VictoryScreen', {
-        levelId: this.levelId,
-        stars: stars,
-        stepsUsed: steps,
-      });
+      this.scene.start('VictoryScreen', { levelId: this.levelId, stars: stars, stepsUsed: steps });
     });
   }
 
@@ -339,49 +305,104 @@ export class GameScene extends Scene {
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       100,
       '💥 DEFEAT! 💥',
-      {
-        fontSize: '28px',
-        color: '#ff0000',
-        backgroundColor: '#000000aa',
-        padding: { x: 20, y: 10 },
-      }
+      { fontSize: '28px', color: '#ff0000', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
-    this.time.delayedCall(500, () => {
-      this.resetLevel();
-    });
+    this.time.delayedCall(500, () => this.resetLevel());
   }
 
+  // ==========================================================================
+  // ОТРИСОВКА СЕТКИ С ИКОНКАМИ (ВМЕСТО ЦВЕТНЫХ КВАДРАТОВ)
+  // ==========================================================================
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
+    // Дополнительно получаем монстров и предметы из objects, если есть
+    const monsters = this.level.objects?.monsters || [];
+    const items = this.level.items || [];
+
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8b5a2b; // PLATFORM
         const tile = map[row][col];
+        let icon = '';
+        let bgColor = '#2d2d3a'; // тёмный фон
 
-        if (tile === TileType.WALL) color = 0x555555;
-        else if (tile === TileType.HOLE) color = 0x000000;
-        else if (tile === TileType.BRICK) color = 0xa52a2a;
-        else if (tile === TileType.GOAL) color = 0xffcc00;
-        else if (tile === TileType.KEY) color = 0xffaa00;
-        else if (tile === TileType.DOOR_LOCKED) color = 0x8b0000;
-        else if (tile === TileType.DOOR_UNLOCKED) color = 0x228b22;
-        else if (tile >= TileType.CONVEYOR_UP && tile <= TileType.CONVEYOR_RIGHT) color = 0x888888;
-        else if (tile === TileType.SPRING) color = 0xff6600;
-        else if (tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT) color = 0x9932cc;
-        else if (tile === TileType.LAVA) color = 0xff4500;
-        else if (tile === TileType.WATER) color = 0x1e90ff;
-        else if (tile === TileType.GLUE) color = 0x88cc88;
-        else if (tile === TileType.CAGE) color = 0xcd7f32;
-        else if (tile === TileType.TRAP) color = 0x8b4513;
-        else if (tile === TileType.GEM) color = 0x00ffcc;
+        // Определяем иконку в зависимости от типа тайла
+        switch (tile) {
+          case TileType.PLATFORM:   icon = '⬜'; bgColor = '#8B5A2B'; break;
+          case TileType.WALL:       icon = '🧱'; bgColor = '#555555'; break;
+          case TileType.HOLE:       icon = '🕳️'; bgColor = '#000000'; break;
+          case TileType.GOAL:       icon = '💰'; bgColor = '#ffcc00'; break;
+          case TileType.KEY:        icon = '🔑'; bgColor = '#ffaa00'; break;
+          case TileType.DOOR_LOCKED: icon = '🔒'; bgColor = '#8B0000'; break;
+          case TileType.DOOR_UNLOCKED: icon = '🔓'; bgColor = '#228B22'; break;
+          case TileType.CONVEYOR_UP: icon = '⬆️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_DOWN: icon = '⬇️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_LEFT: icon = '⬅️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_RIGHT: icon = '➡️'; bgColor = '#666666'; break;
+          case TileType.SPRING:     icon = '⬆️⬆️'; bgColor = '#ff6600'; break;
+          case TileType.TELEPORT_IN: icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.TELEPORT_OUT: icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.LAVA:        icon = '🌋'; bgColor = '#ff4500'; break;
+          case TileType.WATER:       icon = '💧'; bgColor = '#1E90FF'; break;
+          case TileType.GLUE:        icon = '🩹'; bgColor = '#88cc88'; break;
+          case TileType.CAGE:        icon = '🔐'; bgColor = '#cd7f32'; break;
+          case TileType.TRAP:        icon = '⚠️'; bgColor = '#8b4513'; break;
+          case TileType.GEM:         icon = '💎'; bgColor = '#00ffcc'; break;
+          case TileType.BRICK:       icon = '🧱'; bgColor = '#A52A2A'; break;
+          case TileType.BLACK_BOX:   icon = '📦'; bgColor = '#2F4F4F'; break;
+          case TileType.BUTTON:      icon = '🔘'; bgColor = '#DC143C'; break;
+          case TileType.LEVER:       icon = '🎚️'; bgColor = '#D2691E'; break;
+          case TileType.TIMER:       icon = '⏲️'; bgColor = '#FFD700'; break;
+          case TileType.SENSOR:      icon = '📡'; bgColor = '#00CED1'; break;
+          case TileType.SORTER:      icon = '📊'; bgColor = '#4B0082'; break;
+          default: icon = '⬜'; bgColor = '#8B5A2B'; break;
+        }
 
-        const cell = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
-        cell.setStrokeStyle(1, 0xaaaaaa);
-        this.gameContainer.add(cell);
+        // Переопределяем иконку, если на клетке есть монстр
+        const monsterHere = monsters.find((m: any) => m.position.col === col && m.position.row === row);
+        if (monsterHere) {
+          if (monsterHere.type === 'patrol') icon = '👾';
+          else if (monsterHere.type === 'chase') icon = '👾⚡';
+          else if (monsterHere.type === 'tameable') icon = '👾❤️';
+          else if (monsterHere.type === 'phased') icon = '👾🌫️';
+          else if (monsterHere.type === 'zombie') icon = '🧟';
+          else if (monsterHere.type === 'boss') icon = '👾👑';
+          else icon = '👾';
+          bgColor = '#4a1a4a';
+        }
+
+        // Переопределяем иконку, если на клетке есть предмет (из items)
+        const itemHere = items.find((it: any) => it.pos.col === col && it.pos.row === row);
+        if (itemHere) {
+          if (itemHere.id === 'key1') icon = '🔑';
+          else if (itemHere.id === 'corn1') icon = '🌽';
+          else if (itemHere.id === 'core1') icon = '💎';
+          else if (itemHere.id === 'drill') icon = '🔧';
+          else if (itemHere.id === 'hook') icon = '🪝';
+          else if (itemHere.id === 'wing') icon = '🪽';
+          else if (itemHere.id === 'bait') icon = '🐟';
+          else if (itemHere.id === 'cage_key') icon = '🔑';
+          else if (itemHere.id === 'gem1') icon = '💎';
+          bgColor = '#2a5a2a';
+        }
+
+        // Фоновый прямоугольник (полупрозрачный)
+        const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, Phaser.Display.Color.HexStringToColor(bgColor).color, 0.8);
+        bgRect.setOrigin(0, 0);
+        bgRect.setStrokeStyle(1, 0xaaaaaa);
+        this.gameContainer.add(bgRect);
+
+        // Иконка (текст)
+        const iconText = this.add.text(x + this.gridSize / 2, y + this.gridSize / 2, icon, {
+          fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
+          fontFamily: 'Arial',
+          color: '#ffffff',
+          align: 'center',
+        }).setOrigin(0.5);
+        this.gameContainer.add(iconText);
       }
     }
   }
@@ -392,13 +413,16 @@ export class GameScene extends Scene {
     }
     if (!this.level || !this.player) return;
     const pos = this.player.getPosition();
-    const x = pos.col * this.gridSize;
-    const y = pos.row * this.gridSize;
-    const color = 0x00ff00;
-    this.playerSprite = this.add.rectangle(x, y, this.gridSize, this.gridSize, color).setOrigin(0, 0);
-    this.playerSprite.setStrokeStyle(2, 0xffffff);
+    const x = pos.col * this.gridSize + this.gridSize / 2;
+    const y = pos.row * this.gridSize + this.gridSize / 2;
+    this.playerSprite = this.add.text(x, y, '🤖', {
+      fontSize: `${Math.floor(this.gridSize * 0.7)}px`,
+      fontFamily: 'Arial',
+      color: '#00ffcc',
+      backgroundColor: '#000000aa',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5);
     this.gameContainer.add(this.playerSprite);
-
     if (this.cameraFollowEnabled) {
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     }
