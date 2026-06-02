@@ -1,12 +1,12 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ИСПРАВЛЕННЫЙ ПОРЯДОК
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ПОЛНАЯ ВЕРСИЯ С ПРАВИЛЬНЫМ ПОРЯДКОМ ИНИЦИАЛИЗАЦИИ
 // ============================================================================
-// - Сначала создаётся всё необходимое (уровень, игрок, сетка, камера)
-// - Затем создаётся visualizer
-// - Затем commandPanel
-// - После создания панели вызывается updateVisualizer()
-// - InventoryUI и кнопки создаются после панели
+// - Загружает уровень, создаёт игрока, сетку, камеру
+// - Создаёт визуализатор ПЕРЕД панелью команд
+// - Создаёт панель команд, затем вызывает setAllowedCommands
+// - Обрабатывает выполнение программы и события
+// - Отображает инвентарь, кнопки управления
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -50,6 +50,7 @@ export class GameScene extends Scene {
 
   async create(): Promise<void> {
     logger.info('GameScene', 'create', 'Loading level...');
+
     const loadedLevel = await levelManager.loadLevel(this.levelId);
     if (!loadedLevel) {
       logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
@@ -59,7 +60,7 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
 
-    // 1. Игрок
+    // 1. СОЗДАНИЕ ИГРОКА
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
@@ -72,28 +73,29 @@ export class GameScene extends Scene {
       tileGetter
     );
 
-    // 2. Контейнер и сетка
+    // 2. КОНТЕЙНЕР И СЕТКА
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
       width: this.level.width * this.gridSize,
-      height: this.level.height * this.gridSize
+      height: this.level.height * this.gridSize,
     };
 
     this.drawGrid();
     this.drawPlayer();
 
-    // 3. Камера
+    // 3. КАМЕРА
     this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
     this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
 
-    // Управление камерой (мышь/клавиши)
+    // Управление камерой (мышь и клавиши)
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
       this.clampCamera();
     });
+
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
       this.disableCameraFollowTemporarily();
@@ -116,10 +118,10 @@ export class GameScene extends Scene {
       this.clampCamera();
     });
 
-    // 4. Визуализатор (пока без вызова updateVisualizer)
+    // 4. ВИЗУАЛИЗАТОР (ДО ПАНЕЛИ КОМАНД)
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
 
-    // 5. Панель команд
+    // 5. ПАНЕЛЬ КОМАНД
     this.commandPanel = new CommandPanel(
       this,
       (commands: Command[]) => this.runProgram(commands),
@@ -137,20 +139,23 @@ export class GameScene extends Scene {
       }
     );
 
-    // 6. Теперь можно вызвать обновление визуализатора (панель уже создана)
+    // Устанавливаем разрешённые команды для этого уровня
+    this.commandPanel.setAllowedCommands(this.level?.allowedCommands || []);
+
+    // 6. ОБНОВЛЕНИЕ ВИЗУАЛИЗАТОРА (теперь панель уже существует)
     this.updateVisualizer();
 
-    // 7. UI инвентаря
+    // 7. UI ИНВЕНТАРЯ
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
 
-    // 8. Кнопки UI
+    // 8. КНОПКИ UI
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '16px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
-      padding: { x: 12, y: 6 }
+      padding: { x: 12, y: 6 },
     }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
     backButton.on('pointerdown', () => {
       this.inventoryUI?.destroy();
@@ -163,13 +168,15 @@ export class GameScene extends Scene {
       fontSize: '14px',
       color: '#00ff00',
       backgroundColor: '#1a1a3a',
-      padding: { x: 10, y: 5 }
+      padding: { x: 10, y: 5 },
     }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
     autoSolveBtn.on('pointerdown', () => {
       this.autoSolve();
     });
 
+    // 9. ПОДПИСКА НА СОБЫТИЯ ВЫПОЛНЕНИЯ
     this.setupExecutionListeners();
+
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
@@ -203,7 +210,7 @@ export class GameScene extends Scene {
         fontSize: '18px',
         color: '#ffaa00',
         backgroundColor: '#000000aa',
-        padding: { x: 15, y: 8 }
+        padding: { x: 15, y: 8 },
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
@@ -311,7 +318,7 @@ export class GameScene extends Scene {
         fontSize: '28px',
         color: '#ffcc00',
         backgroundColor: '#000000aa',
-        padding: { x: 20, y: 10 }
+        padding: { x: 20, y: 10 },
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
@@ -322,7 +329,7 @@ export class GameScene extends Scene {
       this.scene.start('VictoryScreen', {
         levelId: this.levelId,
         stars: stars,
-        stepsUsed: steps
+        stepsUsed: steps,
       });
     });
   }
@@ -336,7 +343,7 @@ export class GameScene extends Scene {
         fontSize: '28px',
         color: '#ff0000',
         backgroundColor: '#000000aa',
-        padding: { x: 20, y: 10 }
+        padding: { x: 20, y: 10 },
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
@@ -352,21 +359,21 @@ export class GameScene extends Scene {
       for (let col = 0; col < width; col++) {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
-        let color = 0x8B5A2B;
+        let color = 0x8b5a2b; // PLATFORM
         const tile = map[row][col];
 
         if (tile === TileType.WALL) color = 0x555555;
         else if (tile === TileType.HOLE) color = 0x000000;
-        else if (tile === TileType.BRICK) color = 0xA52A2A;
+        else if (tile === TileType.BRICK) color = 0xa52a2a;
         else if (tile === TileType.GOAL) color = 0xffcc00;
         else if (tile === TileType.KEY) color = 0xffaa00;
-        else if (tile === TileType.DOOR_LOCKED) color = 0x8B0000;
-        else if (tile === TileType.DOOR_UNLOCKED) color = 0x228B22;
+        else if (tile === TileType.DOOR_LOCKED) color = 0x8b0000;
+        else if (tile === TileType.DOOR_UNLOCKED) color = 0x228b22;
         else if (tile >= TileType.CONVEYOR_UP && tile <= TileType.CONVEYOR_RIGHT) color = 0x888888;
         else if (tile === TileType.SPRING) color = 0xff6600;
-        else if (tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT) color = 0x9932CC;
+        else if (tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT) color = 0x9932cc;
         else if (tile === TileType.LAVA) color = 0xff4500;
-        else if (tile === TileType.WATER) color = 0x1E90FF;
+        else if (tile === TileType.WATER) color = 0x1e90ff;
         else if (tile === TileType.GLUE) color = 0x88cc88;
         else if (tile === TileType.CAGE) color = 0xcd7f32;
         else if (tile === TileType.TRAP) color = 0x8b4513;
