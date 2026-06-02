@@ -45,14 +45,59 @@
   ],
   "objects": {
     "monsters": [
-      { "id": "mon_patrol_1", "type": "patrol", "position": { "col": 2, "row": 2 }, "direction": "right", "isTamed": false, "isRidden": false, "patrolPath": [{ "col": 2, "row": 2 }, { "col": 3, "row": 2 }, { "col": 3, "row": 3 }, { "col": 2, "row": 3 }] },
-      { "id": "mon_chase_1", "type": "chase", "position": { "col": 15, "row": 15 }, "direction": "right", "isTamed": false, "isRidden": false },
-      { "id": "mon_tameable_1", "type": "tameable", "position": { "col": 16, "row": 16 }, "direction": "right", "isTamed": false, "isRidden": false },
-      { "id": "mon_phased_1", "type": "phased", "position": { "col": 17, "row": 17 }, "direction": "right", "isTamed": false, "isRidden": false },
-      { "id": "mon_zombie_1", "type": "zombie", "position": { "col": 18, "row": 18 }, "direction": "right", "isTamed": false, "isRidden": false }
+      {
+        "id": "mon_patrol_1",
+        "type": "patrol",
+        "position": { "col": 2, "row": 2 },
+        "direction": "right",
+        "isTamed": false,
+        "isRidden": false,
+        "patrolPath": [
+          { "col": 2, "row": 2 },
+          { "col": 3, "row": 2 },
+          { "col": 3, "row": 3 },
+          { "col": 2, "row": 3 }
+        ]
+      },
+      {
+        "id": "mon_chase_1",
+        "type": "chase",
+        "position": { "col": 15, "row": 15 },
+        "direction": "right",
+        "isTamed": false,
+        "isRidden": false
+      },
+      {
+        "id": "mon_tameable_1",
+        "type": "tameable",
+        "position": { "col": 16, "row": 16 },
+        "direction": "right",
+        "isTamed": false,
+        "isRidden": false
+      },
+      {
+        "id": "mon_phased_1",
+        "type": "phased",
+        "position": { "col": 17, "row": 17 },
+        "direction": "right",
+        "isTamed": false,
+        "isRidden": false
+      },
+      {
+        "id": "mon_zombie_1",
+        "type": "zombie",
+        "position": { "col": 18, "row": 18 },
+        "direction": "right",
+        "isTamed": false,
+        "isRidden": false
+      }
     ],
     "teleports": [
-      { "id": "tp1", "entry": { "col": 10, "row": 10 }, "exit": { "col": 15, "row": 5 } }
+      {
+        "id": "tp1",
+        "entry": { "col": 10, "row": 10 },
+        "exit": { "col": 15, "row": 5 }
+      }
     ],
     "conveyors": [
       { "id": "conv_up", "position": { "col": 7, "row": 6 }, "direction": "up" },
@@ -61,36 +106,94 @@
       { "id": "conv_right", "position": { "col": 10, "row": 6 }, "direction": "right" }
     ],
     "springs": [
-      { "id": "spring1", "position": { "col": 9, "row": 9 }, "launchDirection": "right", "force": 3 }
+      {
+        "id": "spring1",
+        "position": { "col": 9, "row": 9 },
+        "launchDirection": "right",
+        "force": 3
+      }
     ],
     "blackBoxes": [
-      { "id": "blackbox1", "position": { "col": 11, "row": 11 }, "inputCount": 1, "outputCount": 1, "mapping": "corn_to_core" }
+      {
+        "id": "blackbox1",
+        "position": { "col": 11, "row": 11 },
+        "inputCount": 1,
+        "outputCount": 1,
+        "mapping": "corn_to_core"
+      }
     ],
     "buttons": [
-      { "id": "btn1", "position": { "col": 12, "row": 12 }, "isPressed": false, "linkedObjects": ["bridge1"] }
+      {
+        "id": "btn1",
+        "position": { "col": 12, "row": 12 },
+        "isPressed": false,
+        "linkedObjects": ["bridge1"]
+      }
     ],
     "levers": [
-      { "id": "lever1", "position": { "col": 12, "row": 7 }, "state": false, "linkedObjects": ["bridge2"] }
+      {
+        "id": "lever1",
+        "position": { "col": 12, "row": 7 },
+        "state": false,
+        "linkedObjects": ["bridge2"]
+      }
     ],
     "timers": [
-      { "id": "timer1", "position": { "col": 13, "row": 7 }, "delay": 2000, "active": false, "remaining": 0, "linkedObjects": ["bridge3"] }
+      {
+        "id": "timer1",
+        "position": { "col": 13, "row": 7 },
+        "delay": 2000,
+        "active": false,
+        "remaining": 0,
+        "linkedObjects": ["bridge3"]
+      }
     ],
     "sensors": [
-      { "id": "sensor1", "position": { "col": 14, "row": 14 }, "range": 3, "active": true }
+      {
+        "id": "sensor1",
+        "position": { "col": 14, "row": 14 },
+        "range": 3,
+        "active": true
+      }
     ],
     "sorters": [
-      { "id": "sorter1", "position": { "col": 14, "row": 8 }, "order": "asc" }
+      {
+        "id": "sorter1",
+        "position": { "col": 14, "row": 8 },
+        "order": "asc"
+      }
     ],
     "bridges": [
-      { "id": "bridge1", "position": { "col": 12, "row": 10 }, "active": false, "buttonId": "btn1" },
-      { "id": "bridge2", "position": { "col": 12, "row": 11 }, "active": false, "buttonId": "lever1" },
-      { "id": "bridge3", "position": { "col": 12, "row": 12 }, "active": false, "buttonId": "timer1" }
+      {
+        "id": "bridge1",
+        "position": { "col": 12, "row": 10 },
+        "active": false
+      },
+      {
+        "id": "bridge2",
+        "position": { "col": 12, "row": 11 },
+        "active": false
+      },
+      {
+        "id": "bridge3",
+        "position": { "col": 12, "row": 12 },
+        "active": false
+      }
     ],
     "cages": [
-      { "id": "cage1", "position": { "col": 16, "row": 12 }, "isClosed": false, "prisoner": null }
+      {
+        "id": "cage1",
+        "position": { "col": 16, "row": 12 },
+        "isClosed": false,
+        "prisoner": null
+      }
     ],
     "traps": [
-      { "id": "trap1", "position": { "col": 17, "row": 8 }, "used": false }
+      {
+        "id": "trap1",
+        "position": { "col": 17, "row": 8 },
+        "used": false
+      }
     ]
   },
   "items": [
