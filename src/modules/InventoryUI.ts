@@ -1,14 +1,13 @@
 // src/modules/InventoryUI.ts
 // ============================================================================
-// UI ИНВЕНТАРЯ (рюкзак)
+// ИНТЕРФЕЙС ИНВЕНТАРЯ (UI)
 // ============================================================================
-// Отображает содержимое инвентаря игрока:
-// - ключи (список)
-// - количество кукурузы
-// - количество ядер
-// - наличие инструментов (дрель, крюк, крылья, приманка)
+// Отображает содержимое инвентаря игрока в виде всплывающего окна.
+// Показывает ключи, количество кукурузы, ядер, а также наличие инструментов.
 // ============================================================================
-// Появляется по нажатию на кнопку-рюкзак в правом нижнем углу экрана.
+// - Кнопка рюкзака (🎒) для открытия/закрытия окна
+// - Окно отображается в правом нижнем углу
+// - Обновляется при изменении инвентаря через событие INVENTORY_CHANGED
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -29,16 +28,19 @@ export class InventoryUI {
     this.createUI();
   }
 
+  // --------------------------------------------------------------------------
+  // СОЗДАНИЕ DOM-ЭЛЕМЕНТОВ
+  // --------------------------------------------------------------------------
   private createUI(): void {
-    // Контейнер для UI инвентаря (абсолютное позиционирование поверх canvas)
+    // Контейнер для всего UI инвентаря (кнопка + окно)
     this.container = document.createElement('div');
     this.container.style.position = 'absolute';
     this.container.style.bottom = '20px';
-    this.container.style.right = '240px';  // чтобы не перекрывать панель программы справа
+    this.container.style.right = '20px';   // расположение в правом нижнем углу
     this.container.style.zIndex = '1000';
     document.body.appendChild(this.container);
 
-    // Кнопка рюкзака
+    // Кнопка-рюкзак (открыть/закрыть окно)
     this.backpackButton = document.createElement('button');
     this.backpackButton.textContent = '🎒';
     this.backpackButton.style.width = '48px';
@@ -52,7 +54,7 @@ export class InventoryUI {
     this.backpackButton.onclick = () => this.toggleBackpack();
     this.container.appendChild(this.backpackButton);
 
-    // Окно рюкзака (скрыто по умолчанию)
+    // Окно инвентаря (скрыто по умолчанию)
     this.backpackWindow = document.createElement('div');
     this.backpackWindow.style.position = 'absolute';
     this.backpackWindow.style.bottom = '60px';
@@ -76,6 +78,9 @@ export class InventoryUI {
     this.backpackWindow.style.display = this.isOpen ? 'flex' : 'none';
   }
 
+  // --------------------------------------------------------------------------
+  // ОБНОВЛЕНИЕ ИНВЕНТАРЯ И ПЕРЕРИСОВКА
+  // --------------------------------------------------------------------------
   public updateInventory(inventory: Inventory): void {
     this.inventory = inventory;
     this.renderBackpack();
@@ -84,6 +89,7 @@ export class InventoryUI {
   private renderBackpack(): void {
     this.backpackWindow.innerHTML = '';
 
+    // Заголовок
     const title = document.createElement('div');
     title.textContent = '🎒 INVENTORY 🎒';
     title.style.color = '#ffcc00';
@@ -93,9 +99,8 @@ export class InventoryUI {
     title.style.marginBottom = '10px';
     this.backpackWindow.appendChild(title);
 
-    // Ключи (список)
-    const keysText = this.inventory.keys.length > 0 ? this.inventory.keys.join(', ') : 'none';
-    const keysSection = this.createSection('🔑 KEYS', this.inventory.keys.length, keysText);
+    // Ключи
+    const keysSection = this.createSection('🔑 KEYS', this.inventory.keys.length, this.inventory.keys.join(', '));
     this.backpackWindow.appendChild(keysSection);
 
     // Кукуруза
@@ -112,10 +117,11 @@ export class InventoryUI {
     if (this.inventory.hasHook) tools.push('🪝 Hook');
     if (this.inventory.hasWing) tools.push('🪽 Wing');
     if (this.inventory.hasBait) tools.push('🐟 Bait');
+
     const toolsSection = this.createSection('🛠️ TOOLS', tools.length, tools.join(', '));
     this.backpackWindow.appendChild(toolsSection);
 
-    // Общее количество предметов (сумма)
+    // Общее количество предметов
     const total = this.inventory.keys.length + this.inventory.corn + this.inventory.cores + tools.length;
     const totalSection = this.createSection('📦 TOTAL', total);
     this.backpackWindow.appendChild(totalSection);
@@ -124,7 +130,6 @@ export class InventoryUI {
   private createSection(label: string, value: number, details: string = ''): HTMLDivElement {
     const section = document.createElement('div');
     section.style.display = 'flex';
-    section.style.flexWrap = 'wrap';
     section.style.justifyContent = 'space-between';
     section.style.alignItems = 'center';
     section.style.padding = '5px 8px';
@@ -145,13 +150,14 @@ export class InventoryUI {
     section.appendChild(labelSpan);
     section.appendChild(valueSpan);
 
-    if (details && details.length > 0 && details !== 'none') {
+    if (details && details.length > 0) {
       const detailSpan = document.createElement('div');
       detailSpan.textContent = details;
       detailSpan.style.fontSize = '10px';
       detailSpan.style.color = '#888888';
       detailSpan.style.marginTop = '2px';
-      detailSpan.style.width = '100%';
+      detailSpan.style.gridColumn = 'span 2';
+      section.style.flexWrap = 'wrap';
       section.appendChild(detailSpan);
     }
 
