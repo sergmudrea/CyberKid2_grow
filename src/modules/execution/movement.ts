@@ -1,11 +1,13 @@
 // src/modules/execution/movement.ts
 // ============================================================================
-// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – ИСПРАВЛЕННАЯ ВЕРСИЯ
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – ПОЛНАЯ ВЕРСИЯ
 // ============================================================================
-// - При входе на запертую дверь, если есть ключ, дверь открывается и ключ расходуется
-// - При подборе предмета инвентарь обновляется через событие
-// - Добавлена проверка на сбор предметов при движении
-// - Обработка телепортов, конвейеров, пружин, механизмов
+// - Движение в четырёх направлениях
+// - Проверка границ, стен, ям, лавы, воды
+// - Открытие дверей с расходом ключа
+// - Сбор предметов (ключи, кукуруза, ядра, инструменты, ключ от клетки, драгоценности)
+// - Обработка монстров, клея, клетки
+// - Вызов обработчиков телепортов, конвейеров, пружин, чёрных ящиков и механизмов
 // ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
@@ -167,46 +169,47 @@ export class MovementExecutor {
   }
 
   private pickupItem(col: number, row: number, tile: TileType): void {
+    console.log(`[Movement] pickupItem at (${col},${row}) tile=${tile}`);
     switch (tile) {
       case TileType.KEY:
         this.inventory.keys.push(`key_${col}_${row}`);
-        logInfo('MovementExecutor', 'pickupItem', `Picked up key at (${col},${row})`);
+        console.log(`[Movement] Picked up key, keys: ${this.inventory.keys.length}`);
         break;
       case TileType.CORN:
         this.inventory.corn++;
-        logInfo('MovementExecutor', 'pickupItem', `Picked up corn at (${col},${row})`);
+        console.log(`[Movement] Picked up corn, total: ${this.inventory.corn}`);
         break;
       case TileType.CORE:
         this.inventory.cores++;
-        logInfo('MovementExecutor', 'pickupItem', `Picked up core at (${col},${row})`);
+        console.log(`[Movement] Picked up core, total: ${this.inventory.cores}`);
         break;
       case TileType.TOOL_DRILL:
         this.inventory.hasDrill = true;
         if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
-        logInfo('MovementExecutor', 'pickupItem', `Picked up drill at (${col},${row})`);
+        console.log(`[Movement] Picked up drill`);
         break;
       case TileType.TOOL_HOOK:
         this.inventory.hasHook = true;
         if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
-        logInfo('MovementExecutor', 'pickupItem', `Picked up hook at (${col},${row})`);
+        console.log(`[Movement] Picked up hook`);
         break;
       case TileType.TOOL_WING:
         this.inventory.hasWing = true;
         if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
-        logInfo('MovementExecutor', 'pickupItem', `Picked up wing at (${col},${row})`);
+        console.log(`[Movement] Picked up wing`);
         break;
       case TileType.TOOL_BAIT:
         this.inventory.hasBait = true;
         if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
-        logInfo('MovementExecutor', 'pickupItem', `Picked up bait at (${col},${row})`);
+        console.log(`[Movement] Picked up bait`);
         break;
       case TileType.CAGE_KEY:
         this.inventory.keys.push('cage_key');
-        logInfo('MovementExecutor', 'pickupItem', `Picked up cage key at (${col},${row})`);
+        console.log(`[Movement] Picked up cage key`);
         break;
       case TileType.GEM:
         this.inventory.cores += 5;
-        logInfo('MovementExecutor', 'pickupItem', `Picked up gem at (${col},${row})`);
+        console.log(`[Movement] Picked up gem, cores: ${this.inventory.cores}`);
         break;
       default:
         return;
