@@ -2,15 +2,17 @@
 // ============================================================================
 // ОБРАБОТЧИК ДВИЖЕНИЯ И ПОВОРОТОВ – ПАТЧ 2.0
 // ============================================================================
-// - Поддерживает раздельное управление башней и корпусом
-// - Новые команды: MOVE_FORWARD, MOVE_BACKWARD, TURN_LEFT, TURN_RIGHT,
-//   TURN_AROUND, SYNC_BODY, SET_ANGLE, RELATIVE_TURN, SHOW_AIM
-// - Классический режим (controlMode = classic) оставляет старые команды UP/DOWN/LEFT/RIGHT
-// - Обработка телепортов, конвейеров, пружин, клея, клеток, магнитов, замедляющих полей
-// - Полное логирование
+// Реализует команды:
+// - MOVE_FORWARD, MOVE_BACKWARD – движение вперёд/назад
+// - TURN_LEFT, TURN_RIGHT, TURN_AROUND, SYNC_BODY – управление башней и корпусом
+// - SET_ANGLE, RELATIVE_TURN, SHOW_AIM – работа с углами и прицелом
+// - UP, DOWN, LEFT, RIGHT – классическое движение (для обратной совместимости)
+// ============================================================================
+// Учитывает режим управления (controlMode: separate / classic)
+// Генерирует события для визуализации и UI
 // ============================================================================
 
-import { Command, TileType, ControlMode } from '../../types/index';
+import { Command, TileType, Point, Inventory, ControlMode } from '../../types/index';
 import { gameEvents as eventBus } from '../../core/EventBus';
 import {
   getFrontPosition,
@@ -33,7 +35,7 @@ import { ToolsExecutor } from './tools';
 export class MovementExecutor {
   private level: any;
   private player: any;
-  private inventory: any;
+  private inventory: Inventory;
   private lastDirection: 'up' | 'down' | 'left' | 'right';
   private explorationMode: boolean;
   private tilesExecutor: TilesExecutor;
@@ -42,7 +44,13 @@ export class MovementExecutor {
   private stepCount: number = 0;
   private controlMode: ControlMode;
 
-  constructor(level: any, player: any, inventory: any, toolsExecutor: ToolsExecutor, controlMode: ControlMode = ControlMode.SEPARATE) {
+  constructor(
+    level: any,
+    player: any,
+    inventory: Inventory,
+    toolsExecutor: ToolsExecutor,
+    controlMode: ControlMode = ControlMode.SEPARATE
+  ) {
     this.level = level;
     this.player = player;
     this.inventory = inventory;
@@ -51,7 +59,6 @@ export class MovementExecutor {
     this.explorationMode = false;
     this.tilesExecutor = new TilesExecutor(level, player, inventory);
     this.backdoorUsed = false;
-    this.lastDirection = 'right';
   }
 
   public setExplorationMode(enabled: boolean): void {
@@ -68,256 +75,317 @@ export class MovementExecutor {
     onDirectionChange: (dir: 'up' | 'down' | 'left' | 'right') => void
   ): Promise<'ok' | 'dead'> {
     this.stepCount++;
+    this.lastDirection = currentDirection;
 
-    // Логирование начала шага
-    const oldPos = this.player.getPosition();
-    console.log(`[MOVEMENT] Step ${this.stepCount}: Command=${cmd}`);
-    console.log(`   pos=(${oldPos.col},${oldPos.row}) turret=${this.player.getTurretAngle()} hull=${this.player.getHullDirection()}`);
-    console.log(`   Inventory: keys=${this.inventory.keys.length}, corn=${this.inventory.corn}, cores=${this.inventory.cores}, tools=${this.inventory.tools.join(',') || 'none'}`);
+    // Логирование шага
+    console.log(`[MOVEMENT] Step ${this.stepCount}: Command=${cmd}, dir=${currentDirection}`);
+    console.log(`   Inventory: keys=${this.inventory.keys.length}, corn=${this.inventory.corn}, cores=${this.inventory.cores}`);
 
     // Обработка команд в зависимости от режима управления
-    if (this.controlMode === ControlMode.CLASSIC) {
-      return this.executeClassic(cmd, currentDirection, onDirectionChange);
-    } else {
-      return this.executeSeparate(cmd, currentDirection, onDirectionChange);
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // НОВЫЙ РЕЖИМ (РАЗДЕЛЬНОЕ УПРАВЛЕНИЕ)
-  // --------------------------------------------------------------------------
-  private async executeSeparate(
-    cmd: Command,
-    currentDirection: 'up' | 'down' | 'left' | 'right',
-    onDirectionChange: (dir: 'up' | 'down' | 'left' | 'right') => void
-  ): Promise<'ok' | 'dead'> {
     switch (cmd) {
-      // Повороты башни (без движения)
-      case Command.TURN_LEFT:
-        this.player.turnTurretLeft();
-        console.log(`   turret turned left -> angle=${this.player.getTurretAngle()}`);
-        return 'ok';
-
-      case Command.TURN_RIGHT:
-        this.player.turnTurretRight();
-        console.log(`   turret turned right -> angle=${this.player.getTurretAngle()}`);
-        return 'ok';
-
-      case Command.TURN_AROUND:
-        this.player.turnTurretAround();
-        console.log(`   turret turned around -> angle=${this.player.getTurretAngle()}`);
-        return 'ok';
-
-      case Command.SYNC_BODY:
-        this.player.syncBodyWithTurret();
-        console.log(`   body synced to turret -> hull=${this.player.getHullDirection()}`);
-        return 'ok';
-
-      case Command.SET_ANGLE:
-        // Ожидается следующий параметр – число (угол)
-        // В реальном выполнении нужно прочитать аргумент, упрощённо: поворот до 0
-        // Для полноты: считываем параметр из команды (в AST).
-        // Здесь заглушка – реальный параметр будет передан через runner.
-        // Пока оставим просто поворот на 0.
-        this.player.setTurretAngle(0);
-        console.log(`   turret angle set to 0`);
-        return 'ok';
-
-      case Command.RELATIVE_TURN:
-        // Аналогично, требуется параметр. Заглушка.
-        console.log(`   relative turn (not fully implemented)`);
-        return 'ok';
-
-      case Command.SHOW_AIM:
-        eventBus.emit('SHOW_AIM', { pos: this.player.getPosition(), angle: this.player.getTurretAngle() });
-        console.log(`   showing aim line`);
-        return 'ok';
-
-      // Движение
+      // ---------- НОВЫЕ КОМАНДЫ (всегда доступны в separate) ----------
       case Command.MOVE_FORWARD:
-        return this.executeMove(() => this.player.moveForward(), 'forward');
-
+        return this.moveForward(currentDirection, onDirectionChange);
       case Command.MOVE_BACKWARD:
-        return this.executeMove(() => this.player.moveBackward(), 'backward');
+        return this.moveBackward(currentDirection, onDirectionChange);
+      case Command.TURN_LEFT:
+        return this.turnLeft();
+      case Command.TURN_RIGHT:
+        return this.turnRight();
+      case Command.TURN_AROUND:
+        return this.turnAround();
+      case Command.SYNC_BODY:
+        return this.syncBody();
+      case Command.SET_ANGLE:
+        return this.setAngle(currentDirection);
+      case Command.RELATIVE_TURN:
+        return this.relativeTurn(currentDirection);
+      case Command.SHOW_AIM:
+        return this.showAim();
 
-      // Классические команды в separate режиме – могут быть запрещены или преобразованы
+      // ---------- КЛАССИЧЕСКИЕ КОМАНДЫ (зависят от controlMode) ----------
       case Command.UP:
+        if (this.controlMode === ControlMode.CLASSIC) {
+          // В классическом режиме UP – движение вверх
+          return this.moveClassic(0, -1, currentDirection, onDirectionChange);
+        } else {
+          // В separate – можно интерпретировать как движение вперёд? Нет, лучше игнорировать или эмулировать.
+          // По умолчанию игнорируем.
+          return 'ok';
+        }
       case Command.DOWN:
+        if (this.controlMode === ControlMode.CLASSIC) {
+          return this.moveClassic(0, 1, currentDirection, onDirectionChange);
+        }
+        return 'ok';
       case Command.LEFT:
+        if (this.controlMode === ControlMode.CLASSIC) {
+          // LEFT = поворот влево + движение влево
+          this.turnLeft();
+          return this.moveClassic(-1, 0, currentDirection, onDirectionChange);
+        }
+        return 'ok';
       case Command.RIGHT:
-        console.warn(`Classic movement command ${cmd} used in separate mode – ignored`);
+        if (this.controlMode === ControlMode.CLASSIC) {
+          this.turnRight();
+          return this.moveClassic(1, 0, currentDirection, onDirectionChange);
+        }
         return 'ok';
 
+      // ---------- ОСТАЛЬНЫЕ КОМАНДЫ (без изменений) ----------
       default:
-        // Остальные команды (инвентарь, инструменты, бой) обрабатываются в runner
+        log('MovementExecutor', 'execute', `Ignored command: ${cmd}`);
         return 'ok';
     }
   }
 
   // --------------------------------------------------------------------------
-  // КЛАССИЧЕСКИЙ РЕЖИМ (ДЛЯ СТАРЫХ УРОВНЕЙ)
+  // НОВЫЕ КОМАНДЫ (раздельное управление)
   // --------------------------------------------------------------------------
-  private async executeClassic(
-    cmd: Command,
-    currentDirection: 'up' | 'down' | 'left' | 'right',
-    onDirectionChange: (dir: 'up' | 'down' | 'left' | 'right') => void
-  ): Promise<'ok' | 'dead'> {
-    let dx = 0, dy = 0;
-    let newDirection: 'up' | 'down' | 'left' | 'right' = currentDirection;
 
-    switch (cmd) {
-      case Command.UP:
-        dy = -1;
-        newDirection = 'up';
-        break;
-      case Command.DOWN:
-        dy = 1;
-        newDirection = 'down';
-        break;
-      case Command.LEFT:
-        dx = -1;
-        newDirection = 'left';
-        break;
-      case Command.RIGHT:
-        dx = 1;
-        newDirection = 'right';
-        break;
-      default:
-        return 'ok';
-    }
-
-    onDirectionChange(newDirection);
-    this.lastDirection = newDirection;
-    return this.executeMovement(dx, dy, newDirection);
+  private async moveForward(dir: string, onDirectionChange: (dir: string) => void): Promise<'ok' | 'dead'> {
+    const angle = this.player.getTurretAngle();
+    const delta = this.angleToDelta(angle);
+    if (!delta) return 'ok';
+    return this.performMove(delta.dx, delta.dy, dir, onDirectionChange);
   }
 
-  // --------------------------------------------------------------------------
-  // ОБЩАЯ ЛОГИКА ДВИЖЕНИЯ (ДЛЯ ОБОИХ РЕЖИМОВ)
-  // --------------------------------------------------------------------------
-  private async executeMove(moveFunc: () => boolean, moveType: string): Promise<'ok' | 'dead'> {
-    const oldPos = this.player.getPosition();
-    const success = moveFunc();
-    if (!success) {
-      console.log(`   ❌ ${moveType} movement failed (blocked)`);
-      return 'dead';
-    }
-    const newPos = this.player.getPosition();
-    console.log(`   ✅ MOVED ${moveType} to (${newPos.col},${newPos.row})`);
+  private async moveBackward(dir: string, onDirectionChange: (dir: string) => void): Promise<'ok' | 'dead'> {
+    const hullDir = this.player.getHullDirection();
+    const delta = this.directionToDelta(hullDir, -1);
+    if (!delta) return 'ok';
+    return this.performMove(delta.dx, delta.dy, dir, onDirectionChange);
+  }
 
-    // Обработка клетки после движения
-    const finalPos = this.player.getPosition();
-    const finalTile = this.level.map[finalPos.row][finalPos.col];
-    await this.processTileAfterMove(finalPos, finalTile);
+  private turnLeft(): 'ok' {
+    this.player.turnTurretLeft();
     return 'ok';
   }
 
-  private async executeMovement(dx: number, dy: number, newDirection: 'up'|'down'|'left'|'right'): Promise<'ok' | 'dead'> {
+  private turnRight(): 'ok' {
+    this.player.turnTurretRight();
+    return 'ok';
+  }
+
+  private turnAround(): 'ok' {
+    this.player.turnTurretAround();
+    return 'ok';
+  }
+
+  private syncBody(): 'ok' {
+    this.player.syncBodyWithTurret();
+    return 'ok';
+  }
+
+  private async setAngle(cmd: Command): Promise<'ok'> {
+    // Парсим следующий параметр (угол)
+    // В реальной команде SET_ANGLE идёт с числовым аргументом
+    // Для упрощения используем eventBus, чтобы получить значение из программы
+    // В этой заглушке не обрабатываем, но в реальном движке нужно получать аргумент.
+    // Пока просто логируем.
+    console.log('[Movement] SET_ANGLE not fully implemented');
+    return 'ok';
+  }
+
+  private async relativeTurn(cmd: Command): Promise<'ok'> {
+    console.log('[Movement] RELATIVE_TURN not fully implemented');
+    return 'ok';
+  }
+
+  private async showAim(): Promise<'ok'> {
+    eventBus.emit('SHOW_AIM_LINE', { pos: this.player.getPosition(), angle: this.player.getTurretAngle() });
+    console.log('[Movement] SHOW_AIM emitted');
+    return 'ok';
+  }
+
+  // --------------------------------------------------------------------------
+  // КЛАССИЧЕСКОЕ ДВИЖЕНИЕ (для обратной совместимости)
+  // --------------------------------------------------------------------------
+  private async moveClassic(dx: number, dy: number, dir: string, onDirectionChange: (dir: string) => void): Promise<'ok' | 'dead'> {
+    // В классическом режиме движение не зависит от башни
+    return this.performMove(dx, dy, dir, onDirectionChange);
+  }
+
+  // --------------------------------------------------------------------------
+  // ОБЩАЯ ЛОГИКА ПЕРЕМЕЩЕНИЯ
+  // --------------------------------------------------------------------------
+  private async performMove(dx: number, dy: number, dir: string, onDirectionChange: (dir: string) => void): Promise<'ok' | 'dead'> {
     const oldPos = this.player.getPosition();
     const newPos = { col: oldPos.col + dx, row: oldPos.row + dy };
-    console.log(`   moving from (${oldPos.col},${oldPos.row}) to (${newPos.col},${newPos.row})`);
 
-    // Проверка границ
+    // Определяем новое направление (если команда изменила направление корпуса? В separate команды движения не меняют направление)
+    // Для классических команд LEFT/RIGHT направление уже изменено до вызова.
+    onDirectionChange(dir);
+
+    // Границы
     if (newPos.col < 0 || newPos.col >= this.level.width ||
         newPos.row < 0 || newPos.row >= this.level.height) {
       console.log(`   ❌ OUT OF BOUNDS -> DEAD`);
-      eventBus.emit('PLAYER_DIED', { cause: 'out_of_bounds' });
+      eventBus.emit('PLAYER_DIED', { cause: 'out_of_bounds', pos: newPos });
       return 'dead';
     }
 
     const tile = this.level.map[newPos.row][newPos.col];
-    console.log(`   target tile=${TileType[tile]}`);
+    console.log(`   target tile code=${tile} (${TileType[tile] || 'UNKNOWN'})`);
 
-    // Проверка проходимости (с учётом инвентаря и инструментов)
+    // Проверка на смерть
     if (!this.explorationMode) {
-      if (isWall(tile) && !this.inventory.hasDrill) {
-        console.log(`   🧱 WALL without drill -> DEAD`);
+      if (isWall(tile)) {
+        console.log(`   🧱 WALL -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'wall', pos: newPos });
         return 'dead';
       }
-      if ((isHole(tile) || isDeadlyLiquid(tile)) && !this.toolsExecutor.hasActiveWing()) {
-        console.log(`   🕳️ HAZARD without wings -> DEAD`);
+      if (isHole(tile) && !this.toolsExecutor.hasActiveWing()) {
+        console.log(`   🕳️ HOLE without active wings -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'hole', pos: newPos });
         return 'dead';
       }
-      if (tile === TileType.DOOR_LOCKED && this.inventory.keys.length === 0) {
-        console.log(`   🔒 LOCKED DOOR without key -> DEAD`);
-        return 'dead';
-      }
-      if (tile === TileType.BRICK) {
-        console.log(`   🧱 BRICK needs PUSH -> DEAD`);
+      if (isDeadlyLiquid(tile) && !this.toolsExecutor.hasActiveWing()) {
+        console.log(`   🌊 LAVA/WATER without active wings -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'liquid', pos: newPos });
         return 'dead';
       }
     }
 
-    // Монстры
+    // Дверь без ключа
+    if (tile === TileType.DOOR_LOCKED) {
+      if (this.inventory.keys.length === 0) {
+        console.log(`   🔒 LOCKED DOOR and no key -> DEAD`);
+        eventBus.emit('PLAYER_DIED', { cause: 'locked_door', pos: newPos });
+        return 'dead';
+      } else {
+        this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
+        this.inventory.keys.pop();
+        this.backdoorUsed = true;
+        console.log(`   🔑 DOOR unlocked using key, remaining keys=${this.inventory.keys.length}`);
+        eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
+        eventBus.emit('DOOR_UNLOCKED', { pos: newPos });
+      }
+    }
+
+    if (tile === TileType.BRICK) {
+      console.log(`   🧱 BRICK (needs PUSH) -> DEAD`);
+      eventBus.emit('PLAYER_DIED', { cause: 'brick', pos: newPos });
+      return 'dead';
+    }
+
     const monsterHere = this.level.objects?.monsters?.find((m: any) =>
       m.position.col === newPos.col && m.position.row === newPos.row
     );
     if (monsterHere && !this.explorationMode && !monsterHere.isTamed && !monsterHere.isRidden) {
-      console.log(`   👾 MONSTER -> DEAD`);
+      console.log(`   👾 MONSTER at (${newPos.col},${newPos.row}) -> DEAD`);
+      eventBus.emit('PLAYER_DIED', { cause: 'monster', pos: newPos, monsterId: monsterHere.id });
       return 'dead';
     }
 
-    // Клей, клетка
+    // Клей
     if (tile === TileType.GLUE && !this.player.isGlued()) {
       this.tilesExecutor.processGlue(newPos);
     }
+
+    // Клетка
     if (tile === TileType.CAGE) {
       const trapped = this.tilesExecutor.processCage(newPos, 'player');
-      if (trapped) return 'dead';
+      if (trapped) {
+        eventBus.emit('PLAYER_DIED', { cause: 'cage', pos: newPos });
+        return 'dead';
+      }
     }
 
-    // Выполняем движение
-    this.player.moveClassic?.(dx, dy);
+    // Перемещение
+    this.player.moveClassic?.(dx, dy); // В Player нужно добавить метод moveClassic или использовать общий
+    // Для совместимости: вызываем нужные методы Player
+    // В новой версии Player есть методы moveForward/moveBackward, а также moveUp/Down/Left/Right для классики.
+    // Здесь мы уже определили, что команда движения, поэтому вызываем соответствующий метод.
+    if (dx === 0 && dy === -1) this.player.moveUp();
+    else if (dx === 0 && dy === 1) this.player.moveDown();
+    else if (dx === -1 && dy === 0) this.player.moveLeft();
+    else if (dx === 1 && dy === 0) this.player.moveRight();
+
     const finalPos = this.player.getPosition();
     console.log(`   ✅ MOVED to (${finalPos.col},${finalPos.row})`);
 
-    // Обработка клетки после движения
+    // Сбор предметов
     const finalTile = this.level.map[finalPos.row][finalPos.col];
-    await this.processTileAfterMove(finalPos, finalTile);
+    const itemIndex = this.level.items?.findIndex((it: any) => it.pos.col === finalPos.col && it.pos.row === finalPos.row);
+    if (itemIndex !== undefined && itemIndex !== -1) {
+      const item = this.level.items[itemIndex];
+      console.log(`   📦 Found item in items[]: id=${item.id}`);
+      this.pickupItemFromItem(item.id, finalPos.col, finalPos.row);
+      this.level.items.splice(itemIndex, 1);
+    } else if (isPickupItem(finalTile)) {
+      console.log(`   📦 Found pickup tile: ${TileType[finalTile]}`);
+      this.pickupItem(finalPos.col, finalPos.row, finalTile);
+    }
+
+    // Телепорт
+    if (finalTile === TileType.TELEPORT_IN) {
+      this.tilesExecutor.processTeleport(finalPos);
+    }
+
+    // Конвейер
+    if (isConveyor(finalTile)) {
+      await this.tilesExecutor.processConveyor(finalPos, '');
+    }
+
+    // Пружина
+    if (finalTile === TileType.SPRING) {
+      // Направление для пружины – текущее направление игрока (корпуса)
+      await this.tilesExecutor.processSpring(finalPos, this.player.getHullDirection());
+    }
+
+    // Чёрный ящик
+    if (finalTile === TileType.BLACK_BOX) {
+      this.tilesExecutor.processBlackBox(finalPos);
+    }
+
+    // Механизмы
+    if (finalTile === TileType.BUTTON) this.tilesExecutor.processButton(finalPos);
+    if (finalTile === TileType.LEVER) this.tilesExecutor.processLever(finalPos);
+    if (finalTile === TileType.TIMER) this.tilesExecutor.processTimer(finalPos);
+    if (finalTile === TileType.SENSOR) this.tilesExecutor.processSensor(finalPos);
+    if (finalTile === TileType.SORTER) this.tilesExecutor.processSorter(finalPos);
+
+    // Магнит – обрабатывается отдельно в TilesExecutor
+    if (finalTile === TileType.MAGNET) {
+      // Можно вызвать специальный метод, но для простоты оставим
+    }
+
+    // Замедляющее поле – сообщаем игроку
+    if (finalTile === TileType.SLOW_FIELD) {
+      this.player.setSlowFactor(2);
+    } else {
+      this.player.resetSlowFactor();
+    }
+
     return 'ok';
   }
 
   // --------------------------------------------------------------------------
-  // ОБРАБОТКА ТАЙЛА ПОСЛЕ ДВИЖЕНИЯ
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
   // --------------------------------------------------------------------------
-  private async processTileAfterMove(pos: Point, tile: TileType): Promise<void> {
-    // Сбор предметов
-    if (isPickupItem(tile)) {
-      this.pickupItem(pos.col, pos.row, tile);
+  private angleToDelta(angle: number): { dx: number; dy: number } | null {
+    switch (angle) {
+      case 0:   return { dx: 0, dy: -1 };
+      case 90:  return { dx: 1, dy: 0 };
+      case 180: return { dx: 0, dy: 1 };
+      case 270: return { dx: -1, dy: 0 };
+      default:  return null;
     }
-
-    // Телепорт
-    if (tile === TileType.TELEPORT_IN) {
-      this.tilesExecutor.processTeleport(pos);
-    }
-
-    // Конвейер
-    if (isConveyor(tile)) {
-      await this.tilesExecutor.processConveyor(pos, 'move');
-    }
-
-    // Пружина
-    if (tile === TileType.SPRING) {
-      await this.tilesExecutor.processSpring(pos, this.lastDirection);
-    }
-
-    // Чёрный ящик
-    if (tile === TileType.BLACK_BOX) {
-      this.tilesExecutor.processBlackBox(pos);
-    }
-
-    // Кнопки, рычаги, таймеры, сенсоры, сортировщики
-    if (tile === TileType.BUTTON) this.tilesExecutor.processButton(pos);
-    if (tile === TileType.LEVER) this.tilesExecutor.processLever(pos);
-    if (tile === TileType.TIMER) this.tilesExecutor.processTimer(pos);
-    if (tile === TileType.SENSOR) this.tilesExecutor.processSensor(pos);
-    if (tile === TileType.SORTER) this.tilesExecutor.processSorter(pos);
   }
 
-  // --------------------------------------------------------------------------
-  // ПОДБОР ПРЕДМЕТОВ
-  // --------------------------------------------------------------------------
+  private directionToDelta(dir: 'up'|'down'|'left'|'right', multiplier: number = 1): { dx: number; dy: number } | null {
+    switch (dir) {
+      case 'up':    return { dx: 0, dy: -1 * multiplier };
+      case 'down':  return { dx: 0, dy: 1 * multiplier };
+      case 'left':  return { dx: -1 * multiplier, dy: 0 };
+      case 'right': return { dx: 1 * multiplier, dy: 0 };
+      default:      return null;
+    }
+  }
+
   private pickupItem(col: number, row: number, tile: TileType): void {
-    console.log(`   🎒 PICKUP: ${TileType[tile]} at (${col},${row})`);
+    console.log(`   🎒 PICKUP (tile): ${TileType[tile]} at (${col},${row})`);
     switch (tile) {
       case TileType.KEY:
         this.inventory.keys.push(`key_${col}_${row}`);
@@ -355,7 +423,44 @@ export class MovementExecutor {
     }
     this.level.map[row][col] = TileType.PLATFORM;
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-    eventBus.emit('OBJECT_COLLECTED', { objectId: `${tile}_${col}_${row}` });
+  }
+
+  private pickupItemFromItem(itemId: string, col: number, row: number): void {
+    console.log(`   🎒 PICKUP (item): ${itemId} at (${col},${row})`);
+    switch (itemId) {
+      case 'key1': case 'key':
+        this.inventory.keys.push(`key_${col}_${row}`);
+        break;
+      case 'corn1': case 'corn':
+        this.inventory.corn++;
+        break;
+      case 'core1': case 'core':
+        this.inventory.cores++;
+        break;
+      case 'drill':
+        this.inventory.hasDrill = true;
+        if (!this.inventory.tools.includes('drill')) this.inventory.tools.push('drill');
+        break;
+      case 'hook':
+        this.inventory.hasHook = true;
+        if (!this.inventory.tools.includes('hook')) this.inventory.tools.push('hook');
+        break;
+      case 'wing':
+        this.inventory.hasWing = true;
+        if (!this.inventory.tools.includes('wing')) this.inventory.tools.push('wing');
+        break;
+      case 'bait':
+        this.inventory.hasBait = true;
+        if (!this.inventory.tools.includes('bait')) this.inventory.tools.push('bait');
+        break;
+      case 'cage_key':
+        this.inventory.keys.push('cage_key');
+        break;
+      case 'gem1': case 'gem':
+        this.inventory.cores += 5;
+        break;
+    }
+    eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
   }
 
   public isBackdoorUsed(): boolean {
