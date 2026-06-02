@@ -1,10 +1,10 @@
 // src/modules/execution/movement.ts
 // ============================================================================
-// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – С ДЕТАЛЬНЫМ ЛОГИРОВАНИЕМ
+// ОСНОВНАЯ ЛОГИКА ДВИЖЕНИЯ – С ПОДДЕРЖКОЙ ВРЕМЕННЫХ КРЫЛЬЕВ
 // ============================================================================
-// - Каждый шаг логирует позицию, направление, текущий инвентарь
-// - Логирует проверки на стены, ямы, монстров, двери, сбор предметов
-// - Логирует вызовы конвейеров, пружин, телепортов и механизмов
+// - Проверка на ямы/лаву/воду с учётом hasActiveWing()
+// - Полное логирование каждого шага
+// - Сбор предметов из карты и из items
 // ============================================================================
 
 import { Command, TileType, Point, Inventory } from '../../types/index';
@@ -25,6 +25,7 @@ import {
   logError,
 } from './helpers';
 import { TilesExecutor } from './tiles';
+import { ToolsExecutor } from './tools'; // нужно для проверки активных крыльев
 
 export class MovementExecutor {
   private level: any;
@@ -34,12 +35,14 @@ export class MovementExecutor {
   private explorationMode: boolean;
   private tilesExecutor: TilesExecutor;
   private backdoorUsed: boolean;
-  private stepCount: number = 0; // для отладки
+  private stepCount: number = 0;
+  private toolsExecutor: ToolsExecutor; // добавили ссылку
 
-  constructor(level: any, player: any, inventory: Inventory) {
+  constructor(level: any, player: any, inventory: Inventory, toolsExecutor: ToolsExecutor) {
     this.level = level;
     this.player = player;
     this.inventory = inventory;
+    this.toolsExecutor = toolsExecutor;
     this.explorationMode = false;
     this.tilesExecutor = new TilesExecutor(level, player, inventory);
     this.backdoorUsed = false;
@@ -72,7 +75,6 @@ export class MovementExecutor {
     const oldPos = this.player.getPosition();
     const newPos = { col: oldPos.col + dx, row: oldPos.row + dy };
 
-    // ЛОГ: начало шага
     console.log(`[MOVEMENT] Step ${this.stepCount}: Command=${cmd}, dir=${newDirection}`);
     console.log(`   oldPos=(${oldPos.col},${oldPos.row}) newPos=(${newPos.col},${newPos.row})`);
     console.log(`   Inventory: keys=${this.inventory.keys.length}, corn=${this.inventory.corn}, cores=${this.inventory.cores}, tools=${this.inventory.tools.join(',') || 'none'}`);
@@ -93,23 +95,22 @@ export class MovementExecutor {
         console.log(`   🧱 WALL -> DEAD`);
         return 'dead';
       }
-      if (isHole(tile) && !this.inventory.hasWing) {
-        console.log(`   🕳️ HOLE without wings -> DEAD`);
+      if (isHole(tile) && !this.toolsExecutor.hasActiveWing()) {
+        console.log(`   🕳️ HOLE without active wings -> DEAD`);
         return 'dead';
       }
-      if (isDeadlyLiquid(tile) && !this.inventory.hasWing) {
-        console.log(`   🌊 LAVA/WATER without wings -> DEAD`);
+      if (isDeadlyLiquid(tile) && !this.toolsExecutor.hasActiveWing()) {
+        console.log(`   🌊 LAVA/WATER without active wings -> DEAD`);
         return 'dead';
       }
     }
 
-    // Дверь без ключа – смерть
+    // Дверь без ключа
     if (tile === TileType.DOOR_LOCKED) {
       if (this.inventory.keys.length === 0) {
         console.log(`   🔒 LOCKED DOOR and no key -> DEAD`);
         return 'dead';
       } else {
-        // Есть ключ – открываем дверь, расходуем ключ
         this.level.map[newPos.row][newPos.col] = TileType.DOOR_UNLOCKED;
         const removedKey = this.inventory.keys.pop();
         this.backdoorUsed = true;
@@ -119,13 +120,11 @@ export class MovementExecutor {
       }
     }
 
-    // Кирпич – смерть
     if (tile === TileType.BRICK) {
       console.log(`   🧱 BRICK (needs PUSH) -> DEAD`);
       return 'dead';
     }
 
-    // Монстры
     const monsterHere = this.level.objects?.monsters?.find((m: any) =>
       m.position.col === newPos.col && m.position.row === newPos.row
     );
@@ -134,7 +133,6 @@ export class MovementExecutor {
       return 'dead';
     }
 
-    // Клей и клетка
     if (tile === TileType.GLUE && !this.player.isGlued()) {
       console.log(`   🩹 GLUE - will glue player after move`);
       this.tilesExecutor.processGlue(newPos);
@@ -145,53 +143,41 @@ export class MovementExecutor {
       if (trapped) return 'dead';
     }
 
-    // Выполняем движение
+    // Движение
     this.player.move(cmd);
     const finalPos = this.player.getPosition();
     console.log(`   ✅ MOVED to (${finalPos.col},${finalPos.row})`);
 
-    // СБОР ПРЕДМЕТОВ
+    // Сбор предметов
     const finalTile = this.level.map[finalPos.row][finalPos.col];
-
-    // 1. Проверка на предметы из массива items (уровни из JSON)
     const itemIndex = this.level.items?.findIndex((it: any) => it.pos.col === finalPos.col && it.pos.row === finalPos.row);
     if (itemIndex !== undefined && itemIndex !== -1) {
       const item = this.level.items[itemIndex];
       console.log(`   📦 Found item in items[]: id=${item.id}`);
       this.pickupItemFromItem(item.id, finalPos.col, finalPos.row);
       this.level.items.splice(itemIndex, 1);
-    }
-    // 2. Если на клетке есть предмет в виде тайла (из карты)
-    else if (isPickupItem(finalTile)) {
+    } else if (isPickupItem(finalTile)) {
       console.log(`   📦 Found pickup tile: ${TileType[finalTile]}`);
       this.pickupItem(finalPos.col, finalPos.row, finalTile);
     }
 
-    // Телепорт
+    // Телепорт, конвейер, пружина и механизмы
     if (finalTile === TileType.TELEPORT_IN) {
       console.log(`   🌀 TELEPORT_IN - activating teleport`);
       this.tilesExecutor.processTeleport(finalPos);
     }
-
-    // Конвейер
     if (isConveyor(finalTile)) {
       console.log(`   ⬇️ CONVEYOR - will move extra step`);
       await this.tilesExecutor.processConveyor(finalPos, cmd);
     }
-
-    // Пружина
     if (finalTile === TileType.SPRING) {
       console.log(`   🚀 SPRING - will launch player`);
       await this.tilesExecutor.processSpring(finalPos, newDirection);
     }
-
-    // Чёрный ящик
     if (finalTile === TileType.BLACK_BOX) {
       console.log(`   📦 BLACK_BOX - processing transformation`);
       this.tilesExecutor.processBlackBox(finalPos);
     }
-
-    // Механизмы
     if (finalTile === TileType.BUTTON) {
       console.log(`   🔘 BUTTON pressed`);
       this.tilesExecutor.processButton(finalPos);
@@ -213,7 +199,7 @@ export class MovementExecutor {
       this.tilesExecutor.processSorter(finalPos);
     }
 
-    console.log(`   --- Step ${this.stepCount} completed successfully ---`);
+    console.log(`   --- Step ${this.stepCount} completed ---`);
     return 'ok';
   }
 
@@ -222,7 +208,7 @@ export class MovementExecutor {
     switch (tile) {
       case TileType.KEY:
         this.inventory.keys.push(`key_${col}_${row}`);
-        console.log(`      -> key added, total keys: ${this.inventory.keys.length}`);
+        console.log(`      -> key added, keys: ${this.inventory.keys.length}`);
         break;
       case TileType.CORN:
         this.inventory.corn++;
@@ -261,29 +247,24 @@ export class MovementExecutor {
         console.log(`      -> gem added (+5 cores), cores: ${this.inventory.cores}`);
         break;
       default:
-        console.log(`      -> unknown pickup tile, ignored`);
         return;
     }
     this.level.map[row][col] = TileType.PLATFORM;
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-    eventBus.emit('OBJECT_COLLECTED', { objectId: `${tile}_${col}_${row}` });
   }
 
   private pickupItemFromItem(itemId: string, col: number, row: number): void {
     console.log(`   🎒 PICKUP (item): ${itemId} at (${col},${row})`);
     switch (itemId) {
-      case 'key1':
-      case 'key':
+      case 'key1': case 'key':
         this.inventory.keys.push(`key_${col}_${row}`);
         console.log(`      -> key added, keys: ${this.inventory.keys.length}`);
         break;
-      case 'corn1':
-      case 'corn':
+      case 'corn1': case 'corn':
         this.inventory.corn++;
         console.log(`      -> corn added, total: ${this.inventory.corn}`);
         break;
-      case 'core1':
-      case 'core':
+      case 'core1': case 'core':
         this.inventory.cores++;
         console.log(`      -> core added, total: ${this.inventory.cores}`);
         break;
@@ -311,17 +292,12 @@ export class MovementExecutor {
         this.inventory.keys.push('cage_key');
         console.log(`      -> cage key added`);
         break;
-      case 'gem1':
-      case 'gem':
+      case 'gem1': case 'gem':
         this.inventory.cores += 5;
         console.log(`      -> gem added (+5 cores), cores: ${this.inventory.cores}`);
         break;
-      default:
-        console.warn(`      -> unknown item id: ${itemId}, ignored`);
-        return;
     }
     eventBus.emit('INVENTORY_CHANGED', { inventory: this.inventory });
-    eventBus.emit('OBJECT_COLLECTED', { objectId: `${itemId}_${col}_${row}` });
   }
 
   public isBackdoorUsed(): boolean {
