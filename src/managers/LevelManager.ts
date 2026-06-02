@@ -161,6 +161,7 @@ export class LevelManager {
     if (!this.worldsLevels.has('arcade') || this.worldsLevels.get('arcade')!.length === 0) {
       this.generateArcadeLevels();
     } else {
+      // Обновляем Arcade, если добавились новые уровни (например, test_all)
       const arcadeLevels = this.worldsLevels.get('arcade') || [];
       const allLevels = Array.from(this.cache.keys()).sort();
       for (const levelId of allLevels) {
@@ -225,18 +226,17 @@ export class LevelManager {
   }
 
   // --------------------------------------------------------------------------
-  // Демо-уровни для Ocean (12x12) – показываем почти все команды
+  // Демо-уровни для Ocean (12x12) – более широкий набор команд
   // --------------------------------------------------------------------------
   private generateOceanLevels(): void {
     for (let i = 501; i <= 520; i++) {
       const map = Array(12).fill(null).map(() => Array(12).fill(TileType.PLATFORM));
-      // Можно добавить воду, конвейеры и т.д.
+      // Пример препятствия: вода и крылья
       if (i === 510) {
         map[5][5] = TileType.WATER;
         map[5][6] = TileType.TOOL_WING;
       }
       
-      // Для океана разрешаем больше команд (кроме, может быть, самых сложных)
       const allowedCommands: Command[] = [
         Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
         Command.PICKUP, Command.DROP, Command.USE_KEY,
@@ -307,15 +307,124 @@ export class LevelManager {
   }
 
   // --------------------------------------------------------------------------
-  // Fairytale, Volcano, Bonus – аналогично, можно использовать те же разрешённые команды
-  // (Для краткости здесь пропущены, но в реальном коде они есть)
+  // Fairytale (14x14) – аналогично Clouds
   // --------------------------------------------------------------------------
-  private generateFairytaleLevels(): void { /* ... */ }
-  private generateVolcanoLevels(): void { /* ... */ }
-  private generateBonusLevels(): void { /* ... */ }
+  private generateFairytaleLevels(): void {
+    for (let i = 1501; i <= 1520; i++) {
+      const map = Array(14).fill(null).map(() => Array(14).fill(TileType.PLATFORM));
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+      ];
+      const level: LevelData = {
+        id: `fairytale_${i.toString().padStart(4, '0')}`,
+        name: `Fairytale ${i}`,
+        worldId: 'fairytale',
+        width: 14,
+        height: 14,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 13, row: 13 },
+        optimalSteps: 26,
+        allowedCommands,
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('fairytale')) this.worldsLevels.set('fairytale', []);
+      this.worldsLevels.get('fairytale')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateFairytaleLevels', 'Generated 20 fairytale levels');
+  }
 
   // --------------------------------------------------------------------------
-  // Arcade – коллекция всех уровней (allowedCommands не задаётся, пусть будут все)
+  // Volcano (16x16) – аналогично Clouds
+  // --------------------------------------------------------------------------
+  private generateVolcanoLevels(): void {
+    for (let i = 2001; i <= 2020; i++) {
+      const map = Array(16).fill(null).map(() => Array(16).fill(TileType.PLATFORM));
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.WHILE_WALL, Command.WHILE_HOLE,
+        Command.FOR_N, Command.FOR_LOOP,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+      ];
+      const level: LevelData = {
+        id: `volcano_${i.toString().padStart(4, '0')}`,
+        name: `Volcano ${i}`,
+        worldId: 'volcano',
+        width: 16,
+        height: 16,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 15, row: 15 },
+        optimalSteps: 30,
+        allowedCommands,
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('volcano')) this.worldsLevels.set('volcano', []);
+      this.worldsLevels.get('volcano')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateVolcanoLevels', 'Generated 20 volcano levels');
+  }
+
+  // --------------------------------------------------------------------------
+  // Bonus (20x20) – все команды
+  // --------------------------------------------------------------------------
+  private generateBonusLevels(): void {
+    for (let i = 2501; i <= 2520; i++) {
+      const map = Array(20).fill(null).map(() => Array(20).fill(TileType.PLATFORM));
+      // Все команды (полный набор)
+      const allowedCommands: Command[] = [
+        Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT,
+        Command.PICKUP, Command.DROP, Command.USE_KEY,
+        Command.PUSH, Command.SCAN, Command.RIDE,
+        Command.DRILL, Command.HOOK, Command.WING, Command.BAIT,
+        Command.THROW, Command.FEED,
+        Command.TIME_SLOW, Command.TIME_FAST, Command.WAIT,
+        Command.IF_WALL, Command.IF_HOLE, Command.IF_MONSTER, Command.IF_COIN, Command.IF_KEY, Command.IF_NO_KEY,
+        Command.WHILE_WALL, Command.WHILE_HOLE, Command.WHILE_MONSTER,
+        Command.FOR_N, Command.FOR_LOOP, Command.REPEAT,
+        Command.CLONE, Command.JOIN,
+        Command.CALL, Command.RETURN, Command.PARAM, Command.DEF,
+        Command.CLASS, Command.NEW, Command.METHOD,
+        Command.BLACK_BOX
+      ];
+      const level: LevelData = {
+        id: `bonus_${i.toString().padStart(4, '0')}`,
+        name: `Bonus ${i}`,
+        worldId: 'bonus',
+        width: 20,
+        height: 20,
+        map: map,
+        startPos: { col: 0, row: 0 },
+        coinPos: { col: 19, row: 19 },
+        optimalSteps: 38,
+        allowedCommands,
+      };
+      this.cache.set(level.id, level);
+      if (!this.worldsLevels.has('bonus')) this.worldsLevels.set('bonus', []);
+      this.worldsLevels.get('bonus')!.push(level.id);
+    }
+    logger.debug('LevelManager', 'generateBonusLevels', 'Generated 20 bonus levels');
+  }
+
+  // --------------------------------------------------------------------------
+  // Arcade – коллекция всех уровней (без ограничений команд)
   // --------------------------------------------------------------------------
   private generateArcadeLevels(): void {
     if (!this.worldsLevels.has('arcade')) this.worldsLevels.set('arcade', []);
