@@ -1,3 +1,12 @@
+// src/scenes/WorldMap.ts
+// ============================================================================
+// КАРТА МИРОВ – ИСПРАВЛЕННАЯ ВЕРСИЯ
+// ============================================================================
+// - Все миры отображаются, включая Arcade
+// - Увеличен bounds, чтобы камера сразу показывала всю карту
+// - Добавлена кнопка сброса камеры
+// ============================================================================
+
 import { Scene } from 'phaser';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
@@ -32,7 +41,6 @@ export class WorldMap extends Scene {
   private dragStartY: number = 0;
   private lastScrollX: number = 0;
   private lastScrollY: number = 0;
-  private autoScrollTimer: Phaser.Time.TimerEvent;
   private boundsMinX: number = 0;
   private boundsMaxX: number = 0;
   private boundsMinY: number = 0;
@@ -46,10 +54,12 @@ export class WorldMap extends Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
+    // Фон
     const bg = this.add.graphics();
     bg.fillGradientStyle(0x0a0a2a, 0x0a0a2a, 0x1a1a4a, 0x1a1a4a);
     bg.fillRect(0, 0, width, height);
 
+    // Звёзды
     for (let i = 0; i < 150; i++) {
       const star = this.add.circle(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, 0xffffff, 0.4);
       this.tweens.add({
@@ -64,7 +74,7 @@ export class WorldMap extends Scene {
     this.loadWorlds();
     this.worldContainer = this.add.container(0, 0);
     this.pathGraphics = this.add.graphics();
-    
+
     this.drawPath();
     this.drawWorlds();
 
@@ -72,22 +82,23 @@ export class WorldMap extends Scene {
     const mapWidth = this.cols * this.stepX + 300;
     const mapHeight = this.rows * this.stepY + 300;
     this.boundsMinX = 0;
-    this.boundsMaxX = mapWidth - width;
+    this.boundsMaxX = Math.max(0, mapWidth - width);
     this.boundsMinY = 0;
-    this.boundsMaxY = mapHeight - height;
+    this.boundsMaxY = Math.max(0, mapHeight - height);
     this.camera.setBounds(this.boundsMinX, this.boundsMinY, mapWidth, mapHeight);
+    // Центрируем камеру, чтобы сразу были видны все миры
     this.camera.centerOn(width / 2, height / 2);
-    
+
     this.lastScrollX = this.camera.scrollX;
     this.lastScrollY = this.camera.scrollY;
 
+    // Управление камерой
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
       this.camera.scrollX += deltaX;
       this.camera.scrollY += deltaY;
       this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
       this.lastScrollY = this.camera.scrollY;
-      this.resetAutoScrollTimer();
     });
 
     this.input.on('pointerdown', (pointer: any) => {
@@ -102,7 +113,6 @@ export class WorldMap extends Scene {
         this.camera.scrollX = this.lastScrollX - dx;
         this.camera.scrollY = this.lastScrollY - dy;
         this.clampCamera();
-        this.resetAutoScrollTimer();
       }
     });
     this.input.on('pointerup', () => {
@@ -115,38 +125,24 @@ export class WorldMap extends Scene {
       this.camera.scrollX -= 50;
       this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
-      this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
       this.camera.scrollX += 50;
       this.clampCamera();
       this.lastScrollX = this.camera.scrollX;
-      this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-UP', () => {
       this.camera.scrollY -= 50;
       this.clampCamera();
       this.lastScrollY = this.camera.scrollY;
-      this.resetAutoScrollTimer();
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
       this.camera.scrollY += 50;
       this.clampCamera();
       this.lastScrollY = this.camera.scrollY;
-      this.resetAutoScrollTimer();
     });
 
-    this.autoScrollTimer = this.time.addEvent({
-      delay: 5000,
-      callback: () => {
-        this.camera.centerOn(this.cameras.main.width / 2, this.cameras.main.height / 2);
-        this.clampCamera();
-        this.lastScrollX = this.camera.scrollX;
-        this.lastScrollY = this.camera.scrollY;
-      },
-      loop: false,
-    });
-
+    // Заголовок
     this.add.text(this.cameras.main.width / 2, 40, '🌌 CYBERKID UNIVERSE 🌌', {
       fontSize: '24px',
       color: '#ffcc00',
@@ -155,6 +151,21 @@ export class WorldMap extends Scene {
       strokeThickness: 2,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
 
+    // Кнопка сброса камеры
+    const resetCamBtn = this.add.text(width - 80, 40, '🎯 RESET', {
+      fontSize: '12px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 8, y: 4 },
+    }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
+    resetCamBtn.on('pointerdown', () => {
+      this.camera.centerOn(width / 2, height / 2);
+      this.clampCamera();
+      this.lastScrollX = this.camera.scrollX;
+      this.lastScrollY = this.camera.scrollY;
+    });
+
+    // Кнопка BACK
     const backButton = this.add.text(10, 10, '← BACK', {
       fontSize: '18px',
       color: '#ffffff',
@@ -173,20 +184,6 @@ export class WorldMap extends Scene {
     this.camera.scrollY = Math.max(this.boundsMinY, Math.min(this.camera.scrollY, this.boundsMaxY));
   }
 
-  private resetAutoScrollTimer(): void {
-    this.autoScrollTimer.remove();
-    this.autoScrollTimer = this.time.addEvent({
-      delay: 5000,
-      callback: () => {
-        this.camera.centerOn(this.cameras.main.width / 2, this.cameras.main.height / 2);
-        this.clampCamera();
-        this.lastScrollX = this.camera.scrollX;
-        this.lastScrollY = this.camera.scrollY;
-      },
-      loop: false,
-    });
-  }
-
   private loadWorlds(): void {
     const worldsData = [
       { id: 'meadow', name: 'Meadow', icon: '🌾', row: 0, col: 0, levels: 20, isLocked: false },
@@ -199,13 +196,13 @@ export class WorldMap extends Scene {
     ];
 
     const progress = progressManager.get();
-    
+
     this.worlds = worldsData.map(world => {
       let completedLevels = 0;
       let totalStars = 0;
       let maxStars = 0;
       let levelsCount = world.levels;
-      
+
       if (world.id === 'arcade') {
         const allLevelIds = levelManager.getLevelIdsForWorld('arcade');
         levelsCount = allLevelIds.length;
@@ -228,7 +225,8 @@ export class WorldMap extends Scene {
           }
         }
       }
-      
+
+      // Условия разблокировки (примерные)
       let isLocked = world.isLocked;
       if (world.id === 'ocean' && completedLevels >= 10) isLocked = false;
       if (world.id === 'clouds' && this.getCompletedLevelsCount('ocean') >= 10) isLocked = false;
@@ -236,7 +234,7 @@ export class WorldMap extends Scene {
       if (world.id === 'volcano' && this.getCompletedLevelsCount('fairytale') >= 10) isLocked = false;
       if (world.id === 'bonus' && this.getCompletedLevelsCount('volcano') >= 10) isLocked = false;
       if (world.id === 'arcade') isLocked = false;
-      
+
       return {
         ...world,
         x: this.startX + world.col * this.stepX,
@@ -263,7 +261,6 @@ export class WorldMap extends Scene {
   private drawPath(): void {
     this.pathGraphics.clear();
     this.pathGraphics.lineStyle(2, 0x88aaff, 0.5);
-    
     const order = ['meadow', 'ocean', 'clouds', 'fairytale', 'volcano', 'arcade', 'bonus'];
     for (let i = 0; i < order.length - 1; i++) {
       const from = this.worlds.find(w => w.id === order[i]);
@@ -273,7 +270,7 @@ export class WorldMap extends Scene {
         this.pathGraphics.moveTo(from.x, from.y);
         this.pathGraphics.lineTo(to.x, to.y);
         this.pathGraphics.strokePath();
-        
+
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const arrowX = (from.x + to.x) / 2;
         const arrowY = (from.y + to.y) / 2;
@@ -293,11 +290,10 @@ export class WorldMap extends Scene {
   private drawWorlds(): void {
     this.worlds.forEach(world => {
       const container = this.add.container(world.x, world.y);
-      
       const bgColor = world.isLocked ? 0x444444 : (world.id === 'arcade' ? 0x4a2a4a : 0x2a2a4a);
       const bg = this.add.rectangle(0, 0, 120, 140, bgColor, 0.9);
       bg.setStrokeStyle(2, world.isLocked ? 0x888888 : (world.id === 'arcade' ? 0xff44cc : 0x00ffcc));
-      
+
       this.tweens.add({
         targets: container,
         y: container.y - 3,
@@ -306,18 +302,18 @@ export class WorldMap extends Scene {
         repeat: -1,
         ease: 'Sine.easeInOut',
       });
-      
+
       const icon = this.add.text(0, -25, world.icon, { fontSize: '36px' }).setOrigin(0.5);
       const name = this.add.text(0, 8, world.name, { fontSize: '11px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
-      
+
       const starPercent = world.maxStars > 0 ? (world.totalStars / world.maxStars) * 100 : 0;
       const starCount = Math.floor(starPercent / 20);
       const starsText = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
       const stars = this.add.text(0, 26, starsText, { fontSize: '8px', color: '#ffcc00' }).setOrigin(0.5);
       const levelsText = this.add.text(0, 42, `${world.completedLevels}/${world.levelsCount}`, { fontSize: '7px', color: '#aaaaaa' }).setOrigin(0.5);
-      
+
       container.add([bg, icon, name, stars, levelsText]);
-      
+
       if (world.isLocked) {
         const lock = this.add.text(0, 0, '🔒', { fontSize: '22px' }).setOrigin(0.5);
         container.add(lock);
@@ -335,7 +331,7 @@ export class WorldMap extends Scene {
           name.setColor('#ffffff');
         });
       }
-      
+
       this.worldContainer.add(container);
     });
   }
