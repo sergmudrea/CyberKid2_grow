@@ -10,7 +10,6 @@
 // - Учитывает монстров (приручение, отвлечение, уничтожение)
 // - Учитывает магниты и замедляющие поля
 // - Поддерживает бэкдоры (нестандартные пути через инструменты)
-// - Полное логирование каждого шага для отладки
 // ============================================================================
 
 import { TileType, Point, Magnet, SlowField } from '../../src/types/index';
@@ -19,7 +18,19 @@ import { TileType, Point, Magnet, SlowField } from '../../src/types/index';
 // ТИПЫ ДЛЯ BFS
 // ----------------------------------------------------------------------------
 
-/** Тип монстра (упрощённо) */
+export enum BackdoorType {
+  DRILL = 'drill',
+  HOOK = 'hook',
+  WING = 'wing',
+  BAIT = 'bait',
+  FEED = 'feed',
+  TELEPORT = 'teleport',
+  CLONE = 'clone',
+  BLACKBOX = 'blackbox',
+  BUTTON = 'button',
+  LEVER = 'lever',
+}
+
 enum MonsterType {
   PATROL = 'patrol',
   CHASE = 'chase',
@@ -29,7 +40,6 @@ enum MonsterType {
   BOSS = 'boss',
 }
 
-/** Состояние одного монстра */
 interface MonsterState {
   id: string;
   type: MonsterType;
@@ -43,14 +53,12 @@ interface MonsterState {
   phaseVisible: boolean;
 }
 
-/** Состояние телепорта */
 interface TeleportState {
   id: string;
   entry: Point;
   exit: Point;
 }
 
-/** Состояние конвейера */
 interface ConveyorState {
   id: string;
   x: number;
@@ -58,7 +66,6 @@ interface ConveyorState {
   direction: 'up' | 'down' | 'left' | 'right';
 }
 
-/** Состояние пружины */
 interface SpringState {
   id: string;
   x: number;
@@ -67,7 +74,6 @@ interface SpringState {
   force: number;
 }
 
-/** Состояние кнопки/рычага/таймера */
 interface MechanismState {
   id: string;
   type: 'button' | 'lever' | 'timer';
@@ -77,7 +83,6 @@ interface MechanismState {
   linkedObjects: string[];
 }
 
-/** Состояние моста */
 interface BridgeState {
   id: string;
   x: number;
@@ -85,7 +90,6 @@ interface BridgeState {
   active: boolean;
 }
 
-/** Состояние клетки (CAGE) */
 interface CageState {
   id: string;
   x: number;
@@ -95,7 +99,6 @@ interface CageState {
   prisonerId?: string;
 }
 
-/** Состояние ловушки (TRAP) */
 interface TrapState {
   id: string;
   x: number;
@@ -103,14 +106,11 @@ interface TrapState {
   used: boolean;
 }
 
-/** Главное состояние поиска */
 export interface SearchState {
   x: number;
   y: number;
-  turretAngle: number;           // 0,90,180,270 – направление башни
-  hullDirection: 'up'|'down'|'left'|'right'; // направление корпуса (для движения назад)
-  
-  // Инвентарь
+  turretAngle: number;
+  hullDirection: 'up'|'down'|'left'|'right';
   keys: string[];
   corn: number;
   cores: number;
@@ -119,8 +119,6 @@ export interface SearchState {
   hasWing: boolean;
   hasBait: boolean;
   wingActiveTurns: number;
-  
-  // Состояния объектов уровня (изменяемые)
   monsters: MonsterState[];
   teleports: TeleportState[];
   conveyors: ConveyorState[];
@@ -131,22 +129,13 @@ export interface SearchState {
   traps: TrapState[];
   magnets: Magnet[];
   slowFields: SlowField[];
-  
-  // Временные эффекты
-  slowFactor: number;            // множитель задержки (1 – нормально, 2 – вдвое медленнее)
-  
-  // Флаги для бэкдоров
+  slowFactor: number;
   usedBackdoors: Set<string>;
-  
-  // Шаги и путь
   steps: number;
   path: Point[];
-  
-  // Предок для восстановления пути (хеш)
   prevHash?: string;
 }
 
-/** Результат поиска – один путь */
 export interface FoundPath {
   steps: number;
   usedBackdoors: string[];
@@ -156,7 +145,6 @@ export interface FoundPath {
   description: string;
 }
 
-/** Конфигурация BFS */
 export interface BFSConfig {
   maxDepth: number;
   maxPaths: number;
@@ -234,9 +222,6 @@ export class InventoryAwareBFS {
     this.queue = [];
   }
   
-  // --------------------------------------------------------------------------
-  // ПУБЛИЧНЫЙ МЕТОД ЗАПУСКА ПОИСКА
-  // --------------------------------------------------------------------------
   public findPaths(start: Point, goal: Point, startHullDir: 'up'|'down'|'left'|'right' = 'right', startTurretAngle: number = 0): FoundPath[] {
     this.start = start;
     this.goal = goal;
@@ -275,9 +260,6 @@ export class InventoryAwareBFS {
     return this.results;
   }
   
-  // --------------------------------------------------------------------------
-  // ИНИЦИАЛИЗАЦИЯ СОСТОЯНИЙ
-  // --------------------------------------------------------------------------
   private createInitialState(start: Point, hullDir: 'up'|'down'|'left'|'right', turretAngle: number): SearchState {
     const monsters: MonsterState[] = this.monsters.map(m => ({
       id: m.id,
@@ -376,19 +358,9 @@ export class InventoryAwareBFS {
     };
   }
   
-  // --------------------------------------------------------------------------
-  // ГЕНЕРАЦИЯ СОСЕДНИХ СОСТОЯНИЙ
-  // --------------------------------------------------------------------------
   private expandState(state: SearchState): void {
-    // Возможные действия:
-    // 1. Повороты башни (без движения)
     this.expandTurretActions(state);
-    // 2. Движение вперёд/назад
     this.expandMovementActions(state);
-    // 3. Взаимодействие с предметами (подбор)
-    this.expandPickupActions(state);
-    // 4. Использование инструментов (дрель, крюк) – их применяем при движении через препятствия
-    // 5. Кормление/убийство монстров – при движении на клетку с монстром
   }
   
   private expandTurretActions(state: SearchState): void {
@@ -397,7 +369,7 @@ export class InventoryAwareBFS {
     const newStateLeft = this.cloneState(state);
     newStateLeft.turretAngle = newAngleLeft;
     newStateLeft.steps++;
-    newStateLeft.path = [...state.path, { x: state.x, y: state.y }]; // позиция не меняется
+    newStateLeft.path = [...state.path, { x: state.x, y: state.y }];
     this.addState(newStateLeft);
     
     // Поворот вправо на 90°
@@ -417,9 +389,10 @@ export class InventoryAwareBFS {
     this.addState(newStateAround);
     
     // Синхронизация корпуса с башней
-    if (state.turretAngle !== this.angleToDirection(state.turretAngle)) {
+    const newDir = this.angleToDirection(state.turretAngle);
+    if (newDir && newDir !== state.hullDirection) {
       const newStateSync = this.cloneState(state);
-      newStateSync.hullDirection = this.angleToDirection(state.turretAngle);
+      newStateSync.hullDirection = newDir;
       newStateSync.steps++;
       newStateSync.path = [...state.path, { x: state.x, y: state.y }];
       this.addState(newStateSync);
@@ -438,7 +411,6 @@ export class InventoryAwareBFS {
         newState.y = ny;
         newState.steps++;
         newState.path = [...state.path, { x: nx, y: ny }];
-        // Обработка эффектов (клей, клетка, телепорт, конвейер, пружина, магнит, замедление)
         this.applyTileEffects(newState, nx, ny);
         this.addState(newState);
       }
@@ -461,16 +433,9 @@ export class InventoryAwareBFS {
     }
   }
   
-  private expandPickupActions(state: SearchState): void {
-    // Подбор предметов на текущей клетке (уже делается в applyTileEffects, но можно и отдельно)
-    // Здесь оставляем пустым – предметы подбираются при входе на клетку.
-  }
-  
-  // --------------------------------------------------------------------------
-  // ОБРАБОТКА ЭФФЕКТОВ НА КЛЕТКЕ
-  // --------------------------------------------------------------------------
   private applyTileEffects(state: SearchState, x: number, y: number): void {
     const tile = this.tiles[y][x];
+    
     // Подбор предметов
     const itemIndex = this.items.findIndex(it => it.x === x && it.y === y);
     if (itemIndex !== -1) {
@@ -485,17 +450,13 @@ export class InventoryAwareBFS {
         case 'wing': state.hasWing = true; break;
         case 'bait': state.hasBait = true; break;
       }
-      // Отмечаем, что предмет взят (в реальном BFS его нужно удалить из мира)
-      // Но для упрощения мы не меняем список items, однако состояние инвентаря изменилось.
+      // В BFS не удаляем предмет из items, но инвентарь обновлён
     }
     
-    // Клей – приклеивание (не обрабатываем в BFS, т.к. это влияет на будущие ходы, но для простоты игнорируем)
+    // Клей – игнорируем, только логируем
     if (tile === TileType.GLUE) {
-      this.log(`   -> glue, but BFS ignores temporary effects`);
+      this.log(`   -> glue (ignored in BFS)`);
     }
-    
-    // Клетка (закрытая) – непроходима, уже проверено в isValidMove
-    // Мосты – активность уже учтена при проверке проходимости
     
     // Телепорт
     const teleport = state.teleports.find(t => t.entry.x === x && t.entry.y === y);
@@ -506,7 +467,7 @@ export class InventoryAwareBFS {
       state.path.push({ x: state.x, y: state.y });
     }
     
-    // Конвейер – принудительное движение после входа
+    // Конвейер
     const conveyor = state.conveyors.find(c => c.x === x && c.y === y);
     if (conveyor) {
       let dx = 0, dy = 0;
@@ -523,7 +484,7 @@ export class InventoryAwareBFS {
         state.x = cnx;
         state.y = cny;
         state.path.push({ x: state.x, y: state.y });
-        state.steps++; // конвейерный шаг считается
+        state.steps++;
       }
     }
     
@@ -558,16 +519,19 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Магнит – притягивание в направлении башни
+    // Магнит
     const magnet = state.magnets.find(m => m.x === x && m.y === y);
     if (magnet) {
-      // Притягиваем танк на одну клетку в сторону магнита, если башня смотрит на магнит
-      const directionToMagnet = this.getDirectionTo(state.x, state.y, magnet.position.x, magnet.position.y);
-      if (directionToMagnet === this.angleToDirection(state.turretAngle)) {
-        const dx = Math.sign(magnet.position.x - state.x);
-        const dy = Math.sign(magnet.position.y - state.y);
-        const nx = state.x + dx;
-        const ny = state.y + dy;
+      const dx = magnet.x - state.x;
+      const dy = magnet.y - state.y;
+      let requiredAngle = 0;
+      if (dx > 0) requiredAngle = 90;
+      else if (dx < 0) requiredAngle = 270;
+      else if (dy > 0) requiredAngle = 180;
+      else if (dy < 0) requiredAngle = 0;
+      if (state.turretAngle === requiredAngle) {
+        const nx = state.x + Math.sign(dx);
+        const ny = state.y + Math.sign(dy);
         if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height && this.isValidMove(state, nx, ny)) {
           this.log(`   -> magnet pulls to (${nx},${ny})`);
           state.x = nx;
@@ -578,7 +542,7 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Замедляющее поле – увеличиваем множитель замедления (влияет на стоимость шагов, но не на количество)
+    // Замедляющее поле
     const slowField = state.slowFields.find(s => s.x === x && s.y === y);
     if (slowField) {
       state.slowFactor = slowField.factor;
@@ -586,14 +550,11 @@ export class InventoryAwareBFS {
     }
   }
   
-  // --------------------------------------------------------------------------
-  // ПРОВЕРКА ВОЗМОЖНОСТИ ПЕРЕМЕЩЕНИЯ НА КЛЕТКУ
-  // --------------------------------------------------------------------------
   private isValidMove(state: SearchState, nx: number, ny: number): boolean {
     if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) return false;
     const tile = this.tiles[ny][nx];
     
-    // Стена – только если есть дрель
+    // Стена
     if (tile === TileType.WALL) {
       if (state.hasDrill) {
         state.hasDrill = false;
@@ -604,7 +565,7 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Опасные тайлы (яма, лава, вода) – только если есть активные крылья
+    // Опасные тайлы (яма, лава, вода)
     if (tile === TileType.HOLE || tile === TileType.LAVA || tile === TileType.WATER) {
       if (state.wingActiveTurns > 0 || state.hasWing) {
         if (state.wingActiveTurns === 0 && state.hasWing) {
@@ -620,7 +581,7 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Запертая дверь – нужен ключ
+    // Запертая дверь
     if (tile === TileType.DOOR_LOCKED) {
       if (state.keys.length > 0) {
         state.keys.pop();
@@ -631,22 +592,18 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Клетка (закрытая) – нельзя войти
+    // Клетка (закрытая)
     const cage = state.cages.find(c => c.x === nx && c.y === ny && c.isClosed);
     if (cage) return false;
     
-    // Мост – только если активен
+    // Мост (неактивный)
     const bridge = state.bridges.find(b => b.x === nx && b.y === ny);
     if (bridge && !bridge.active) return false;
     
     // Монстр
     const monster = state.monsters.find(m => m.x === nx && m.y === ny && !m.isDead);
     if (monster) {
-      if (monster.isTamed || monster.isRidden || monster.isDistracted) {
-        // можно пройти
-        return true;
-      }
-      // Попытка приручить/убить/отвлечь
+      if (monster.isTamed || monster.isRidden || monster.isDistracted) return true;
       if (state.cores > 0) {
         state.cores--;
         monster.isDead = true;
@@ -654,7 +611,7 @@ export class InventoryAwareBFS {
         this.log(`   -> killing monster at (${nx},${ny}) with core`);
         return true;
       }
-      if (state.corn > 0 && (monster.type === 'tameable' || monster.type === 'patrol')) {
+      if (state.corn > 0 && (monster.type === MonsterType.TAMEABLE || monster.type === MonsterType.PATROL)) {
         state.corn--;
         monster.isTamed = true;
         state.usedBackdoors.add('corn');
@@ -671,13 +628,9 @@ export class InventoryAwareBFS {
       }
       return false;
     }
-    
     return true;
   }
   
-  // --------------------------------------------------------------------------
-  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-  // --------------------------------------------------------------------------
   private angleToDelta(angle: number): { dx: number; dy: number } | null {
     switch (angle) {
       case 0: return { dx: 0, dy: -1 };
@@ -688,32 +641,24 @@ export class InventoryAwareBFS {
     }
   }
   
-  private directionToDelta(dir: 'up'|'down'|'left'|'right', sign: number = 1): { dx: number; dy: number } | null {
+  private directionToDelta(dir: 'up'|'down'|'left'|'right', multiplier: number): { dx: number; dy: number } | null {
     switch (dir) {
-      case 'up': return { dx: 0, dy: -1 * sign };
-      case 'down': return { dx: 0, dy: 1 * sign };
-      case 'left': return { dx: -1 * sign, dy: 0 };
-      case 'right': return { dx: 1 * sign, dy: 0 };
+      case 'up': return { dx: 0, dy: -1 * multiplier };
+      case 'down': return { dx: 0, dy: 1 * multiplier };
+      case 'left': return { dx: -1 * multiplier, dy: 0 };
+      case 'right': return { dx: 1 * multiplier, dy: 0 };
       default: return null;
     }
   }
   
-  private angleToDirection(angle: number): 'up'|'down'|'left'|'right' {
+  private angleToDirection(angle: number): 'up'|'down'|'left'|'right' | null {
     switch (angle) {
       case 0: return 'up';
       case 90: return 'right';
       case 180: return 'down';
       case 270: return 'left';
-      default: return 'right';
+      default: return null;
     }
-  }
-  
-  private getDirectionTo(x1: number, y1: number, x2: number, y2: number): 'up'|'down'|'left'|'right'|null {
-    if (x1 === x2 && y1 > y2) return 'up';
-    if (x1 === x2 && y1 < y2) return 'down';
-    if (y1 === y2 && x1 < x2) return 'right';
-    if (y1 === y2 && x1 > x2) return 'left';
-    return null;
   }
   
   private cloneState(state: SearchState): SearchState {
@@ -739,8 +684,8 @@ export class InventoryAwareBFS {
     const monstersHash = state.monsters.map(m => `${m.id}:${m.x},${m.y},${m.isTamed},${m.isDead},${m.isDistracted}`).join(';');
     const bridgesHash = state.bridges.map(b => `${b.id}:${b.active}`).join(';');
     const cagesHash = state.cages.map(c => `${c.id}:${c.isClosed}`).join(';');
-    const magnetsHash = state.magnets.map(m => `${m.id}:${m.position.x},${m.position.y}`).join(';');
-    const slowHash = state.slowFields.map(s => `${s.id}:${s.position.x},${s.position.y}`).join(';');
+    const magnetsHash = state.magnets.map(m => `${m.id}:${m.x},${m.y}`).join(';');
+    const slowHash = state.slowFields.map(s => `${s.id}:${s.x},${s.y}`).join(';');
     return `${state.x},${state.y},${state.turretAngle},${state.hullDirection},${state.keys.length},${state.corn},${state.cores},${state.hasDrill},${state.hasHook},${state.hasWing},${state.hasBait},${state.wingActiveTurns},${monstersHash},${bridgesHash},${cagesHash},${magnetsHash},${slowHash},${Array.from(state.usedBackdoors).sort().join(',')}`;
   }
   
@@ -777,3 +722,6 @@ export class InventoryAwareBFS {
     }
   }
 }
+
+// Экспортируем всё необходимое
+export { BackdoorType, InventoryAwareBFS, FoundPath, BFSConfig };
