@@ -1,27 +1,22 @@
 // src/modules/execution/helpers.ts
 // ============================================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ EXECUTION ENGINE
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ EXECUTION ENGINE – ПАТЧ 2.0
 // ============================================================================
-// Содержит утилиты, которые используются во многих модулях движка:
-// - преобразование направлений
-// - проверка типов тайлов (стена, яма, дверь, конвейер и т.д.)
-// - расчёт звёзд
-// - задержки (delay)
-// - глубокое копирование инвентаря
-// - логирование с указанием модуля
+// Содержит утилиты для:
+// - преобразования направлений и углов
+// - проверки типов тайлов
+// - расчёта звёзд
+// - задержек (delay)
+// - глубокого копирования инвентаря
+// - логирования
 // ============================================================================
 
-import { Point, TileType, Command, Inventory } from '../../types/index';
+import { Point, TileType, Command, Inventory, ControlMode } from '../../types/index';
 import { logger } from '../../core/Logger';
 
 // --------------------------------------------------------------------------
-// 1. ГЕОМЕТРИЧЕСКИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// 1. ГЕОМЕТРИЧЕСКИЕ ФУНКЦИИ
 // --------------------------------------------------------------------------
-
-/**
- * Возвращает позицию клетки впереди от заданной позиции в заданном направлении.
- * Используется для проверки, что находится перед игроком или монстром.
- */
 export function getFrontPosition(pos: Point, dir: 'up' | 'down' | 'left' | 'right'): Point {
   switch (dir) {
     case 'up':    return { col: pos.col, row: pos.row - 1 };
@@ -31,46 +26,70 @@ export function getFrontPosition(pos: Point, dir: 'up' | 'down' | 'left' | 'righ
   }
 }
 
-// --------------------------------------------------------------------------
-// 2. ПРОВЕРКИ ТАЙЛОВ (по типам)
-// --------------------------------------------------------------------------
+// Преобразование угла башни в дельту движения
+export function angleToDelta(angle: number): { dx: number; dy: number } | null {
+  switch (angle) {
+    case 0:   return { dx: 0, dy: -1 };
+    case 90:  return { dx: 1, dy: 0 };
+    case 180: return { dx: 0, dy: 1 };
+    case 270: return { dx: -1, dy: 0 };
+    default:  return null;
+  }
+}
 
-/** Является ли тайл стеной (обычной или фальшивой) */
+// Преобразование направления корпуса в дельту (с множителем)
+export function directionToDelta(dir: 'up' | 'down' | 'left' | 'right', multiplier: number = 1): { dx: number; dy: number } | null {
+  switch (dir) {
+    case 'up':    return { dx: 0, dy: -1 * multiplier };
+    case 'down':  return { dx: 0, dy: 1 * multiplier };
+    case 'left':  return { dx: -1 * multiplier, dy: 0 };
+    case 'right': return { dx: 1 * multiplier, dy: 0 };
+    default:      return null;
+  }
+}
+
+// Преобразование угла в строковое направление (для UI)
+export function angleToDirection(angle: number): 'up' | 'down' | 'left' | 'right' | null {
+  switch (angle) {
+    case 0:   return 'up';
+    case 90:  return 'right';
+    case 180: return 'down';
+    case 270: return 'left';
+    default:  return null;
+  }
+}
+
+// --------------------------------------------------------------------------
+// 2. ПРОВЕРКИ ТАЙЛОВ
+// --------------------------------------------------------------------------
 export function isWall(tile: TileType): boolean {
   return tile === TileType.WALL || tile === TileType.FAKE_WALL;
 }
 
-/** Является ли тайл ямой */
 export function isHole(tile: TileType): boolean {
   return tile === TileType.HOLE;
 }
 
-/** Является ли тайл смертельной жидкостью (лава или вода) */
 export function isDeadlyLiquid(tile: TileType): boolean {
   return tile === TileType.LAVA || tile === TileType.WATER;
 }
 
-/** Является ли тайл дверью (запертой или открытой) */
 export function isDoor(tile: TileType): boolean {
   return tile === TileType.DOOR_LOCKED || tile === TileType.DOOR_UNLOCKED;
 }
 
-/** Является ли тайл телепортом (входом или выходом) */
 export function isTeleport(tile: TileType): boolean {
   return tile === TileType.TELEPORT_IN || tile === TileType.TELEPORT_OUT;
 }
 
-/** Является ли тайл конвейером (любого направления) */
 export function isConveyor(tile: TileType): boolean {
   return tile >= TileType.CONVEYOR_UP && tile <= TileType.CONVEYOR_RIGHT;
 }
 
-/** Является ли тайл пружиной */
 export function isSpring(tile: TileType): boolean {
   return tile === TileType.SPRING;
 }
 
-/** Является ли тайл собираемым предметом (ключ, кукуруза, ядро, инструменты, ключ от клетки, драгоценность) */
 export function isPickupItem(tile: TileType): boolean {
   return tile === TileType.KEY ||
          tile === TileType.CORN ||
@@ -83,28 +102,28 @@ export function isPickupItem(tile: TileType): boolean {
          tile === TileType.GEM;
 }
 
-// --------------------------------------------------------------------------
-// 3. ПРЕОБРАЗОВАНИЕ КОМАНД И ТАЙЛОВ В НАПРАВЛЕНИЯ
-// --------------------------------------------------------------------------
+export function isMagnet(tile: TileType): boolean {
+  return tile === TileType.MAGNET;
+}
 
-/**
- * Преобразует команду движения (Command.UP и т.д.) в строковое направление.
- * Возвращает null, если команда не является движением.
- */
+export function isSlowField(tile: TileType): boolean {
+  return tile === TileType.SLOW_FIELD;
+}
+
+// --------------------------------------------------------------------------
+// 3. ПРЕОБРАЗОВАНИЕ КОМАНД В НАПРАВЛЕНИЯ
+// --------------------------------------------------------------------------
 export function getDirectionFromCommand(cmd: Command): 'up' | 'down' | 'left' | 'right' | null {
   switch (cmd) {
-    case Command.UP:    return 'up';
-    case Command.DOWN:  return 'down';
-    case Command.LEFT:  return 'left';
-    case Command.RIGHT: return 'right';
-    default:            return null;
+    case Command.UP:          return 'up';
+    case Command.DOWN:        return 'down';
+    case Command.LEFT:        return 'left';
+    case Command.RIGHT:       return 'right';
+    case Command.MOVE_FORWARD: // зависит от угла башни, не даём здесь
+    default: return null;
   }
 }
 
-/**
- * Получает направление конвейера из числового кода тайла.
- * Возвращает null, если тайл не является конвейером.
- */
 export function getConveyorDirection(tile: TileType): 'up' | 'down' | 'left' | 'right' | null {
   switch (tile) {
     case TileType.CONVEYOR_UP:    return 'up';
@@ -116,17 +135,8 @@ export function getConveyorDirection(tile: TileType): 'up' | 'down' | 'left' | '
 }
 
 // --------------------------------------------------------------------------
-// 4. РАСЧЁТ ЗВЁЗД (на основе шагов и оптимального количества)
+// 4. РАСЧЁТ ЗВЁЗД
 // --------------------------------------------------------------------------
-
-/**
- * Рассчитывает количество звёзд (0-3) по числу использованных шагов и оптимальному.
- * Правила:
- * - 3 звезды: stepsUsed <= optimalSteps
- * - 2 звезды: stepsUsed <= optimalSteps * 1.5
- * - 1 звезда: иначе (но при условии победы)
- * - 0 звёзд: проигрыш или недопустимое значение
- */
 export function calculateStars(stepsUsed: number, optimalSteps: number): number {
   if (stepsUsed <= optimalSteps) return 3;
   if (stepsUsed <= optimalSteps * 1.5) return 2;
@@ -134,25 +144,15 @@ export function calculateStars(stepsUsed: number, optimalSteps: number): number 
 }
 
 // --------------------------------------------------------------------------
-// 5. АСИНХРОННАЯ ЗАДЕРЖКА (для команды WAIT)
+// 5. АСИНХРОННАЯ ЗАДЕРЖКА
 // --------------------------------------------------------------------------
-
-/**
- * Возвращает Promise, который разрешается через указанное количество миллисекунд.
- * Используется в команде WAIT, а также для анимаций.
- */
 export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // --------------------------------------------------------------------------
-// 6. ГЛУБОКОЕ КОПИРОВАНИЕ ИНВЕНТАРЯ (для клонов и сохранений)
+// 6. ГЛУБОКОЕ КОПИРОВАНИЕ ИНВЕНТАРЯ
 // --------------------------------------------------------------------------
-
-/**
- * Создаёт полную независимую копию объекта инвентаря.
- * Нужно для клонирования, чтобы клоны имели свой собственный инвентарь.
- */
 export function copyInventory(inv: Inventory): Inventory {
   return {
     keys: [...inv.keys],
@@ -167,27 +167,19 @@ export function copyInventory(inv: Inventory): Inventory {
 }
 
 // --------------------------------------------------------------------------
-// 7. ПРОВЕРКА, ЗАБЛОКИРОВАНО ЛИ ДВИЖЕНИЕ НА КЛЕТКУ
+// 7. ПРОВЕРКА БЛОКИРОВКИ ДВИЖЕНИЯ (С УЧЁТОМ КРЫЛЬЕВ И РЕЖИМА ИССЛЕДОВАНИЯ)
 // --------------------------------------------------------------------------
-
-/**
- * Определяет, может ли игрок войти на клетку с учётом его текущих возможностей.
- * Используется в MovementExecutor.
- */
 export function isMovementBlocked(tile: TileType, hasWing: boolean, explorationMode: boolean): boolean {
-  if (explorationMode) return false;                     // в режиме исследования всё проходимо
-  if (isWall(tile)) return true;                         // стены всегда блокируют
-  if (isHole(tile) && !hasWing) return true;             // яма требует крыльев
-  if (isDeadlyLiquid(tile) && !hasWing) return true;     // лава/вода требует крыльев
+  if (explorationMode) return false;
+  if (isWall(tile)) return true;
+  if (isHole(tile) && !hasWing) return true;
+  if (isDeadlyLiquid(tile) && !hasWing) return true;
   return false;
 }
 
 // --------------------------------------------------------------------------
-// 8. ЛОГИРОВАНИЕ С УКАЗАНИЕМ МОДУЛЯ (используется внутри execution)
+// 8. ЛОГИРОВАНИЕ (обёртки над глобальным логгером)
 // --------------------------------------------------------------------------
-
-// Для удобства создаём обёртки над глобальным логгером с фиксированным префиксом "ExecutionEngine."
-
 export function log(module: string, method: string, message: string, data?: any): void {
   logger.debug(`ExecutionEngine.${module}`, method, message, data);
 }
