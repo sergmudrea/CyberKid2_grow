@@ -1,20 +1,16 @@
 // src/modules/execution/blackbox.ts
 // ============================================================================
-// ЧЁРНЫЙ ЯЩИК (BLACK BOX) – ПРЕОБРАЗОВАНИЕ ПРЕДМЕТОВ
+// ЧЁРНЫЙ ЯЩИК (BLACK BOX) – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// Реализует:
-// - SISO (Single Input Single Output) преобразования предметов инвентаря
-// - MIMO (Multiple Input Multiple Output) – например, обмен или комбинирование
-// ============================================================================
-// Чёрный ящик активируется при входе на клетку BLACK_BOX и выполняет отображение,
-// заданное в данных уровня (поле mapping). Поддерживаемые маппинги:
+// Реализует преобразование предметов (SISO, MIMO) при активации чёрного ящика.
+// Поддерживаемые маппинги:
 // - identity, double, half, increment, decrement
 // - corn_to_core, core_to_corn, key_to_drill
 // - reverse_direction, rotate_left, rotate_right
 // - swap_inventory, combine
 // ============================================================================
 
-import { Inventory, TileType } from '../../types/index';
+import { Inventory } from '../../types/index';
 import { log, logInfo, logError } from './helpers';
 
 export interface BlackBoxMapping {
@@ -33,11 +29,8 @@ export class BlackBoxProcessor {
     this.initDefaultMappings();
   }
 
-  // --------------------------------------------------------------------------
-  // ИНИЦИАЛИЗАЦИЯ СТАНДАРТНЫХ МАППИНГОВ
-  // --------------------------------------------------------------------------
   private initDefaultMappings(): void {
-    // ----- SISO (один вход, один выход) -----
+    // SISO (один вход, один выход)
     this.mappings.set('identity', {
       id: 'identity',
       inputCount: 1,
@@ -116,7 +109,7 @@ export class BlackBoxProcessor {
       },
     });
 
-    // Трансформация направления (для будущих механик)
+    // Трансформация направления (может использоваться для будущих механик)
     this.mappings.set('reverse_direction', {
       id: 'reverse_direction',
       inputCount: 1,
@@ -153,7 +146,7 @@ export class BlackBoxProcessor {
       },
     });
 
-    // ----- MIMO (несколько входов/выходов) -----
+    // MIMO
     this.mappings.set('swap_inventory', {
       id: 'swap_inventory',
       inputCount: 2,
@@ -179,17 +172,11 @@ export class BlackBoxProcessor {
     });
   }
 
-  // --------------------------------------------------------------------------
-  // ДОБАВИТЬ ПОЛЬЗОВАТЕЛЬСКИЙ МАППИНГ
-  // --------------------------------------------------------------------------
   public addMapping(id: string, mapping: BlackBoxMapping): void {
     this.mappings.set(id, mapping);
     logInfo('BlackBoxProcessor', 'addMapping', `Added mapping: ${id}`);
   }
 
-  // --------------------------------------------------------------------------
-  // ПРИМЕНИТЬ ПРЕОБРАЗОВАНИЕ (ВОЗВРАЩАЕТ РЕЗУЛЬТАТ)
-  // --------------------------------------------------------------------------
   public process(mappingId: string, input: any): any {
     const mapping = this.mappings.get(mappingId);
     if (!mapping) {
@@ -198,7 +185,6 @@ export class BlackBoxProcessor {
     }
 
     log('BlackBoxProcessor', 'process', `Processing mapping: ${mappingId}`, { input });
-
     try {
       const output = mapping.mapping(input, this.inventory);
       logInfo('BlackBoxProcessor', 'process', `Mapping result: ${output}`);
@@ -209,9 +195,6 @@ export class BlackBoxProcessor {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // ПРИМЕНИТЬ SISO ПРЕОБРАЗОВАНИЕ С АВТОМАТИЧЕСКИМ РАСХОДОМ ВХОДНОГО ПРЕДМЕТА
-  // --------------------------------------------------------------------------
   public applySISO(mappingId: string, inputType: string, removeInput: boolean = true): void {
     const mapping = this.mappings.get(mappingId);
     if (!mapping || mapping.inputCount !== 1 || mapping.outputCount !== 1) {
@@ -219,7 +202,6 @@ export class BlackBoxProcessor {
       return;
     }
 
-    // Определяем входной предмет
     let input = null;
     if (inputType === 'corn' && this.inventory.corn > 0) input = 'corn';
     else if (inputType === 'core' && this.inventory.cores > 0) input = 'core';
@@ -231,8 +213,7 @@ export class BlackBoxProcessor {
     else return;
 
     const output = this.process(mappingId, input);
-    
-    // Расходуем входной предмет
+
     if (removeInput) {
       if (input === 'corn') this.inventory.corn--;
       else if (input === 'core') this.inventory.cores--;
@@ -242,8 +223,7 @@ export class BlackBoxProcessor {
       else if (input === 'bait') this.inventory.hasBait = false;
       else if (typeof input === 'string' && input.startsWith('key_')) this.inventory.keys.pop();
     }
-    
-    // Добавляем выходной предмет
+
     if (output === 'corn') this.inventory.corn++;
     else if (output === 'core') this.inventory.cores++;
     else if (output === 'drill') this.inventory.hasDrill = true;
@@ -254,9 +234,6 @@ export class BlackBoxProcessor {
     else if (typeof output === 'string' && output.startsWith('key_')) this.inventory.keys.push(output);
   }
 
-  // --------------------------------------------------------------------------
-  // ПРИМЕНИТЬ MIMO ПРЕОБРАЗОВАНИЕ
-  // --------------------------------------------------------------------------
   public applyMIMO(mappingId: string): void {
     const mapping = this.mappings.get(mappingId);
     if (!mapping || mapping.inputCount !== 2) {
@@ -266,16 +243,10 @@ export class BlackBoxProcessor {
     this.process(mappingId, null);
   }
 
-  // --------------------------------------------------------------------------
-  // ПОЛУЧИТЬ МАППИНГ ПО ID
-  // --------------------------------------------------------------------------
   public getMapping(id: string): BlackBoxMapping | undefined {
     return this.mappings.get(id);
   }
 
-  // --------------------------------------------------------------------------
-  // ПОЛУЧИТЬ СПИСОК ВСЕХ МАППИНГОВ
-  // --------------------------------------------------------------------------
   public getAllMappings(): string[] {
     return Array.from(this.mappings.keys());
   }
