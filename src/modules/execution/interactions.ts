@@ -1,13 +1,13 @@
 // src/modules/execution/interactions.ts
 // ============================================================================
-// КОМАНДЫ ВЗАИМОДЕЙСТВИЯ: PUSH, SCAN, RIDE
+// ВЗАИМОДЕЙСТВИЕ С ОКРУЖЕНИЕМ – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// Реализует:
-// - PUSH – толкнуть кирпич (BRICK) в направлении взгляда (если за ним есть пустая клетка)
-// - SCAN – сканировать область 3x3 вокруг игрока, выявить скрытые объекты (ключи, инструменты, фальшивые стены, телепорты)
-// - RIDE – оседлать приручённого монстра (если он стоит перед игроком и не оседлан)
+// Реализует команды:
+// - PUSH – толкнуть кирпич (BRICK) в направлении башни
+// - SCAN – сканировать область 3×3 вокруг игрока, выявить скрытые объекты
+// - RIDE – оседлать приручённого монстра (если он стоит перед игроком)
 // ============================================================================
-// Все команды могут считаться "чёрными ходами" (упрощают прохождение).
+// В патче 2.0 PUSH и RIDE используют направление башни, а не корпуса.
 // ============================================================================
 
 import { TileType, Point, Inventory } from '../../types/index';
@@ -28,16 +28,20 @@ export class InteractionsExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // 1. PUSH – толкнуть кирпич (BRICK) перед игроком
+  // 1. PUSH – толкнуть кирпич (BRICK) в направлении башни
   // --------------------------------------------------------------------------
   public executePush(lastDirection: 'up' | 'down' | 'left' | 'right'): 'ok' {
-    // Определяем направление
+    // Используем угол башни для направления толчка
+    const turretAngle = this.player.getTurretAngle();
     let dx = 0, dy = 0;
-    switch (lastDirection) {
-      case 'up':    dy = -1; break;
-      case 'down':  dy = 1;  break;
-      case 'left':  dx = -1; break;
-      case 'right': dx = 1;  break;
+    switch (turretAngle) {
+      case 0:   dy = -1; break;
+      case 90:  dx = 1;  break;
+      case 180: dy = 1;  break;
+      case 270: dx = -1; break;
+      default:
+        log('InteractionsExecutor', 'executePush', `Invalid turret angle ${turretAngle}`);
+        return 'ok';
     }
 
     const playerPos = this.player.getPosition();
@@ -50,12 +54,10 @@ export class InteractionsExecutor {
       row: brickPos.row + dy,
     };
 
-    // Проверяем, что перед игроком кирпич, а за ним – пустая клетка (PLATFORM)
     const isBrick = this.level.map[brickPos.row]?.[brickPos.col] === TileType.BRICK;
     const isPushFree = this.level.map[pushPos.row]?.[pushPos.col] === TileType.PLATFORM;
 
     if (isBrick && isPushFree) {
-      // Перемещаем кирпич
       this.level.map[brickPos.row][brickPos.col] = TileType.PLATFORM;
       this.level.map[pushPos.row][pushPos.col] = TileType.BRICK;
       this.backdoorUsed = true;
@@ -69,21 +71,18 @@ export class InteractionsExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // 2. SCAN – сканировать область 3x3 вокруг игрока
+  // 2. SCAN – сканировать область 3×3 вокруг игрока
   // --------------------------------------------------------------------------
   public executeScan(playerPos: Point): 'ok' {
     const objects: string[] = [];
     const width = this.level.width;
     const height = this.level.height;
 
-    // Проходим по квадрату 3x3 с центром в игроке
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         const scanPos = { col: playerPos.col + dx, row: playerPos.row + dy };
         if (scanPos.col >= 0 && scanPos.col < width && scanPos.row >= 0 && scanPos.row < height) {
           const tile = this.level.map[scanPos.row][scanPos.col];
-          
-          // Собираем информацию о скрытых/полезных объектах
           if (tile === TileType.KEY) objects.push('key');
           else if (tile === TileType.CORN) objects.push('corn');
           else if (tile === TileType.CORE) objects.push('core');
@@ -96,6 +95,8 @@ export class InteractionsExecutor {
           else if (tile === TileType.TELEPORT_IN) objects.push('teleport');
           else if (tile === TileType.BRIDGE_ACTIVE) objects.push('active bridge');
           else if (tile === TileType.BLACK_BOX) objects.push('black box');
+          else if (tile === TileType.MAGNET) objects.push('magnet');
+          else if (tile === TileType.SLOW_FIELD) objects.push('slow field');
         }
       }
     }
@@ -108,15 +109,19 @@ export class InteractionsExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // 3. RIDE – оседлать приручённого монстра перед игроком
+  // 3. RIDE – оседлать приручённого монстра перед игроком (по направлению башни)
   // --------------------------------------------------------------------------
   public executeRide(lastDirection: 'up' | 'down' | 'left' | 'right'): 'ok' {
+    const turretAngle = this.player.getTurretAngle();
     let dx = 0, dy = 0;
-    switch (lastDirection) {
-      case 'up':    dy = -1; break;
-      case 'down':  dy = 1;  break;
-      case 'left':  dx = -1; break;
-      case 'right': dx = 1;  break;
+    switch (turretAngle) {
+      case 0:   dy = -1; break;
+      case 90:  dx = 1;  break;
+      case 180: dy = 1;  break;
+      case 270: dx = -1; break;
+      default:
+        log('InteractionsExecutor', 'executeRide', `Invalid turret angle ${turretAngle}`);
+        return 'ok';
     }
 
     const targetPos = {
@@ -124,7 +129,6 @@ export class InteractionsExecutor {
       row: this.player.getPosition().row + dy,
     };
 
-    // Ищем монстра на этой позиции
     const monsters = this.level.objects?.monsters || [];
     const monster = monsters.find((m: any) =>
       m.position.col === targetPos.col && m.position.row === targetPos.row
@@ -143,9 +147,6 @@ export class InteractionsExecutor {
     return 'ok';
   }
 
-  // --------------------------------------------------------------------------
-  // ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПРОВЕРКИ ЧЁРНОГО ХОДА
-  // --------------------------------------------------------------------------
   public isBackdoorUsed(): boolean {
     return this.backdoorUsed;
   }
