@@ -1,13 +1,12 @@
 // src/modules/execution/combat.ts
 // ============================================================================
-// ОБРАБОТЧИК БОЕВЫХ КОМАНД
+// БОЕВЫЕ КОМАНДЫ – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
 // Реализует команды:
-// - THROW – бросить ядро в монстра перед игроком (уничтожает монстра, расходует ядро)
-// - FEED  – накормить монстра кукурузой (приручает, расходует кукурузу)
+// - THROW – бросить ядро в монстра перед игроком (в направлении башни)
+// - FEED  – накормить монстра кукурузой в направлении башни
 // ============================================================================
-// Обе команды требуют, чтобы перед игроком (в направлении взгляда) находился монстр.
-// THROW уничтожает любого монстра, FEED работает только на tameable и patrol.
+// Все действия выполняются по направлению башни (не корпуса).
 // ============================================================================
 
 import { TileType, Inventory } from '../../types/index';
@@ -15,9 +14,9 @@ import { gameEvents as eventBus } from '../../core/EventBus';
 import { log, logInfo, logError } from './helpers';
 
 export class CombatExecutor {
-  private level: any;           // уровень (объекты, монстры)
-  private player: any;          // игрок (для позиции и направления)
-  private inventory: Inventory; // инвентарь (расходуем ядра/кукурузу)
+  private level: any;
+  private player: any;
+  private inventory: Inventory;
   private backdoorUsed: boolean;
 
   constructor(level: any, player: any, inventory: Inventory) {
@@ -28,7 +27,7 @@ export class CombatExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // 1. THROW – бросить ядро в монстра перед игроком
+  // 1. THROW – бросить ядро в монстра перед игроком (по направлению башни)
   // --------------------------------------------------------------------------
   public executeThrow(lastDirection: 'up' | 'down' | 'left' | 'right'): 'ok' {
     if (this.inventory.cores === 0) {
@@ -36,20 +35,24 @@ export class CombatExecutor {
       return 'ok';
     }
 
-    // Определяем клетку впереди игрока
+    // Используем угол башни для определения направления броска
+    const turretAngle = this.player.getTurretAngle();
     let dx = 0, dy = 0;
-    switch (lastDirection) {
-      case 'up':    dy = -1; break;
-      case 'down':  dy = 1;  break;
-      case 'left':  dx = -1; break;
-      case 'right': dx = 1;  break;
+    switch (turretAngle) {
+      case 0:   dy = -1; break;
+      case 90:  dx = 1;  break;
+      case 180: dy = 1;  break;
+      case 270: dx = -1; break;
+      default:
+        log('CombatExecutor', 'executeThrow', `Invalid turret angle ${turretAngle}`);
+        return 'ok';
     }
+
     const targetPos = {
       col: this.player.getPosition().col + dx,
       row: this.player.getPosition().row + dy,
     };
 
-    // Ищем монстра на этой позиции
     const monsters = this.level.objects?.monsters || [];
     const monsterIndex = monsters.findIndex((m: any) =>
       m.position.col === targetPos.col && m.position.row === targetPos.row
@@ -57,9 +60,7 @@ export class CombatExecutor {
 
     if (monsterIndex !== -1) {
       const monster = monsters[monsterIndex];
-      // Удаляем монстра
       monsters.splice(monsterIndex, 1);
-      // Расходуем одно ядро
       this.inventory.cores--;
       this.backdoorUsed = true;
       logInfo('CombatExecutor', 'executeThrow', `Core thrown at monster at (${targetPos.col},${targetPos.row}), monster destroyed`);
@@ -73,7 +74,7 @@ export class CombatExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // 2. FEED – накормить монстра кукурузой (приручить)
+  // 2. FEED – накормить монстра кукурузой (приручить) по направлению башни
   // --------------------------------------------------------------------------
   public executeFeed(lastDirection: 'up' | 'down' | 'left' | 'right'): 'ok' {
     if (this.inventory.corn === 0) {
@@ -81,13 +82,18 @@ export class CombatExecutor {
       return 'ok';
     }
 
+    const turretAngle = this.player.getTurretAngle();
     let dx = 0, dy = 0;
-    switch (lastDirection) {
-      case 'up':    dy = -1; break;
-      case 'down':  dy = 1;  break;
-      case 'left':  dx = -1; break;
-      case 'right': dx = 1;  break;
+    switch (turretAngle) {
+      case 0:   dy = -1; break;
+      case 90:  dx = 1;  break;
+      case 180: dy = 1;  break;
+      case 270: dx = -1; break;
+      default:
+        log('CombatExecutor', 'executeFeed', `Invalid turret angle ${turretAngle}`);
+        return 'ok';
     }
+
     const targetPos = {
       col: this.player.getPosition().col + dx,
       row: this.player.getPosition().row + dy,
@@ -98,7 +104,6 @@ export class CombatExecutor {
       m.position.col === targetPos.col && m.position.row === targetPos.row
     );
 
-    // Приручить можно tameable или patrol монстра
     if (monster && (monster.type === 'tameable' || monster.type === 'patrol')) {
       monster.isTamed = true;
       this.inventory.corn--;
@@ -114,7 +119,7 @@ export class CombatExecutor {
   }
 
   // --------------------------------------------------------------------------
-  // ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПРОВЕРКИ ЧЁРНОГО ХОДА
+  // ПРОВЕРКА ЧЁРНОГО ХОДА
   // --------------------------------------------------------------------------
   public isBackdoorUsed(): boolean {
     return this.backdoorUsed;
