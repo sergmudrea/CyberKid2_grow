@@ -1,18 +1,15 @@
 // src/modules/CommandPanel.ts
 // ============================================================================
-// ПАНЕЛЬ КОМАНД – ПОЛНАЯ ДИНАМИЧЕСКАЯ ВЕРСИЯ
+// ПАНЕЛЬ КОМАНД – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// - Отображает только те команды, которые разрешены для текущего уровня (allowedCommands)
-// - Если allowedCommands не указан или пуст, показывает все команды
-// - Группы без разрешённых команд скрываются
-// - Поддерживает сохранение/загрузку программ в localStorage
-// - Подсветку выполняемой команды (зелёный – успех, красный – ошибка)
-// - При уничтожении (destroy) полностью удаляет все DOM-элементы
+// - Добавлены новые кнопки для раздельного управления башней и корпусом
+// - Поддержка SET_ANGLE, RELATIVE_TURN, SHOW_AIM, IF_ANGLE, WHILE_NOT_FACING
+// - Динамическая фильтрация команд в зависимости от allowedCommands
+// - Полная обратная совместимость
 // ============================================================================
 
-import { Command } from '../types/index';
+import { Command, ControlMode } from '../types/index';
 
-// Описание группы команд
 interface CommandGroup {
   title: string;
   commands: Command[];
@@ -27,10 +24,25 @@ export class CommandPanel {
   private onAddCommandCallback: (commands: Command[]) => void;
   private commandElements: Map<number, HTMLDivElement> = new Map();
   private allowedCommands: Command[] = [];
+  private controlMode: ControlMode = ControlMode.SEPARATE; // по умолчанию новый режим
 
-  // Все возможные группы команд (полный набор)
   private readonly allGroups: CommandGroup[] = [
-    { title: 'MOVEMENT', commands: [Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT] },
+    // ---------- НОВЫЕ ГРУППЫ ДЛЯ ПАТЧА 2.0 ----------
+    { title: 'TURRET CONTROL', commands: [
+      Command.TURN_LEFT,
+      Command.TURN_RIGHT,
+      Command.TURN_AROUND,
+      Command.SYNC_BODY,
+      Command.SET_ANGLE,
+      Command.RELATIVE_TURN,
+      Command.SHOW_AIM,
+    ]},
+    { title: 'MOVEMENT (NEW)', commands: [
+      Command.MOVE_FORWARD,
+      Command.MOVE_BACKWARD,
+    ]},
+    // ---------- СТАРЫЕ ГРУППЫ ----------
+    { title: 'MOVEMENT (CLASSIC)', commands: [Command.UP, Command.DOWN, Command.LEFT, Command.RIGHT] },
     { title: 'INVENTORY', commands: [Command.PUSH, Command.USE_KEY, Command.PICKUP, Command.DROP] },
     { title: 'TOOLS', commands: [Command.DRILL, Command.HOOK, Command.WING, Command.BAIT] },
     { title: 'COMBAT', commands: [Command.THROW, Command.FEED] },
@@ -40,6 +52,8 @@ export class CommandPanel {
     { title: 'PARALLELISM', commands: [Command.CLONE, Command.JOIN] },
     { title: 'INTERACTION', commands: [Command.SCAN, Command.RIDE] },
     { title: 'BLACK BOX', commands: [Command.BLACK_BOX] },
+    // ---------- НОВЫЕ УСЛОВНЫЕ КОНСТРУКЦИИ ----------
+    { title: 'CONDITIONS (NEW)', commands: [Command.IF_ANGLE, Command.WHILE_NOT_FACING] },
   ];
 
   constructor(
@@ -67,7 +81,6 @@ export class CommandPanel {
     this.onAddCommandCallback(this.commands);
   }
 
-  // Подсветка команды в списке PROGRAM
   public highlightCommand(index: number, type: 'running' | 'error'): void {
     this.commandElements.forEach((element, idx) => {
       if (idx === index) {
@@ -85,14 +98,18 @@ export class CommandPanel {
     });
   }
 
-  // Установить разрешённые команды и перестроить панель
   public setAllowedCommands(commands: Command[]): void {
     this.allowedCommands = commands || [];
     this.refreshPanel();
   }
 
+  public setControlMode(mode: ControlMode): void {
+    this.controlMode = mode;
+    this.refreshPanel(); // перестроить панель (скрыть/показать группы)
+  }
+
   // --------------------------------------------------------------------------
-  // ПЕРЕСТРОЙКА ПАНЕЛИ (при изменении allowedCommands)
+  // ПЕРЕСТРОЙКА ПАНЕЛИ
   // --------------------------------------------------------------------------
   private refreshPanel(): void {
     const currentProgram = [...this.commands];
@@ -104,7 +121,7 @@ export class CommandPanel {
   }
 
   // --------------------------------------------------------------------------
-  // СОЗДАНИЕ DOM-ПАНЕЛИ (с учётом allowedCommands)
+  // СОЗДАНИЕ DOM-ПАНЕЛИ
   // --------------------------------------------------------------------------
   private createPanel(): void {
     this.container = document.createElement('div');
@@ -112,7 +129,7 @@ export class CommandPanel {
     this.container.style.top = '50%';
     this.container.style.left = '20px';
     this.container.style.transform = 'translateY(-50%)';
-    this.container.style.width = '200px';
+    this.container.style.width = '220px';
     this.container.style.backgroundColor = 'rgba(0,0,0,0.85)';
     this.container.style.borderRadius = '12px';
     this.container.style.padding = '10px';
@@ -134,61 +151,34 @@ export class CommandPanel {
     title.style.marginBottom = '10px';
     this.container.appendChild(title);
 
-    // Проходим по группам и добавляем только те, у которых есть разрешённые команды
+    // Отображаем группы в зависимости от режима управления
     for (const group of this.allGroups) {
+      // Фильтрация: если это группа классического движения и controlMode = separate – не показываем
+      if (group.title === 'MOVEMENT (CLASSIC)' && this.controlMode === ControlMode.SEPARATE) continue;
+      if (group.title === 'MOVEMENT (NEW)' && this.controlMode === ControlMode.CLASSIC) continue;
+
       const enabledCmds = group.commands.filter(cmd => this.isCommandAllowed(cmd));
       if (enabledCmds.length === 0) continue;
 
       const groupDiv = document.createElement('div');
-      groupDiv.style.marginBottom = '8px';
+      groupDiv.style.marginBottom = '12px';
       const groupTitle = document.createElement('div');
       groupTitle.textContent = group.title;
       groupTitle.style.color = '#ffaa00';
       groupTitle.style.fontSize = '12px';
       groupTitle.style.fontWeight = 'bold';
       groupTitle.style.marginBottom = '4px';
+      groupTitle.style.borderBottom = '1px solid #ffaa00';
       groupDiv.appendChild(groupTitle);
 
       for (const cmd of enabledCmds) {
         this.addCommandButtonToContainer(this.getButtonLabel(cmd), cmd, groupDiv);
       }
       this.container.appendChild(groupDiv);
-      this.addSeparator();
     }
 
-    // Кнопки RUN и CLEAR (всегда добавляются)
-    const runBtn = document.createElement('button');
-    runBtn.textContent = '▶ RUN';
-    runBtn.style.padding = '8px';
-    runBtn.style.fontSize = '16px';
-    runBtn.style.backgroundColor = '#00aa44';
-    runBtn.style.color = 'white';
-    runBtn.style.border = 'none';
-    runBtn.style.borderRadius = '6px';
-    runBtn.style.cursor = 'pointer';
-    runBtn.style.marginTop = '10px';
-    runBtn.onclick = () => this.onRunCallback(this.commands);
-    this.container.appendChild(runBtn);
-
-    const clearBtn = document.createElement('button');
-    clearBtn.textContent = '🗑 CLEAR';
-    clearBtn.style.padding = '8px';
-    clearBtn.style.fontSize = '16px';
-    clearBtn.style.backgroundColor = '#aa4444';
-    clearBtn.style.color = 'white';
-    clearBtn.style.border = 'none';
-    clearBtn.style.borderRadius = '6px';
-    clearBtn.style.cursor = 'pointer';
-    clearBtn.style.marginTop = '5px';
-    clearBtn.onclick = () => {
-      this.commands = [];
-      this.updateProgramList();
-      this.onClearCallback();
-    };
-    this.container.appendChild(clearBtn);
-
-    // Панель программы создаётся один раз, но может быть пересоздана при refreshPanel? 
-    // Мы вызываем её в createPanel, но она будет создаваться заново – нормально.
+    // Кнопки RUN, CLEAR, SAVE, LOAD (остаются всегда)
+    this.addControlButtons();
     this.createProgramPanel();
   }
 
@@ -199,6 +189,19 @@ export class CommandPanel {
 
   private getButtonLabel(cmd: Command): string {
     const labels: Partial<Record<Command, string>> = {
+      // Новые команды
+      [Command.MOVE_FORWARD]: '⬆️ Move Forward',
+      [Command.MOVE_BACKWARD]: '⬇️ Move Backward',
+      [Command.TURN_LEFT]: '⬅️ Turn Turret Left',
+      [Command.TURN_RIGHT]: '➡️ Turn Turret Right',
+      [Command.TURN_AROUND]: '🔄 Turn Turret 180°',
+      [Command.SYNC_BODY]: '🧭 Sync Body',
+      [Command.SET_ANGLE]: '🎯 Set Angle',
+      [Command.RELATIVE_TURN]: '🔁 Relative Turn',
+      [Command.SHOW_AIM]: '🎯 Show Aim',
+      [Command.IF_ANGLE]: '❓ IF Angle ==',
+      [Command.WHILE_NOT_FACING]: '🔄 WHILE not facing target',
+      // Старые
       [Command.UP]: '↑ Up',
       [Command.DOWN]: '↓ Down',
       [Command.LEFT]: '← Left',
@@ -235,7 +238,7 @@ export class CommandPanel {
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.style.padding = '6px';
-    btn.style.fontSize = '13px';
+    btn.style.fontSize = '12px';
     btn.style.backgroundColor = '#2a2a4a';
     btn.style.color = 'white';
     btn.style.border = 'none';
@@ -245,18 +248,77 @@ export class CommandPanel {
     btn.style.textAlign = 'left';
     btn.style.width = '100%';
     btn.onclick = () => {
-      this.commands.push(cmd);
-      this.updateProgramList();
-      this.onAddCommandCallback(this.commands);
+      // Для команд с числовым аргументом (SET_ANGLE, RELATIVE_TURN) – запросить значение
+      if (cmd === Command.SET_ANGLE) {
+        const angle = prompt('Введите угол (0, 90, 180, 270):', '0');
+        if (angle !== null) {
+          const num = parseInt(angle, 10);
+          if (!isNaN(num)) {
+            this.commands.push(cmd, num as any);
+            this.updateProgramList();
+            this.onAddCommandCallback(this.commands);
+          }
+        }
+      } else if (cmd === Command.RELATIVE_TURN) {
+        const delta = prompt('Введите относительный угол (например, +45):', '90');
+        if (delta !== null) {
+          const num = parseInt(delta, 10);
+          if (!isNaN(num)) {
+            this.commands.push(cmd, num as any);
+            this.updateProgramList();
+            this.onAddCommandCallback(this.commands);
+          }
+        }
+      } else if (cmd === Command.IF_ANGLE) {
+        const angle = prompt('Угол для условия (0, 90, 180, 270):', '0');
+        if (angle !== null) {
+          const num = parseInt(angle, 10);
+          if (!isNaN(num)) {
+            this.commands.push(cmd, num as any);
+            this.commands.push(Command.END);
+            this.updateProgramList();
+            this.onAddCommandCallback(this.commands);
+          }
+        }
+      } else {
+        this.commands.push(cmd);
+        this.updateProgramList();
+        this.onAddCommandCallback(this.commands);
+      }
     };
     container.appendChild(btn);
   }
 
-  private addSeparator(): void {
-    const sep = document.createElement('hr');
-    sep.style.margin = '8px 0';
-    sep.style.borderColor = '#444';
-    this.container.appendChild(sep);
+  private addControlButtons(): void {
+    const runBtn = document.createElement('button');
+    runBtn.textContent = '▶ RUN';
+    runBtn.style.padding = '8px';
+    runBtn.style.fontSize = '14px';
+    runBtn.style.backgroundColor = '#00aa44';
+    runBtn.style.color = 'white';
+    runBtn.style.border = 'none';
+    runBtn.style.borderRadius = '6px';
+    runBtn.style.cursor = 'pointer';
+    runBtn.style.marginTop = '10px';
+    runBtn.onclick = () => this.onRunCallback(this.commands);
+    this.container.appendChild(runBtn);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = '🗑 CLEAR';
+    clearBtn.style.padding = '8px';
+    clearBtn.style.fontSize = '14px';
+    clearBtn.style.backgroundColor = '#aa4444';
+    clearBtn.style.color = 'white';
+    clearBtn.style.border = 'none';
+    clearBtn.style.borderRadius = '6px';
+    clearBtn.style.cursor = 'pointer';
+    clearBtn.style.marginTop = '5px';
+    clearBtn.onclick = () => {
+      this.commands = [];
+      this.updateProgramList();
+      this.onClearCallback();
+    };
+    this.container.appendChild(clearBtn);
   }
 
   private createProgramPanel(): void {
@@ -349,7 +411,15 @@ export class CommandPanel {
     this.programListDiv.innerHTML = '';
     this.commandElements.clear();
 
-    this.commands.forEach((cmd, index) => {
+    let i = 0;
+    while (i < this.commands.length) {
+      const cmd = this.commands[i];
+      // Пропускаем служебный END
+      if (cmd === Command.END) {
+        i++;
+        continue;
+      }
+
       const cmdDiv = document.createElement('div');
       cmdDiv.style.backgroundColor = '#3a3a5a';
       cmdDiv.style.padding = '6px 12px';
@@ -358,8 +428,18 @@ export class CommandPanel {
       cmdDiv.style.alignItems = 'center';
       cmdDiv.style.justifyContent = 'space-between';
 
+      let displayText = this.getButtonLabel(cmd);
+      // Если команда с аргументом (следующий элемент – число)
+      if ((cmd === Command.SET_ANGLE || cmd === Command.RELATIVE_TURN || cmd === Command.IF_ANGLE) && i + 1 < this.commands.length) {
+        const arg = this.commands[i + 1];
+        if (typeof arg === 'number') {
+          displayText += ` ${arg}`;
+          i++; // пропускаем аргумент
+        }
+      }
+
       const cmdText = document.createElement('span');
-      cmdText.textContent = cmd;
+      cmdText.textContent = displayText;
       cmdText.style.fontSize = '12px';
       cmdText.style.color = '#fff';
 
@@ -372,7 +452,11 @@ export class CommandPanel {
       removeBtn.style.cursor = 'pointer';
       removeBtn.style.padding = '2px 6px';
       removeBtn.onclick = () => {
-        this.commands.splice(index, 1);
+        // Удаляем команду (и аргумент, если есть)
+        this.commands.splice(i, 1);
+        if (cmd === Command.SET_ANGLE || cmd === Command.RELATIVE_TURN || cmd === Command.IF_ANGLE) {
+          if (typeof this.commands[i] === 'number') this.commands.splice(i, 1);
+        }
         this.updateProgramList();
         this.onAddCommandCallback(this.commands);
       };
@@ -380,13 +464,13 @@ export class CommandPanel {
       cmdDiv.appendChild(cmdText);
       cmdDiv.appendChild(removeBtn);
       this.programListDiv.appendChild(cmdDiv);
-      this.commandElements.set(index, cmdDiv);
-    });
+      this.commandElements.set(this.commandElements.size, cmdDiv);
+      i++;
+    }
   }
 
   public destroy(): void {
     if (this.container) this.container.remove();
-    // Удаляем правую панель программы
     const rightPanel = document.querySelector('div[style*="right: 20px"]');
     if (rightPanel) rightPanel.remove();
   }
