@@ -1,70 +1,54 @@
 // src/types/index.ts
 // ============================================================================
-// ОСНОВНЫЕ ТИПЫ ДЛЯ ИГРЫ CYBERKID
-// ============================================================================
-// Здесь определены все перечисления (enum), интерфейсы (interface) и типы (type),
-// которые используются во всём проекте: команды языка, типы тайлов, инвентарь,
-// данные уровней, прогресс игрока и т.д.
-// ============================================================================
-
-// ----------------------------------------------------------------------------
-// 1. КОМАНДЫ ЯЗЫКА ПРОГРАММИРОВАНИЯ (используются в CommandPanel, AST, ExecutionEngine)
-// ----------------------------------------------------------------------------
-// Каждая команда — это строка, но для типобезопасности используем enum.
-// Значения команд совпадают с их строковым представлением, что упрощает отладку.
+// ОСНОВНЫЕ ТИПЫ ДЛЯ ИГРЫ CYBERKID: ТАНКИСТ (ПАТЧ 2.0)
 // ============================================================================
 
 export enum Command {
-  // Движение
+  // ---------- Движение и поворот башни (НОВЫЕ) ----------
+  MOVE_FORWARD = 'move_forward',
+  MOVE_BACKWARD = 'move_backward',
+  TURN_LEFT = 'turn_left',
+  TURN_RIGHT = 'turn_right',
+  TURN_AROUND = 'turn_around',
+  SYNC_BODY = 'sync_body',
+  SET_ANGLE = 'set_angle',
+  RELATIVE_TURN = 'relative_turn',
+  SHOW_AIM = 'show_aim',
+
+  // ---------- Условные и циклические конструкции для углов ----------
+  IF_ANGLE = 'if_angle',
+  WHILE_NOT_FACING = 'while_not_facing',
+
+  // ---------- ОСТАЛЬНЫЕ СТАРЫЕ КОМАНДЫ ----------
   UP = 'up',
   DOWN = 'down',
   LEFT = 'left',
   RIGHT = 'right',
-
-  // Управление инвентарём
   PICKUP = 'pickup',
   DROP = 'drop',
   USE_KEY = 'use_key',
-
-  // Инструменты
   DRILL = 'drill',
   HOOK = 'hook',
   WING = 'wing',
   BAIT = 'bait',
-
-  // Бой
   THROW = 'throw',
   FEED = 'feed',
-
-  // Управление временем
   TIME_SLOW = 'time_slow',
   TIME_FAST = 'time_fast',
   WAIT = 'wait',
-
-  // Функции
   DEF = 'def',
   CALL = 'call',
   RETURN = 'return',
   PARAM = 'param',
-
-  // ООП
   CLASS = 'class',
   NEW = 'new',
   METHOD = 'method',
-
-  // Параллелизм
   CLONE = 'clone',
   JOIN = 'join',
-
-  // Взаимодействие
   PUSH = 'push',
   SCAN = 'scan',
   RIDE = 'ride',
-
-  // Чёрный ящик
   BLACK_BOX = 'black_box',
-
-  // Циклы и условия (используются в AST)
   FOR_N = 'for_n',
   FOR_LOOP = 'for_loop',
   WHILE_MONSTER = 'while_monster',
@@ -78,8 +62,6 @@ export enum Command {
   IF_KEY = 'if_key',
   IF_NO_KEY = 'if_no_key',
   ELSE = 'else',
-
-  // Служебные
   START = 'start',
   END = 'end'
 }
@@ -127,7 +109,10 @@ export enum TileType {
   TRAP = 43,
   CAGE_KEY = 44,
   PRISONER = 45,
-  GEM = 46
+  GEM = 46,
+  // НОВЫЕ ДЛЯ ПАТЧА 2.0
+  MAGNET = 50,
+  SLOW_FIELD = 51
 }
 
 export interface Point {
@@ -146,6 +131,24 @@ export interface Inventory {
   tools: string[];
 }
 
+// НОВЫЕ ТИПЫ ДЛЯ ПАТЧА 2.0
+export enum ControlMode {
+  CLASSIC = 'classic',
+  SEPARATE = 'separate'
+}
+
+export interface Magnet {
+  id: string;
+  position: Point;
+  strength: number;
+}
+
+export interface SlowField {
+  id: string;
+  position: Point;
+  factor: number;
+}
+
 export interface LevelData {
   id: string;
   name: string;
@@ -154,14 +157,14 @@ export interface LevelData {
   height: number;
   map: TileType[][];
   startPos: Point;
+  startTurretAngle?: number;
+  startHullDirection?: 'up'|'down'|'left'|'right';
   coinPos: Point;
   optimalSteps?: number;
-  initialCode?: Command[];
-  items?: { id: string; pos: Point }[];
-  objects?: any;
-  // НОВОЕ ПОЛЕ: список разрешённых команд для этого уровня
-  // Если не указано или пустой массив – показывать все команды (для совместимости)
   allowedCommands?: Command[];
+  controlMode?: ControlMode;
+  objects?: any;
+  items?: { id: string; pos: Point }[];
 }
 
 export interface LevelStats {
@@ -198,6 +201,8 @@ export interface UserSettings {
   language: string;
   soundEnabled: boolean;
   musicEnabled: boolean;
+  controlMode: ControlMode;
+  classicModeCompatibility: boolean;
 }
 
 export interface ExecutionResult {
