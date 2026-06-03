@@ -1,17 +1,35 @@
 {
-  "name": "cyberkid2-grow",
-  "version": "0.1.0",
-  "description": "CyberKid educational game - rebuild from scratch",
+  "name": "cyberkid-tankist",
+  "version": "2.0.0",
+  "description": "CyberKid: Танкист – игра, которая учит программировать с раздельным управлением башней и корпусом",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "generate:levels": "npx tsx tools/generator/index.ts run",
+    "generate:manifest": "node scripts/generate-manifest.js",
+    "test:generator": "npx tsx tools/generator/test.ts",
+    "capacitor:sync": "npx cap sync",
+    "capacitor:open:android": "npx cap open android",
+    "capacitor:open:ios": "npx cap open ios",
+    "build:android": "npm run build && npx cap sync && npx cap copy android",
+    "build:ios": "npm run build && npx cap sync && npx cap copy ios"
   },
   "dependencies": {
-    "phaser": "^3.80.1"
+    "phaser": "^3.80.1",
+    "seedrandom": "^3.0.5"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@types/node": "^20.11.0",
+    "@types/seedrandom": "^3.0.8",
+    "commander": "^12.0.0",
+    "tsx": "^4.10.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.0"
+    "vite": "^5.1.0"
   }
 }
