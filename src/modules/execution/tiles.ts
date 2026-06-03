@@ -1,13 +1,12 @@
 // src/modules/execution/tiles.ts
 // ============================================================================
-// ОБРАБОТЧИК СПЕЦИАЛЬНЫХ ТАЙЛОВ – ПОЛНАЯ ВЕРСИЯ
+// ОБРАБОТЧИК СПЕЦИАЛЬНЫХ ТАЙЛОВ – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// Отвечает за:
-// - телепорты, конвейеры, пружины
-// - чёрные ящики, кнопки, рычаги, таймеры, сенсоры, сортировщики
-// - клей, клетки, ловушки
-// ============================================================================
-// ИСПРАВЛЕНИЕ: в processConveyor добавлен счётчик depth для предотвращения бесконечной рекурсии
+// - Телепорты, конвейеры, пружины
+// - Чёрный ящик, кнопки, рычаги, таймеры, сенсоры, сортировщики
+// - Клей, клетка, ловушка (старые механики)
+// - МАГНИТЫ (притягивание танка, если башня смотрит на магнит)
+// - ЗАМЕДЛЯЮЩИЕ ПОЛЯ (удваивают время выполнения действий)
 // ============================================================================
 
 import { TileType, Point, Inventory } from '../../types/index';
@@ -52,7 +51,6 @@ export class TilesExecutor {
   // 2. КОНВЕЙЕРЫ (с защитой от бесконечной рекурсии)
   // ==========================================================================
   public async processConveyor(pos: Point, command: any, depth: number = 0): Promise<boolean> {
-    // Защита от слишком глубокой рекурсии (например, замкнутые конвейеры)
     if (depth > 50) {
       logError('TilesExecutor', 'processConveyor', 'Max depth exceeded, stopping to avoid recursion');
       return false;
@@ -133,7 +131,7 @@ export class TilesExecutor {
 
     logInfo('TilesExecutor', 'processBlackBox', `BlackBox triggered at (${pos.col},${pos.row}) mapping: ${blackBox.mapping}`);
     eventBus.emit('BLACK_BOX_ACTIVATED', { pos, mapping: blackBox.mapping });
-    // Реальное преобразование должно выполняться в BlackBoxProcessor, здесь только событие
+    // Здесь должен быть вызов BlackBoxProcessor (реализован в отдельном модуле)
   }
 
   // ==========================================================================
@@ -194,7 +192,7 @@ export class TilesExecutor {
     logInfo('TilesExecutor', 'processTimer', `Timer started at (${pos.col},${pos.row}) delay: ${timer.delay}ms`);
     eventBus.emit('TIMER_STARTED', { pos, timerId: timer.id, delay: timer.delay });
 
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       timer.active = false;
       logInfo('TilesExecutor', 'processTimer', `Timer finished at (${pos.col},${pos.row})`);
       eventBus.emit('TIMER_FINISHED', { pos, timerId: timer.id });
@@ -209,6 +207,7 @@ export class TilesExecutor {
         }
       }
     }, timer.delay);
+    this.timers.set(timer.id, timerId as any);
   }
 
   public processSensor(pos: Point): void {
@@ -252,7 +251,7 @@ export class TilesExecutor {
   }
 
   // ==========================================================================
-  // 6. НОВЫЕ МЕХАНИКИ: КЛЕЙ, КЛЕТКА, ЛОВУШКА
+  // 6. КЛЕЙ, КЛЕТКА, ЛОВУШКА
   // ==========================================================================
   public processGlue(pos: Point): void {
     const tile = this.level.map[pos.row][pos.col];
@@ -335,5 +334,57 @@ export class TilesExecutor {
       }
     }
     return false;
+  }
+
+  // ==========================================================================
+  // 7. МАГНИТ (НОВОЕ ДЛЯ ПАТЧА 2.0)
+  // ==========================================================================
+  public processMagnet(pos: Point): void {
+    const magnet = this.level.objects?.magnets?.find((m: any) => m.position.x === pos.x && m.position.y === pos.y);
+    if (!magnet) return;
+
+    const playerPos = this.player.getPosition();
+    const dx = magnet.position.x - playerPos.x;
+    const dy = magnet.position.y - playerPos.y;
+    const turretAngle = this.player.getTurretAngle();
+
+    let requiredAngle = 0;
+    if (dx > 0) requiredAngle = 90;
+    else if (dx < 0) requiredAngle = 270;
+    else if (dy > 0) requiredAngle = 180;
+    else if (dy < 0) requiredAngle = 0;
+    else return;
+
+    if (turretAngle === requiredAngle) {
+      const newPos = {
+        col: playerPos.col + Math.sign(dx),
+        row: playerPos.row + Math.sign(dy),
+      };
+      if (newPos.col >= 0 && newPos.col < this.level.width &&
+          newPos.row >= 0 && newPos.row < this.level.height) {
+        const tile = this.level.map[newPos.row][newPos.col];
+        if (!isWall(tile) && !isHole(tile) && tile !== TileType.BRICK) {
+          this.player.teleport(newPos);
+          logInfo('TilesExecutor', 'processMagnet', `Magnet pulled player to (${newPos.col},${newPos.row})`);
+          eventBus.emit('PLAYER_MOVED', { from: playerPos, to: newPos });
+        }
+      }
+    }
+  }
+
+  // ==========================================================================
+  // 8. ЗАМЕДЛЯЮЩЕЕ ПОЛЕ (НОВОЕ ДЛЯ ПАТЧА 2.0)
+  // ==========================================================================
+  public processSlowField(pos: Point): void {
+    const slowField = this.level.objects?.slowFields?.find((s: any) => s.position.x === pos.x && s.position.y === pos.y);
+    if (slowField) {
+      this.player.setSlowFactor(2);
+      logInfo('TilesExecutor', 'processSlowField', `Slow field activated at (${pos.col},${pos.row})`);
+      eventBus.emit('SLOW_FIELD_ENTERED', { pos, factor: 2 });
+    } else {
+      // Если вышли из поля, сбрасываем множитель
+      this.player.resetSlowFactor();
+      eventBus.emit('SLOW_FIELD_EXITED', { pos });
+    }
   }
 }
