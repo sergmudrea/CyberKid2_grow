@@ -364,7 +364,6 @@ export class InventoryAwareBFS {
   }
   
   private expandTurretActions(state: SearchState): void {
-    // Поворот влево на 90°
     const newAngleLeft = (state.turretAngle - 90 + 360) % 360;
     const newStateLeft = this.cloneState(state);
     newStateLeft.turretAngle = newAngleLeft;
@@ -372,7 +371,6 @@ export class InventoryAwareBFS {
     newStateLeft.path = [...state.path, { x: state.x, y: state.y }];
     this.addState(newStateLeft);
     
-    // Поворот вправо на 90°
     const newAngleRight = (state.turretAngle + 90) % 360;
     const newStateRight = this.cloneState(state);
     newStateRight.turretAngle = newAngleRight;
@@ -380,7 +378,6 @@ export class InventoryAwareBFS {
     newStateRight.path = [...state.path, { x: state.x, y: state.y }];
     this.addState(newStateRight);
     
-    // Разворот на 180°
     const newAngleAround = (state.turretAngle + 180) % 360;
     const newStateAround = this.cloneState(state);
     newStateAround.turretAngle = newAngleAround;
@@ -388,7 +385,6 @@ export class InventoryAwareBFS {
     newStateAround.path = [...state.path, { x: state.x, y: state.y }];
     this.addState(newStateAround);
     
-    // Синхронизация корпуса с башней
     const newDir = this.angleToDirection(state.turretAngle);
     if (newDir && newDir !== state.hullDirection) {
       const newStateSync = this.cloneState(state);
@@ -400,7 +396,6 @@ export class InventoryAwareBFS {
   }
   
   private expandMovementActions(state: SearchState): void {
-    // Движение вперёд (по направлению башни)
     const forwardDelta = this.angleToDelta(state.turretAngle);
     if (forwardDelta) {
       const nx = state.x + forwardDelta.dx;
@@ -416,7 +411,6 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Движение назад (кормой)
     const backwardDelta = this.directionToDelta(state.hullDirection, -1);
     if (backwardDelta) {
       const nx = state.x + backwardDelta.dx;
@@ -436,7 +430,6 @@ export class InventoryAwareBFS {
   private applyTileEffects(state: SearchState, x: number, y: number): void {
     const tile = this.tiles[y][x];
     
-    // Подбор предметов
     const itemIndex = this.items.findIndex(it => it.x === x && it.y === y);
     if (itemIndex !== -1) {
       const item = this.items[itemIndex];
@@ -450,15 +443,12 @@ export class InventoryAwareBFS {
         case 'wing': state.hasWing = true; break;
         case 'bait': state.hasBait = true; break;
       }
-      // В BFS не удаляем предмет из items, но инвентарь обновлён
     }
     
-    // Клей – игнорируем, только логируем
     if (tile === TileType.GLUE) {
       this.log(`   -> glue (ignored in BFS)`);
     }
     
-    // Телепорт
     const teleport = state.teleports.find(t => t.entry.x === x && t.entry.y === y);
     if (teleport) {
       this.log(`   -> teleport from (${x},${y}) to (${teleport.exit.x},${teleport.exit.y})`);
@@ -467,7 +457,6 @@ export class InventoryAwareBFS {
       state.path.push({ x: state.x, y: state.y });
     }
     
-    // Конвейер
     const conveyor = state.conveyors.find(c => c.x === x && c.y === y);
     if (conveyor) {
       let dx = 0, dy = 0;
@@ -488,7 +477,6 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Пружина
     const spring = state.springs.find(s => s.x === x && s.y === y);
     if (spring) {
       let dx = 0, dy = 0;
@@ -507,7 +495,6 @@ export class InventoryAwareBFS {
       state.steps++;
     }
     
-    // Кнопка/рычаг – активация мостов
     const mechanism = state.mechanisms.find(m => m.x === x && m.y === y);
     if (mechanism && (mechanism.type === 'button' || mechanism.type === 'lever')) {
       mechanism.active = true;
@@ -519,7 +506,6 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Магнит
     const magnet = state.magnets.find(m => m.x === x && m.y === y);
     if (magnet) {
       const dx = magnet.x - state.x;
@@ -542,7 +528,6 @@ export class InventoryAwareBFS {
       }
     }
     
-    // Замедляющее поле
     const slowField = state.slowFields.find(s => s.x === x && s.y === y);
     if (slowField) {
       state.slowFactor = slowField.factor;
@@ -554,7 +539,6 @@ export class InventoryAwareBFS {
     if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) return false;
     const tile = this.tiles[ny][nx];
     
-    // Стена
     if (tile === TileType.WALL) {
       if (state.hasDrill) {
         state.hasDrill = false;
@@ -565,7 +549,6 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Опасные тайлы (яма, лава, вода)
     if (tile === TileType.HOLE || tile === TileType.LAVA || tile === TileType.WATER) {
       if (state.wingActiveTurns > 0 || state.hasWing) {
         if (state.wingActiveTurns === 0 && state.hasWing) {
@@ -581,7 +564,6 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Запертая дверь
     if (tile === TileType.DOOR_LOCKED) {
       if (state.keys.length > 0) {
         state.keys.pop();
@@ -592,15 +574,12 @@ export class InventoryAwareBFS {
       return false;
     }
     
-    // Клетка (закрытая)
     const cage = state.cages.find(c => c.x === nx && c.y === ny && c.isClosed);
     if (cage) return false;
     
-    // Мост (неактивный)
     const bridge = state.bridges.find(b => b.x === nx && b.y === ny);
     if (bridge && !bridge.active) return false;
     
-    // Монстр
     const monster = state.monsters.find(m => m.x === nx && m.y === ny && !m.isDead);
     if (monster) {
       if (monster.isTamed || monster.isRidden || monster.isDistracted) return true;
@@ -722,6 +701,3 @@ export class InventoryAwareBFS {
     }
   }
 }
-
-// Экспортируем всё необходимое
-export { BackdoorType, InventoryAwareBFS, FoundPath, BFSConfig };
