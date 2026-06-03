@@ -1,20 +1,16 @@
 // src/modules/execution/parser.ts
 // ============================================================================
-// AST-ПАРСЕР: ПРЕОБРАЗОВАНИЕ МАССИВА КОМАНД В АБСТРАКТНОЕ СИНТАКСИЧЕСКОЕ ДЕРЕВО
+// AST ПАРСЕР – ПРЕОБРАЗОВАНИЕ КОМАНД В АБСТРАКТНОЕ ДЕРЕВО (ПАТЧ 2.0)
 // ============================================================================
-// Поддерживает:
-// - циклы: FOR_N, FOR_LOOP, WHILE_*, REPEAT
-// - условия: IF_*, ELSE
-// - функции: DEF, CALL, RETURN, PARAM
-// - классы и методы: CLASS, NEW, METHOD
-// - обычные команды
-// ============================================================================
-// Результат парсинга — массив ASTNode, который затем выполняется ASTRunner.
+// - Поддерживает все новые команды: MOVE_FORWARD, MOVE_BACKWARD, TURN_LEFT, TURN_RIGHT,
+//   TURN_AROUND, SYNC_BODY, SET_ANGLE, RELATIVE_TURN, SHOW_AIM, IF_ANGLE, WHILE_NOT_FACING
+// - Обрабатывает числовые аргументы для SET_ANGLE, RELATIVE_TURN, IF_ANGLE
+// - Полностью обратно совместим со старыми уровнями
 // ============================================================================
 
 import { Command } from '../../types/index';
 import { ASTNode } from './types';
-import { log, logError, logInfo } from './helpers';
+import { log, logInfo, logError } from './helpers';
 
 export class ASTParser {
   private commands: Command[];
@@ -24,9 +20,6 @@ export class ASTParser {
     this.commands = commands;
   }
 
-  // --------------------------------------------------------------------------
-  // ОСНОВНОЙ МЕТОД: ПАРСИТ ВСЕ КОМАНДЫ В AST
-  // --------------------------------------------------------------------------
   public parse(): ASTNode[] {
     logInfo('ASTParser', 'parse', `Starting parsing of ${this.commands.length} commands`);
     const nodes = this.parseBlock();
@@ -34,15 +27,11 @@ export class ASTParser {
     return nodes;
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИТ БЛОК КОМАНД ДО КОНЦА ИЛИ ДО ВСТРЕЧИ END (при вложенных блоках)
-  // --------------------------------------------------------------------------
   private parseBlock(): ASTNode[] {
     const nodes: ASTNode[] = [];
 
     while (this.index < this.commands.length) {
       const cmd = this.commands[this.index];
-      // Если встретили END, выходим (этот END будет обработан в parseBlockUntil)
       if (cmd === Command.END) {
         break;
       }
@@ -56,12 +45,31 @@ export class ASTParser {
     return nodes;
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИТ ОДНУ КОМАНДУ (МОЖЕТ ВЕРНУТЬ УЗЕЛ ИЛИ NULL)
-  // --------------------------------------------------------------------------
   private parseCommand(cmd: Command): ASTNode | null {
     switch (cmd) {
-      // ---------- Циклы ----------
+      // ---------- НОВЫЕ КОМАНДЫ ПАТЧА 2.0 ----------
+      case Command.MOVE_FORWARD:
+      case Command.MOVE_BACKWARD:
+      case Command.TURN_LEFT:
+      case Command.TURN_RIGHT:
+      case Command.TURN_AROUND:
+      case Command.SYNC_BODY:
+      case Command.SHOW_AIM:
+        return { type: 'command', command: cmd };
+
+      case Command.SET_ANGLE:
+        return this.parseSetAngle();
+
+      case Command.RELATIVE_TURN:
+        return this.parseRelativeTurn();
+
+      case Command.IF_ANGLE:
+        return this.parseIfAngle();
+
+      case Command.WHILE_NOT_FACING:
+        return this.parseWhileNotFacing();
+
+      // ---------- СТАРЫЕ КОМАНДЫ (без изменений) ----------
       case Command.FOR_N:
         return this.parseForN();
       case Command.FOR_LOOP:
@@ -72,8 +80,6 @@ export class ASTParser {
         return this.parseWhile(cmd);
       case Command.REPEAT:
         return this.parseRepeat();
-
-      // ---------- Условия ----------
       case Command.IF_WALL:
       case Command.IF_HOLE:
       case Command.IF_MONSTER:
@@ -81,8 +87,6 @@ export class ASTParser {
       case Command.IF_KEY:
       case Command.IF_NO_KEY:
         return this.parseIf(cmd);
-
-      // ---------- Функции ----------
       case Command.DEF:
         return this.parseDef();
       case Command.CALL:
@@ -91,43 +95,115 @@ export class ASTParser {
         return { type: 'command', command: cmd };
       case Command.PARAM:
         return this.parseParam();
-
-      // ---------- ООП ----------
       case Command.CLASS:
         return this.parseClass();
       case Command.NEW:
         return this.parseNew();
       case Command.METHOD:
         return this.parseMethod();
-
-      // ---------- Параллелизм (простые команды) ----------
       case Command.CLONE:
       case Command.JOIN:
         return { type: 'command', command: cmd };
-
-      // ---------- Обычные команды (движение, инвентарь, инструменты и т.д.) ----------
       default:
         return { type: 'command', command: cmd };
     }
   }
 
   // --------------------------------------------------------------------------
-  // ПАРСИНГ FOR_N (например: FOR_N 5 ... END)
+  // НОВЫЕ МЕТОДЫ ПАРСИНГА
+  // --------------------------------------------------------------------------
+
+  private parseSetAngle(): ASTNode {
+    // SET_ANGLE <число>
+    let angle = 0;
+    if (this.index + 1 < this.commands.length) {
+      const nextCmd = this.commands[this.index + 1];
+      const num = parseFloat(nextCmd as unknown as string);
+      if (!isNaN(num)) {
+        angle = num;
+        this.index++; // пропускаем число
+      }
+    }
+    this.index++; // пропускаем SET_ANGLE
+    log('ASTParser', 'parseSetAngle', `SET_ANGLE ${angle}`);
+    return {
+      type: 'command',
+      command: Command.SET_ANGLE,
+      parameters: [angle.toString()],
+    };
+  }
+
+  private parseRelativeTurn(): ASTNode {
+    // RELATIVE_TURN <число>
+    let delta = 0;
+    if (this.index + 1 < this.commands.length) {
+      const nextCmd = this.commands[this.index + 1];
+      const num = parseFloat(nextCmd as unknown as string);
+      if (!isNaN(num)) {
+        delta = num;
+        this.index++;
+      }
+    }
+    this.index++;
+    log('ASTParser', 'parseRelativeTurn', `RELATIVE_TURN ${delta}`);
+    return {
+      type: 'command',
+      command: Command.RELATIVE_TURN,
+      parameters: [delta.toString()],
+    };
+  }
+
+  private parseIfAngle(): ASTNode {
+    // IF_ANGLE <число> ... END
+    let angle = 0;
+    if (this.index + 1 < this.commands.length) {
+      const nextCmd = this.commands[this.index + 1];
+      const num = parseFloat(nextCmd as unknown as string);
+      if (!isNaN(num)) {
+        angle = num;
+        this.index++;
+      }
+    }
+    this.index++; // пропускаем IF_ANGLE
+    const children = this.parseBlockUntil(Command.END);
+    log('ASTParser', 'parseIfAngle', `IF_ANGLE ${angle}, ${children.length} children`);
+    return {
+      type: 'block',
+      blockType: 'if',
+      condition: Command.IF_ANGLE,
+      conditionValue: angle,
+      children,
+    };
+  }
+
+  private parseWhileNotFacing(): ASTNode {
+    // WHILE_NOT_FACING ... END
+    this.index++; // пропускаем WHILE_NOT_FACING
+    const children = this.parseBlockUntil(Command.END);
+    log('ASTParser', 'parseWhileNotFacing', `WHILE_NOT_FACING, ${children.length} children`);
+    return {
+      type: 'block',
+      blockType: 'while',
+      condition: Command.WHILE_NOT_FACING,
+      children,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // СТАРЫЕ МЕТОДЫ (без изменений, только для полноты)
   // --------------------------------------------------------------------------
   private parseForN(): ASTNode {
-    let repeatCount = 3; // значение по умолчанию
-    // Если следующая команда — число, используем его как количество повторений
+    let repeatCount = 3;
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       const num = parseInt(nextCmd as unknown as string, 10);
       if (!isNaN(num)) {
         repeatCount = num;
-        this.index++; // пропускаем число
+        this.index++;
       }
     }
-    this.index++; // пропускаем саму команду FOR_N
+    this.index++;
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseForN', `FOR_N loop with ${repeatCount} repetitions, ${children.length} children`);
     return {
       type: 'block',
       blockType: 'for',
@@ -136,23 +212,19 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ FOR_LOOP (например: FOR_LOOP 1 10 ... END)
-  // --------------------------------------------------------------------------
   private parseForLoop(): ASTNode {
     let from = 0, to = 10;
     if (this.index + 2 < this.commands.length) {
-      const nextCmd1 = this.commands[this.index + 1];
-      const nextCmd2 = this.commands[this.index + 2];
-      const fromNum = parseInt(nextCmd1 as unknown as string, 10);
-      const toNum = parseInt(nextCmd2 as unknown as string, 10);
+      const next1 = this.commands[this.index + 1];
+      const next2 = this.commands[this.index + 2];
+      const fromNum = parseInt(next1 as unknown as string, 10);
+      const toNum = parseInt(next2 as unknown as string, 10);
       if (!isNaN(fromNum)) from = fromNum;
       if (!isNaN(toNum)) to = toNum;
-      this.index += 2; // пропускаем оба числа
+      this.index += 2;
     }
-    this.index++; // пропускаем FOR_LOOP
+    this.index++;
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseForLoop', `FOR_LOOP from ${from} to ${to}, ${children.length} children`);
     return {
       type: 'block',
       blockType: 'for',
@@ -161,13 +233,9 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ WHILE (например: WHILE_WALL ... END)
-  // --------------------------------------------------------------------------
   private parseWhile(condition: Command): ASTNode {
-    this.index++; // пропускаем WHILE_*
+    this.index++;
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseWhile', `WHILE loop with condition ${condition}, ${children.length} children`);
     return {
       type: 'block',
       blockType: 'while',
@@ -176,13 +244,9 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ REPEAT (бесконечный цикл)
-  // --------------------------------------------------------------------------
   private parseRepeat(): ASTNode {
-    this.index++; // пропускаем REPEAT
+    this.index++;
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseRepeat', `REPEAT infinite loop, ${children.length} children`);
     return {
       type: 'block',
       blockType: 'repeat',
@@ -191,11 +255,8 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ IF (с поддержкой ELSE)
-  // --------------------------------------------------------------------------
   private parseIf(condition: Command): ASTNode {
-    this.index++; // пропускаем IF_*
+    this.index++;
     const ifChildren: ASTNode[] = [];
     let elseChildren: ASTNode[] = [];
 
@@ -213,9 +274,7 @@ export class ASTParser {
         break;
       } else if (cmd === Command.END) {
         depth--;
-        if (depth === 0) {
-          break;
-        }
+        if (depth === 0) break;
       }
       if (depth > 0 && (!hasElse || depth > 1)) {
         const node = this.parseCommand(cmd);
@@ -223,8 +282,6 @@ export class ASTParser {
       }
       this.index++;
     }
-
-    log('ASTParser', 'parseIf', `IF condition ${condition}, ${ifChildren.length} if-children, ${elseChildren.length} else-children`);
 
     const ifNode: ASTNode = {
       type: 'block',
@@ -249,20 +306,15 @@ export class ASTParser {
     return ifNode;
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ DEF (определение функции)
-  // --------------------------------------------------------------------------
   private parseDef(): ASTNode {
     let funcName = '';
     const paramNames: string[] = [];
-    // После DEF идёт имя функции
     if (this.index + 1 < this.commands.length) {
       const nextCmd = this.commands[this.index + 1];
       funcName = nextCmd as unknown as string;
       this.index++;
     }
-    this.index++; // пропускаем DEF
-    // Собираем параметры: PARAM имя1 PARAM имя2 ...
+    this.index++;
     while (this.index < this.commands.length) {
       const cmd = this.commands[this.index];
       if (cmd === Command.PARAM && this.index + 1 < this.commands.length) {
@@ -274,7 +326,6 @@ export class ASTParser {
       }
     }
     const children = this.parseBlockUntil(Command.END);
-    logInfo('ASTParser', 'parseDef', `Function definition: ${funcName} with params ${paramNames.join(', ')} and ${children.length} children`);
     return {
       type: 'function',
       functionName: funcName,
@@ -283,9 +334,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ CALL (вызов функции)
-  // --------------------------------------------------------------------------
   private parseCall(): ASTNode {
     let funcName = '';
     const args: any[] = [];
@@ -294,8 +342,7 @@ export class ASTParser {
       funcName = nextCmd as unknown as string;
       this.index++;
     }
-    this.index++; // пропускаем CALL
-    // Читаем аргументы (числа или строки) до следующей управляющей команды
+    this.index++;
     while (this.index < this.commands.length) {
       const cmd = this.commands[this.index];
       if (cmd === Command.PARAM || cmd === Command.END) break;
@@ -303,7 +350,6 @@ export class ASTParser {
       args.push(isNaN(num) ? (cmd as string) : num);
       this.index++;
     }
-    log('ASTParser', 'parseCall', `Function call: ${funcName} with args ${args.join(', ')}`);
     return {
       type: 'command',
       command: Command.CALL,
@@ -312,9 +358,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ PARAM (объявление параметра)
-  // --------------------------------------------------------------------------
   private parseParam(): ASTNode {
     let paramName = '';
     if (this.index + 1 < this.commands.length) {
@@ -322,7 +365,6 @@ export class ASTParser {
       paramName = nextCmd as unknown as string;
       this.index++;
     }
-    log('ASTParser', 'parseParam', `Parameter: ${paramName}`);
     return {
       type: 'command',
       command: Command.PARAM,
@@ -330,9 +372,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ CLASS (определение класса)
-  // --------------------------------------------------------------------------
   private parseClass(): ASTNode {
     let className = '';
     if (this.index + 1 < this.commands.length) {
@@ -340,9 +379,8 @@ export class ASTParser {
       className = nextCmd as unknown as string;
       this.index++;
     }
-    this.index++; // пропускаем CLASS
+    this.index++;
     const children = this.parseBlockUntil(Command.END);
-    logInfo('ASTParser', 'parseClass', `Class definition: ${className} with ${children.length} children`);
     return {
       type: 'class',
       className,
@@ -350,9 +388,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ NEW (создание экземпляра класса)
-  // --------------------------------------------------------------------------
   private parseNew(): ASTNode {
     let className = '';
     const args: any[] = [];
@@ -361,7 +396,7 @@ export class ASTParser {
       className = nextCmd as unknown as string;
       this.index++;
     }
-    this.index++; // пропускаем NEW
+    this.index++;
     while (this.index < this.commands.length) {
       const cmd = this.commands[this.index];
       if (cmd === Command.PARAM || cmd === Command.END) break;
@@ -369,7 +404,6 @@ export class ASTParser {
       args.push(isNaN(num) ? (cmd as string) : num);
       this.index++;
     }
-    log('ASTParser', 'parseNew', `Create new instance of class: ${className} with args ${args.join(', ')}`);
     return {
       type: 'command',
       command: Command.NEW,
@@ -378,9 +412,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИНГ METHOD (определение метода внутри класса)
-  // --------------------------------------------------------------------------
   private parseMethod(): ASTNode {
     let methodName = '';
     const paramNames: string[] = [];
@@ -389,7 +420,7 @@ export class ASTParser {
       methodName = nextCmd as unknown as string;
       this.index++;
     }
-    this.index++; // пропускаем METHOD
+    this.index++;
     while (this.index < this.commands.length) {
       const cmd = this.commands[this.index];
       if (cmd === Command.PARAM && this.index + 1 < this.commands.length) {
@@ -401,7 +432,6 @@ export class ASTParser {
       }
     }
     const children = this.parseBlockUntil(Command.END);
-    log('ASTParser', 'parseMethod', `Method definition: ${methodName} with params ${paramNames.join(', ')} and ${children.length} children`);
     return {
       type: 'method',
       methodName,
@@ -410,9 +440,6 @@ export class ASTParser {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // ПАРСИТ БЛОК ДО УКАЗАННОГО МАРКЕРА (например, END)
-  // --------------------------------------------------------------------------
   private parseBlockUntil(endMarker: Command): ASTNode[] {
     const nodes: ASTNode[] = [];
     let depth = 1;
@@ -423,9 +450,7 @@ export class ASTParser {
         depth++;
       } else if (cmd === endMarker) {
         depth--;
-        if (depth === 0) {
-          break;
-        }
+        if (depth === 0) break;
       }
       if (depth > 0 && cmd !== endMarker) {
         const node = this.parseCommand(cmd);
@@ -437,9 +462,6 @@ export class ASTParser {
     return nodes;
   }
 
-  // --------------------------------------------------------------------------
-  // ПРОВЕРКА, ЯВЛЯЕТСЯ ЛИ КОМАНДА НАЧАЛОМ БЛОКА
-  // --------------------------------------------------------------------------
   private isBlockStart(cmd: Command): boolean {
     return cmd === Command.FOR_N ||
            cmd === Command.FOR_LOOP ||
@@ -453,6 +475,8 @@ export class ASTParser {
            cmd === Command.IF_COIN ||
            cmd === Command.IF_KEY ||
            cmd === Command.IF_NO_KEY ||
+           cmd === Command.IF_ANGLE ||
+           cmd === Command.WHILE_NOT_FACING ||
            cmd === Command.DEF ||
            cmd === Command.CLASS;
   }
