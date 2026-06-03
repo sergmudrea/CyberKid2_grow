@@ -1,14 +1,12 @@
 // src/modules/execution/index.ts
 // ============================================================================
-// ГЛАВНЫЙ КЛАСС ДВИЖКА ВЫПОЛНЕНИЯ ПРОГРАММЫ (EXECUTION ENGINE)
+// ГЛАВНЫЙ МОДУЛЬ EXECUTION ENGINE – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// Этот класс объединяет все подсистемы: парсер, раннер, условия, движение,
-// инвентарь, инструменты, бой, время, функции, ООП, параллелизм, взаимодействия,
-// тайлы, монстров, чёрный ящик. Он предоставляет публичный API для загрузки
-// программы, запуска, паузы, остановки и сброса.
+// Экспортирует класс ExecutionEngine, который управляет AST-раннером
+// и передаёт контекст, включая controlMode и начальный угол башни.
 // ============================================================================
 
-import { LevelData, Command, Inventory, ExecutionResult } from '../../types/index';
+import { LevelData, Command, Inventory, ExecutionResult, ControlMode } from '../../types/index';
 import { gameEvents as eventBus } from '../../core/EventBus';
 import { logger } from '../../core/Logger';
 import { ASTParser } from './parser';
@@ -30,103 +28,48 @@ import { log, logInfo, logError, calculateStars } from './helpers';
 
 export class ExecutionEngine {
   private level: LevelData;
-  private player: any;                      // экземпляр класса Player
+  private player: any;
   private inventory: Inventory;
-  private ast: any[];                      // абстрактное синтаксическое дерево
+  private ast: any[];
   private runner: ASTRunner | null = null;
   private status: 'idle' | 'running' | 'paused' | 'finished' | 'error' = 'idle';
-  private speedMultiplier: number = 1;     // ускорение/замедление (для команд WAIT)
+  private speedMultiplier: number = 1;
   private explorationMode: boolean = false;
-  private maxSteps: number = 10000;        // защита от бесконечных циклов
+  private maxSteps: number = 10000;
+  private controlMode: ControlMode;
+  private timeExecutor: TimeExecutor; // добавлено для совместимости с stop()
 
-  // Публичные подобъекты (могут понадобиться для прямого доступа)
-  public conditionEvaluator: ConditionEvaluator;
-  public movementExecutor: MovementExecutor;
-  public inventoryExecutor: InventoryExecutor;
-  public toolsExecutor: ToolsExecutor;
-  public combatExecutor: CombatExecutor;
-  public timeExecutor: TimeExecutor;
-  public functionsExecutor: FunctionsExecutor;
-  public oopExecutor: OOPExecutor;
-  public parallelismExecutor: ParallelismExecutor;
-  public interactionsExecutor: InteractionsExecutor;
-  public tilesExecutor: TilesExecutor;
-  public monstersExecutor: MonstersExecutor;
-  public blackBoxProcessor: BlackBoxProcessor;
-
-  constructor(level: LevelData, player: any) {
+  constructor(level: LevelData, player: any, controlMode: ControlMode = ControlMode.SEPARATE) {
     this.level = level;
     this.player = player;
     this.inventory = player.getInventory();
-
-    // Инициализация всех подсистем (они нужны для работы раннера)
-    this.conditionEvaluator = new ConditionEvaluator({
-      playerPos: player.getPosition(),
-      playerDir: 'right',
-      coinPos: level.coinPos,
-      inventoryKeys: this.inventory.keys,
-      map: level.map,
-      monsters: level.objects?.monsters || [],
-      explorationMode: this.explorationMode,
-    });
-
-    this.movementExecutor = new MovementExecutor(level, player, this.inventory);
-    this.inventoryExecutor = new InventoryExecutor(level, player, this.inventory);
-    this.toolsExecutor = new ToolsExecutor(level, player, this.inventory);
-    this.combatExecutor = new CombatExecutor(level, player, this.inventory);
-    this.timeExecutor = new TimeExecutor();
-    this.functionsExecutor = new FunctionsExecutor();
-    this.oopExecutor = new OOPExecutor();
-    this.parallelismExecutor = new ParallelismExecutor(level, player, this.inventory);
-    this.interactionsExecutor = new InteractionsExecutor(level, player, this.inventory);
-    this.tilesExecutor = new TilesExecutor(level, player, this.inventory);
-    this.monstersExecutor = new MonstersExecutor(level, player, this.inventory);
-    this.blackBoxProcessor = new BlackBoxProcessor(this.inventory);
-
-    logInfo('ExecutionEngine', 'constructor', 'Engine initialized');
+    this.controlMode = controlMode;
+    this.timeExecutor = new TimeExecutor(); // инициализируем
+    logInfo('ExecutionEngine', 'constructor', `Control mode: ${controlMode}`);
   }
 
-  // --------------------------------------------------------------------------
-  // ЗАГРУЗКА ПРОГРАММЫ
-  // --------------------------------------------------------------------------
   public loadProgram(commands: Command[]): void {
     const parser = new ASTParser(commands);
     this.ast = parser.parse();
-    logInfo('ExecutionEngine', 'loadProgram', `Loaded ${commands.length} commands → AST with ${this.ast.length} nodes`);
+    logInfo('ExecutionEngine', 'loadProgram', `Program loaded, AST has ${this.ast.length} nodes`);
   }
 
-  // --------------------------------------------------------------------------
-  // СБРОС СОСТОЯНИЯ (без перезагрузки уровня)
-  // --------------------------------------------------------------------------
   public reset(): void {
-    if (this.runner) {
-      this.runner.stop();
-      this.runner = null;
-    }
     this.status = 'idle';
+    this.runner = null;
     this.speedMultiplier = 1;
     log('ExecutionEngine', 'reset', 'Engine reset');
   }
 
-  // --------------------------------------------------------------------------
-  // ВКЛЮЧЕНИЕ РЕЖИМА ИССЛЕДОВАНИЯ (отключает смерть)
-  // --------------------------------------------------------------------------
   public setExplorationMode(enabled: boolean): void {
     this.explorationMode = enabled;
-    if (this.movementExecutor) this.movementExecutor.setExplorationMode(enabled);
     logInfo('ExecutionEngine', 'setExplorationMode', `Exploration mode: ${enabled}`);
   }
 
-  // --------------------------------------------------------------------------
-  // ЗАПУСК ВЫПОЛНЕНИЯ (асинхронный)
-  // --------------------------------------------------------------------------
   public async start(): Promise<ExecutionResult> {
-    // Если уже запущено – просто возвращаем результат (не перезапускаем)
     if (this.status === 'running') {
       return this.buildResult(false);
     }
-
-    // Если на паузе – возобновляем
     if (this.status === 'paused') {
       this.status = 'running';
       eventBus.emit('EXECUTION_RESUMED');
@@ -145,6 +88,7 @@ export class ExecutionEngine {
       maxSteps: this.maxSteps,
       speedMultiplier: this.speedMultiplier,
       explorationMode: this.explorationMode,
+      controlMode: this.controlMode,
     };
 
     this.runner = new ASTRunner(context);
@@ -153,9 +97,6 @@ export class ExecutionEngine {
     return result;
   }
 
-  // --------------------------------------------------------------------------
-  // ПАУЗА И ВОЗОБНОВЛЕНИЕ
-  // --------------------------------------------------------------------------
   public pause(): void {
     if (this.status === 'running') {
       this.status = 'paused';
@@ -166,34 +107,17 @@ export class ExecutionEngine {
 
   public resume(): void {
     if (this.status === 'paused') {
-      this.start();   // start обработает возобновление
+      this.start();
     }
   }
 
-  // --------------------------------------------------------------------------
-  // ПОЛНАЯ ОСТАНОВКА (сброс выполнения)
-  // --------------------------------------------------------------------------
   public stop(): void {
-    if (this.status === 'running' || this.status === 'paused') {
-      this.status = 'finished';
-      if (this.runner) this.runner.stop();
-      if (this.timeExecutor) this.timeExecutor.clearTimer();
-      eventBus.emit('EXECUTION_STOPPED');
-    }
+    this.status = 'finished';
+    if (this.runner) this.runner.stop();
+    if (this.timeExecutor) this.timeExecutor.clearTimer();
   }
 
-  // --------------------------------------------------------------------------
-  // ТЕКУЩИЙ СТАТУС
-  // --------------------------------------------------------------------------
-  public getStatus(): string {
-    return this.status;
-  }
-
-  // --------------------------------------------------------------------------
-  // ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ФОРМИРОВАНИЯ РЕЗУЛЬТАТА
-  // --------------------------------------------------------------------------
   private buildResult(success: boolean): ExecutionResult {
-    // stars рассчитываются позже в раннере, здесь заглушка
     const stars = success ? calculateStars(0, this.level.optimalSteps || 18) : 0;
     return {
       success,
@@ -203,5 +127,9 @@ export class ExecutionEngine {
       backdoorUsed: false,
       stars,
     };
+  }
+
+  public getStatus(): string {
+    return this.status;
   }
 }
