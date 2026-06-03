@@ -1,17 +1,22 @@
 // src/scenes/GameScene.ts
 // ============================================================================
-// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – СТАБИЛЬНАЯ ВЕРСИЯ
+// ОСНОВНАЯ ИГРОВАЯ СЦЕНА – ПОЛНАЯ ВЕРСИЯ ПАТЧА 2.0
 // ============================================================================
-// - Камера не следует за игроком (чтобы избежать ошибок startFollow)
-// - Все объекты инициализируются корректно
-// - Принудительное обновление инвентаря через события
+// - Загрузка уровня, создание игрока (с раздельным управлением башней)
+// - Отображение сетки с иконками для всех тайлов (включая магниты и замедляющие поля)
+// - Визуализация угла башни (текст)
+// - Линия прицела (команда SHOW_AIM)
+// - Индикатор замедления (SLOW_FIELD)
+// - Полное управление камерой (мышь/клавиши)
+// - Интеграция с CommandPanel, InventoryUI, ProgramVisualizer
+// - Обработка событий выполнения (победа, поражение, остановка)
 // ============================================================================
 
 import { Scene } from 'phaser';
 import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { InventoryUI } from '../modules/InventoryUI';
-import { LevelData, TileType, Command } from '../types/index';
+import { LevelData, TileType, Command, ControlMode } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { ExecutionEngine } from '../modules/execution';
@@ -32,7 +37,16 @@ export class GameScene extends Scene {
   private executionEngine: ExecutionEngine | null = null;
   private isExecuting: boolean = false;
   private gameContainer: Phaser.GameObjects.Container | null = null;
+  private gameBounds: { width: number; height: number } = { width: 0, height: 0 };
+  private cameraFollowEnabled: boolean = true;
+  private followRestoreTimer?: Phaser.Time.TimerEvent;
   private readonly COMMAND_PANEL_WIDTH = 280;
+
+  // Дополнительные элементы UI для патча 2.0
+  private turretAngleText: Phaser.GameObjects.Text | null = null;
+  private aimLine: Phaser.GameObjects.Graphics | null = null;
+  private slowIndicator: Phaser.GameObjects.Text | null = null;
+  private controlMode: ControlMode = ControlMode.SEPARATE;
 
   constructor() {
     super('GameScene');
@@ -42,7 +56,7 @@ export class GameScene extends Scene {
     this.levelId = data.levelId;
     logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
 
-    // Уничтожаем старые панели
+    // Уничтожаем старые панели и спрайты
     if (this.commandPanel) {
       this.commandPanel.destroy();
       this.commandPanel = null;
@@ -58,6 +72,19 @@ export class GameScene extends Scene {
     if (this.playerSprite) {
       this.playerSprite.destroy();
       this.playerSprite = null;
+    }
+    if (this.turretAngleText) {
+      this.turretAngleText.destroy();
+      this.turretAngleText = null;
+    }
+    if (this.aimLine) {
+      this.aimLine.clear();
+      this.aimLine.destroy();
+      this.aimLine = null;
+    }
+    if (this.slowIndicator) {
+      this.slowIndicator.destroy();
+      this.slowIndicator = null;
     }
     this.isExecuting = false;
     if (this.executionEngine) {
@@ -78,59 +105,75 @@ export class GameScene extends Scene {
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
     this.level = JSON.parse(JSON.stringify(loadedLevel));
 
+    // Определяем режим управления (из уровня или настроек)
+    this.controlMode = this.level.controlMode || ControlMode.SEPARATE;
+
+    // Создаём игрока (с начальным углом башни, направлением корпуса)
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
     };
+    const startTurretAngle = this.level.startTurretAngle !== undefined ? this.level.startTurretAngle : 0;
+    const startHullDir = this.level.startHullDirection || 'right';
+
     this.player = new Player(
       this.level.startPos,
-      'right',
+      startHullDir,
       this.level.width,
       this.level.height,
-      tileGetter
+      tileGetter,
+      this.controlMode,
+      startTurretAngle
     );
 
     // Контейнер для игровых объектов (сдвинут вправо)
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
+    this.gameBounds = {
+      width: this.level.width * this.gridSize,
+      height: this.level.height * this.gridSize,
+    };
 
-    // Отрисовка сетки и игрока
     this.drawGrid();
     this.drawPlayer();
 
-    // Настройка камеры – просто устанавливаем границы, без следования
-    const gameWidth = this.level.width * this.gridSize;
-    const gameHeight = this.level.height * this.gridSize;
-    this.cameras.main.setBounds(0, 0, gameWidth, gameHeight);
-    this.cameras.main.centerOn(gameWidth / 2, gameHeight / 2);
+    // Настройка камеры (без автоматического следования)
+    this.cameras.main.setBounds(0, 0, this.gameBounds.width, this.gameBounds.height);
     this.cameras.main.setZoom(1);
+    this.cameras.main.centerOn(this.gameBounds.width / 2, this.gameBounds.height / 2);
 
     // Управление камерой (мышь и клавиши)
     this.input.on('wheel', (pointer: any, gameObjects: any, deltaX: number, deltaY: number) => {
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += deltaX;
       this.cameras.main.scrollY += deltaY;
-      this.clampCamera(gameWidth, gameHeight);
+      this.clampCamera();
     });
 
     const scrollStep = 50;
     this.input.keyboard?.on('keydown-LEFT', () => {
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX -= scrollStep;
-      this.clampCamera(gameWidth, gameHeight);
+      this.clampCamera();
     });
     this.input.keyboard?.on('keydown-RIGHT', () => {
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollX += scrollStep;
-      this.clampCamera(gameWidth, gameHeight);
+      this.clampCamera();
     });
     this.input.keyboard?.on('keydown-UP', () => {
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollY -= scrollStep;
-      this.clampCamera(gameWidth, gameHeight);
+      this.clampCamera();
     });
     this.input.keyboard?.on('keydown-DOWN', () => {
+      this.disableCameraFollowTemporarily();
       this.cameras.main.scrollY += scrollStep;
-      this.clampCamera(gameWidth, gameHeight);
+      this.clampCamera();
     });
 
-    // Визуализатор
+    // Визуализатор программы
     this.visualizer = new ProgramVisualizer(this, this.gridSize);
+
     // Панель команд
     this.commandPanel = new CommandPanel(
       this,
@@ -141,17 +184,40 @@ export class GameScene extends Scene {
         this.isExecuting = false;
         this.commandPanel?.clearHighlight();
         this.updateVisualizer();
+        this.cameraFollowEnabled = true;
+        this.aimLine?.clear();
+        this.aimLine?.setVisible(false);
       },
       (commands: Command[]) => {
         this.updateVisualizer();
       }
     );
     this.commandPanel.setAllowedCommands(this.level?.allowedCommands || []);
+    this.commandPanel.setControlMode(this.controlMode);
     this.updateVisualizer();
 
     if (this.player) {
       this.inventoryUI = new InventoryUI(this, this.player.getInventory());
     }
+
+    // UI элементы патча 2.0
+    this.turretAngleText = this.add.text(10, 70, `Turret: ${this.player.getTurretAngle()}°`, {
+      fontSize: '14px',
+      color: '#ffcc00',
+      backgroundColor: '#000000aa',
+      padding: { x: 6, y: 4 },
+    }).setScrollFactor(0).setDepth(100);
+
+    this.aimLine = this.add.graphics();
+    this.aimLine.setVisible(false);
+
+    this.slowIndicator = this.add.text(10, 95, '🐢 SLOW', {
+      fontSize: '14px',
+      color: '#88aaff',
+      backgroundColor: '#000000aa',
+      padding: { x: 6, y: 4 },
+    }).setScrollFactor(0).setDepth(100);
+    this.slowIndicator.setVisible(false);
 
     // Кнопка BACK
     const backButton = this.add.text(10, 10, '← BACK', {
@@ -167,7 +233,7 @@ export class GameScene extends Scene {
       this.scene.start('MainMenu');
     });
 
-    // AutoSolve
+    // AutoSolve (заглушка)
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -182,10 +248,23 @@ export class GameScene extends Scene {
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
-  private clampCamera(gameWidth: number, gameHeight: number): void {
+  private disableCameraFollowTemporarily(): void {
+    if (!this.cameraFollowEnabled) return;
+    this.cameraFollowEnabled = false;
+    this.cameras.main.stopFollow();
+    if (this.followRestoreTimer) this.followRestoreTimer.destroy();
+    this.followRestoreTimer = this.time.delayedCall(3000, () => {
+      this.cameraFollowEnabled = true;
+      if (this.playerSprite) {
+        this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+      }
+    });
+  }
+
+  private clampCamera(): void {
     const cam = this.cameras.main;
-    const maxX = gameWidth - cam.width;
-    const maxY = gameHeight - cam.height;
+    const maxX = this.gameBounds.width - cam.width;
+    const maxY = this.gameBounds.height - cam.height;
     cam.scrollX = Math.max(0, Math.min(cam.scrollX, maxX));
     cam.scrollY = Math.max(0, Math.min(cam.scrollY, maxY));
   }
@@ -194,7 +273,7 @@ export class GameScene extends Scene {
     if (!this.level || !this.player) return;
     logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
     const msg = this.add.text(
-      this.cameras.main.centerX,
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       this.cameras.main.centerY,
       '🧪 AutoSolve: coming soon',
       { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
@@ -215,6 +294,8 @@ export class GameScene extends Scene {
     });
     eventBus.on('PLAYER_MOVED', () => {
       this.drawPlayer();
+      this.updateTurretAngleDisplay();
+      this.updateSlowIndicator();
     });
     eventBus.on('INVENTORY_CHANGED', (payload: any) => {
       if (payload?.inventory && this.inventoryUI && this.player) {
@@ -233,7 +314,7 @@ export class GameScene extends Scene {
       } else {
         logger.info('GameScene', 'EXECUTION_FINISHED', 'Program finished without victory');
         const msg = this.add.text(
-          this.cameras.main.centerX,
+          this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
           100,
           '⏹️ Program stopped',
           { fontSize: '20px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
@@ -244,6 +325,77 @@ export class GameScene extends Scene {
     eventBus.on('PLAYER_DIED', (payload: any) => {
       this.isExecuting = false;
       this.showDefeatMessage();
+    });
+    eventBus.on('TURRET_TURNED', () => {
+      this.updateTurretAngleDisplay();
+    });
+    eventBus.on('SHOW_AIM', (payload: any) => {
+      this.showAimLine(payload.pos, payload.angle);
+    });
+    eventBus.on('SLOW_FIELD_ENTERED', () => {
+      this.updateSlowIndicator(true);
+    });
+    eventBus.on('SLOW_FIELD_EXITED', () => {
+      this.updateSlowIndicator(false);
+    });
+    eventBus.on('WINGS_EXPIRED', () => {
+      logger.info('GameScene', 'WINGS_EXPIRED', 'Wings effect ended');
+    });
+  }
+
+  private updateTurretAngleDisplay(): void {
+    if (this.turretAngleText && this.player) {
+      this.turretAngleText.setText(`Turret: ${this.player.getTurretAngle()}°`);
+    }
+  }
+
+  private updateSlowIndicator(force?: boolean): void {
+    if (!this.slowIndicator) return;
+    const isSlow = (force !== undefined) ? force : (this.isOnSlowField());
+    this.slowIndicator.setVisible(isSlow);
+  }
+
+  private isOnSlowField(): boolean {
+    if (!this.level || !this.player) return false;
+    const pos = this.player.getPosition();
+    const tile = this.level.map[pos.row]?.[pos.col];
+    return tile === TileType.SLOW_FIELD;
+  }
+
+  private showAimLine(pos: Point, angle: number): void {
+    if (!this.aimLine) return;
+    this.aimLine.clear();
+    this.aimLine.setVisible(true);
+    this.aimLine.lineStyle(2, 0xff0000, 0.7);
+    const startX = pos.col * this.gridSize + this.gridSize / 2;
+    const startY = pos.row * this.gridSize + this.gridSize / 2;
+    let dx = 0, dy = 0;
+    switch (angle) {
+      case 0:   dy = -1; break;
+      case 90:  dx = 1;  break;
+      case 180: dy = 1;  break;
+      case 270: dx = -1; break;
+      default: return;
+    }
+    let endX = startX, endY = startY;
+    let step = 1;
+    while (step < 20) {
+      const testX = pos.col + dx * step;
+      const testY = pos.row + dy * step;
+      if (testX < 0 || testX >= this.level!.width || testY < 0 || testY >= this.level!.height) break;
+      const tile = this.level!.map[testY][testX];
+      if (tile === TileType.WALL || tile === TileType.HOLE || tile === TileType.BRICK) break;
+      endX = testX * this.gridSize + this.gridSize / 2;
+      endY = testY * this.gridSize + this.gridSize / 2;
+      step++;
+    }
+    this.aimLine.beginPath();
+    this.aimLine.moveTo(startX, startY);
+    this.aimLine.lineTo(endX, endY);
+    this.aimLine.strokePath();
+    this.time.delayedCall(2000, () => {
+      this.aimLine?.clear();
+      this.aimLine?.setVisible(false);
     });
   }
 
@@ -271,6 +423,9 @@ export class GameScene extends Scene {
       this.player.resetInventory();
       this.player.setTrapped(false);
       this.player.setGlued(false, 0);
+      this.player.setSlowFactor(1);
+      this.player.setTurretAngle(this.level.startTurretAngle || 0);
+      this.player.syncBodyWithTurret();
     }
     if (this.inventoryUI && this.player) {
       this.inventoryUI.updateInventory(this.player.getInventory());
@@ -284,6 +439,14 @@ export class GameScene extends Scene {
     this.drawGrid();
     this.drawPlayer();
     this.updateVisualizer();
+    this.cameraFollowEnabled = true;
+    if (this.playerSprite) {
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    }
+    this.updateTurretAngleDisplay();
+    this.updateSlowIndicator(false);
+    this.aimLine?.clear();
+    this.aimLine?.setVisible(false);
   }
 
   private async runProgram(commands: Command[]): Promise<void> {
@@ -296,14 +459,14 @@ export class GameScene extends Scene {
     this.isExecuting = true;
     this.commandPanel?.clearHighlight();
     if (!this.player) return;
-    this.executionEngine = new ExecutionEngine(this.level!, this.player);
+    this.executionEngine = new ExecutionEngine(this.level!, this.player, this.controlMode);
     this.executionEngine.loadProgram(commands);
     await this.executionEngine.start();
   }
 
   private showVictoryMessage(stars: number, steps: number): void {
     const msg = this.add.text(
-      this.cameras.main.centerX,
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       100,
       `🏆 VICTORY! ★ ${stars} 🏆`,
       { fontSize: '28px', color: '#ffcc00', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
@@ -318,7 +481,7 @@ export class GameScene extends Scene {
 
   private showDefeatMessage(): void {
     const msg = this.add.text(
-      this.cameras.main.centerX,
+      this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       100,
       '💥 DEFEAT! 💥',
       { fontSize: '28px', color: '#ff0000', backgroundColor: '#000000aa', padding: { x: 20, y: 10 } }
@@ -342,37 +505,39 @@ export class GameScene extends Scene {
         let bgColor = '#2d2d3a';
 
         switch (tile) {
-          case TileType.PLATFORM:   icon = '⬜'; bgColor = '#8B5A2B'; break;
-          case TileType.WALL:       icon = '🧱'; bgColor = '#555555'; break;
-          case TileType.HOLE:       icon = '🕳️'; bgColor = '#000000'; break;
-          case TileType.GOAL:       icon = '💰'; bgColor = '#ffcc00'; break;
-          case TileType.KEY:        icon = '🔑'; bgColor = '#ffaa00'; break;
-          case TileType.DOOR_LOCKED: icon = '🔒'; bgColor = '#8B0000'; break;
+          case TileType.PLATFORM:      icon = '⬜'; bgColor = '#8B5A2B'; break;
+          case TileType.WALL:          icon = '🧱'; bgColor = '#555555'; break;
+          case TileType.HOLE:          icon = '🕳️'; bgColor = '#000000'; break;
+          case TileType.GOAL:          icon = '💰'; bgColor = '#ffcc00'; break;
+          case TileType.KEY:           icon = '🔑'; bgColor = '#ffaa00'; break;
+          case TileType.DOOR_LOCKED:   icon = '🔒'; bgColor = '#8B0000'; break;
           case TileType.DOOR_UNLOCKED: icon = '🔓'; bgColor = '#228B22'; break;
-          case TileType.CONVEYOR_UP: icon = '⬆️'; bgColor = '#666666'; break;
+          case TileType.CONVEYOR_UP:   icon = '⬆️'; bgColor = '#666666'; break;
           case TileType.CONVEYOR_DOWN: icon = '⬇️'; bgColor = '#666666'; break;
           case TileType.CONVEYOR_LEFT: icon = '⬅️'; bgColor = '#666666'; break;
-          case TileType.CONVEYOR_RIGHT: icon = '➡️'; bgColor = '#666666'; break;
-          case TileType.SPRING:     icon = '⬆️⬆️'; bgColor = '#ff6600'; break;
-          case TileType.TELEPORT_IN: icon = '🌀'; bgColor = '#9932CC'; break;
-          case TileType.TELEPORT_OUT: icon = '🌀'; bgColor = '#9932CC'; break;
-          case TileType.LAVA:        icon = '🌋'; bgColor = '#ff4500'; break;
-          case TileType.WATER:       icon = '💧'; bgColor = '#1E90FF'; break;
-          case TileType.GLUE:        icon = '🩹'; bgColor = '#88cc88'; break;
-          case TileType.CAGE:        icon = '🔐'; bgColor = '#cd7f32'; break;
-          case TileType.TRAP:        icon = '⚠️'; bgColor = '#8b4513'; break;
-          case TileType.GEM:         icon = '💎'; bgColor = '#00ffcc'; break;
-          case TileType.BRICK:       icon = '🧱'; bgColor = '#A52A2A'; break;
-          case TileType.BLACK_BOX:   icon = '📦'; bgColor = '#2F4F4F'; break;
-          case TileType.BUTTON:      icon = '🔘'; bgColor = '#DC143C'; break;
-          case TileType.LEVER:       icon = '🎚️'; bgColor = '#D2691E'; break;
-          case TileType.TIMER:       icon = '⏲️'; bgColor = '#FFD700'; break;
-          case TileType.SENSOR:      icon = '📡'; bgColor = '#00CED1'; break;
-          case TileType.SORTER:      icon = '📊'; bgColor = '#4B0082'; break;
+          case TileType.CONVEYOR_RIGHT:icon = '➡️'; bgColor = '#666666'; break;
+          case TileType.SPRING:        icon = '⬆️⬆️'; bgColor = '#ff6600'; break;
+          case TileType.TELEPORT_IN:   icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.TELEPORT_OUT:  icon = '🌀'; bgColor = '#9932CC'; break;
+          case TileType.LAVA:          icon = '🌋'; bgColor = '#ff4500'; break;
+          case TileType.WATER:         icon = '💧'; bgColor = '#1E90FF'; break;
+          case TileType.GLUE:          icon = '🩹'; bgColor = '#88cc88'; break;
+          case TileType.CAGE:          icon = '🔐'; bgColor = '#cd7f32'; break;
+          case TileType.TRAP:          icon = '⚠️'; bgColor = '#8b4513'; break;
+          case TileType.GEM:           icon = '💎'; bgColor = '#00ffcc'; break;
+          case TileType.BRICK:         icon = '🧱'; bgColor = '#A52A2A'; break;
+          case TileType.BLACK_BOX:     icon = '📦'; bgColor = '#2F4F4F'; break;
+          case TileType.BUTTON:        icon = '🔘'; bgColor = '#DC143C'; break;
+          case TileType.LEVER:         icon = '🎚️'; bgColor = '#D2691E'; break;
+          case TileType.TIMER:         icon = '⏲️'; bgColor = '#FFD700'; break;
+          case TileType.SENSOR:        icon = '📡'; bgColor = '#00CED1'; break;
+          case TileType.SORTER:        icon = '📊'; bgColor = '#4B0082'; break;
+          case TileType.MAGNET:        icon = '🧲'; bgColor = '#C0C0C0'; break;
+          case TileType.SLOW_FIELD:    icon = '⏱️'; bgColor = '#88AACC'; break;
           default: icon = '⬜'; bgColor = '#8B5A2B'; break;
         }
 
-        const monsterHere = monsters.find((m: any) => m.position.col === col && m.position.row === row);
+        const monsterHere = monsters.find((m: any) => m.position.x === col && m.position.y === row);
         if (monsterHere) {
           if (monsterHere.type === 'patrol') icon = '👾';
           else if (monsterHere.type === 'chase') icon = '👾⚡';
@@ -384,7 +549,7 @@ export class GameScene extends Scene {
           bgColor = '#4a1a4a';
         }
 
-        const itemHere = items.find((it: any) => it.pos.col === col && it.pos.row === row);
+        const itemHere = items.find((it: any) => it.pos.x === col && it.pos.y === row);
         if (itemHere) {
           if (itemHere.id === 'key1') icon = '🔑';
           else if (itemHere.id === 'corn1') icon = '🌽';
@@ -423,7 +588,10 @@ export class GameScene extends Scene {
     const pos = this.player.getPosition();
     const x = pos.col * this.gridSize + this.gridSize / 2;
     const y = pos.row * this.gridSize + this.gridSize / 2;
-    this.playerSprite = this.add.text(x, y, '🤖', {
+    // Иконка танка + маленькая стрелка, показывающая угол башни
+    const angle = this.player.getTurretAngle();
+    const arrow = angle === 0 ? '⬆️' : angle === 90 ? '➡️' : angle === 180 ? '⬇️' : '⬅️';
+    this.playerSprite = this.add.text(x, y, `🤖${arrow}`, {
       fontSize: `${Math.floor(this.gridSize * 0.7)}px`,
       fontFamily: 'Arial',
       color: '#00ffcc',
@@ -431,5 +599,8 @@ export class GameScene extends Scene {
       padding: { x: 4, y: 2 },
     }).setOrigin(0.5);
     this.gameContainer?.add(this.playerSprite);
+    if (this.cameraFollowEnabled) {
+      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+    }
   }
 }
