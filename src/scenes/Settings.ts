@@ -2,22 +2,46 @@
 // ============================================================================
 // СЦЕНА НАСТРОЕК (SETTINGS) – ПАТЧ 2.0
 // ============================================================================
-// - Отображает настройки: язык, звук, музыка, режим управления
+// - Отображает настройки: режим обучения, язык, звук, музыка, режим управления
+// - Режим обучения (Kiddo/Scholar/Dev Student/Developer) из Research.md
 // - Переключатель между классическим и раздельным управлением (Control Mode)
-// - Кнопки сброса и экспорта/импорта (опционально)
+// - Кнопка сброса
 // ============================================================================
 
 import { Scene } from 'phaser';
 import { settingsManager } from '../managers/SettingsManager';
-import { ControlMode } from '../types/index';
+import { ControlMode, LearningMode } from '../types/index';
 import { logger } from '../core/Logger';
 
+interface LearnModeOption {
+  mode: LearningMode;
+  label: string;
+  age: string;
+}
+
 export class Settings extends Scene {
-  private controlModeToggle: Phaser.GameObjects.Text;
-  private soundToggle: Phaser.GameObjects.Text;
-  private musicToggle: Phaser.GameObjects.Text;
-  private langRu: Phaser.GameObjects.Text;
-  private langEn: Phaser.GameObjects.Text;
+  private controlModeToggle!: Phaser.GameObjects.Text;
+  private soundToggle!: Phaser.GameObjects.Text;
+  private musicToggle!: Phaser.GameObjects.Text;
+  private langRu!: Phaser.GameObjects.Text;
+  private langEn!: Phaser.GameObjects.Text;
+
+  private learnButtons: Map<LearningMode, Phaser.GameObjects.Text> = new Map();
+  private learnDesc!: Phaser.GameObjects.Text;
+
+  private readonly learnOptions: LearnModeOption[] = [
+    { mode: 'kiddo', label: '🧒 Kiddo', age: '3–5' },
+    { mode: 'scholar', label: '📘 Scholar', age: '6–9' },
+    { mode: 'dev_student', label: '💻 Dev Student', age: '10–14' },
+    { mode: 'developer', label: '⚡ Developer', age: '15+' },
+  ];
+
+  private readonly learnDescriptions: Record<LearningMode, string> = {
+    kiddo: 'Kiddo (3–5): только иконки на кнопках, без текста',
+    scholar: 'Scholar (6–9): иконки + текстовые подписи команд',
+    dev_student: 'Dev Student (10–14): подписи + синтаксис Python',
+    developer: 'Developer (15+): только синтаксис, Script Mode',
+  };
 
   constructor() {
     super('Settings');
@@ -33,8 +57,8 @@ export class Settings extends Scene {
     bg.fillRect(0, 0, width, height);
 
     // Заголовок
-    const title = this.add.text(width / 2, 50, 'SETTINGS', {
-      fontSize: '32px',
+    this.add.text(width / 2, 36, 'SETTINGS', {
+      fontSize: '30px',
       color: '#00ffcc',
       fontFamily: 'monospace',
       stroke: '#0066ff',
@@ -52,15 +76,49 @@ export class Settings extends Scene {
       this.scene.start('MainMenu');
     });
 
-    // --- РЕЖИМ УПРАВЛЕНИЯ (НОВОЕ В 2.0) ---
-    const modeLabel = this.add.text(width / 2, 150, 'Control Mode:', {
+    // --- РЕЖИМ ОБУЧЕНИЯ (Research.md) ---
+    this.add.text(width / 2, 80, 'Learning Mode:', {
+      fontSize: '20px',
+      color: '#ffffff',
+    }).setOrigin(0.5);
+
+    const current = settingsManager.getLearningMode();
+    const btnY = 118;
+    const totalW = width - 40;
+    const cellW = totalW / this.learnOptions.length;
+    this.learnOptions.forEach((opt, i) => {
+      const x = 20 + cellW * i + cellW / 2;
+      const btn = this.add.text(x, btnY, opt.label, {
+        fontSize: '15px',
+        color: opt.mode === current ? '#0a0a2a' : '#ffffff',
+        backgroundColor: opt.mode === current ? '#00ffcc' : '#2a2a4a',
+        padding: { x: 8, y: 6 },
+        align: 'center',
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      btn.on('pointerdown', () => {
+        settingsManager.setLearningMode(opt.mode);
+        this.updateLearningModeDisplay();
+        logger.info('Settings', 'learningMode set', opt.mode);
+      });
+      this.learnButtons.set(opt.mode, btn);
+    });
+
+    this.learnDesc = this.add.text(width / 2, 150, this.learnDescriptions[current], {
+      fontSize: '12px',
+      color: '#aaaaaa',
+      align: 'center',
+      wordWrap: { width: width - 40 },
+    }).setOrigin(0.5);
+
+    // --- РЕЖИМ УПРАВЛЕНИЯ (2.0) ---
+    this.add.text(width / 2, 200, 'Control Mode:', {
       fontSize: '20px',
       color: '#ffffff',
     }).setOrigin(0.5);
 
     const mode = settingsManager.getControlMode();
     const modeText = mode === ControlMode.SEPARATE ? '🔫 Separate (NEW)' : '🎮 Classic';
-    this.controlModeToggle = this.add.text(width / 2, 190, modeText, {
+    this.controlModeToggle = this.add.text(width / 2, 236, modeText, {
       fontSize: '18px',
       color: '#ffcc00',
       backgroundColor: '#2a2a4a',
@@ -72,21 +130,20 @@ export class Settings extends Scene {
       logger.info('Settings', 'controlMode toggled', settingsManager.getControlMode());
     });
 
-    // Пояснение
-    const modeDesc = this.add.text(width / 2, 220, 
-      'Separate: turn turret and move independently\nClassic: old style (turn + move)', {
-      fontSize: '12px',
+    this.add.text(width / 2, 268,
+      'Separate: turn turret and move independently · Classic: turn + move', {
+      fontSize: '11px',
       color: '#aaaaaa',
       align: 'center',
     }).setOrigin(0.5);
 
     // --- ЗВУК ---
-    const soundLabel = this.add.text(width / 2, 270, 'Sound:', {
+    this.add.text(width / 2 - 90, 320, 'Sound:', {
       fontSize: '20px',
       color: '#ffffff',
     }).setOrigin(0.5);
     const soundEnabled = settingsManager.isSoundEnabled();
-    this.soundToggle = this.add.text(width / 2, 310, soundEnabled ? '🔊 ON' : '🔇 OFF', {
+    this.soundToggle = this.add.text(width / 2 + 50, 320, soundEnabled ? '🔊 ON' : '🔇 OFF', {
       fontSize: '18px',
       color: '#ffcc00',
       backgroundColor: '#2a2a4a',
@@ -98,12 +155,12 @@ export class Settings extends Scene {
     });
 
     // --- МУЗЫКА ---
-    const musicLabel = this.add.text(width / 2, 370, 'Music:', {
+    this.add.text(width / 2 - 90, 375, 'Music:', {
       fontSize: '20px',
       color: '#ffffff',
     }).setOrigin(0.5);
     const musicEnabled = settingsManager.isMusicEnabled();
-    this.musicToggle = this.add.text(width / 2, 410, musicEnabled ? '🎵 ON' : '🎵 OFF', {
+    this.musicToggle = this.add.text(width / 2 + 50, 375, musicEnabled ? '🎵 ON' : '🎵 OFF', {
       fontSize: '18px',
       color: '#ffcc00',
       backgroundColor: '#2a2a4a',
@@ -115,39 +172,39 @@ export class Settings extends Scene {
     });
 
     // --- ЯЗЫК ---
-    const langLabel = this.add.text(width / 2, 480, 'Language:', {
+    this.add.text(width / 2, 440, 'Language:', {
       fontSize: '20px',
       color: '#ffffff',
     }).setOrigin(0.5);
     const currentLang = settingsManager.getLanguage();
-    this.langRu = this.add.text(width / 2 - 60, 520, 'Русский', {
+    this.langRu = this.add.text(width / 2 - 60, 478, 'Русский', {
       fontSize: '16px',
       color: currentLang === 'ru' ? '#00ffcc' : '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 12, y: 6 },
-    }).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     this.langRu.on('pointerdown', () => {
       settingsManager.setLanguage('ru');
       this.updateLanguageDisplay();
     });
-    this.langEn = this.add.text(width / 2 + 60, 520, 'English', {
+    this.langEn = this.add.text(width / 2 + 60, 478, 'English', {
       fontSize: '16px',
       color: currentLang === 'en' ? '#00ffcc' : '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 12, y: 6 },
-    }).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     this.langEn.on('pointerdown', () => {
       settingsManager.setLanguage('en');
       this.updateLanguageDisplay();
     });
 
     // Кнопка RESET ALL SETTINGS
-    const resetBtn = this.add.text(width / 2, 580, '🔄 RESET ALL', {
+    const resetBtn = this.add.text(width / 2, 540, '🔄 RESET ALL', {
       fontSize: '14px',
       color: '#ffaa44',
       backgroundColor: '#2a2a4a',
       padding: { x: 16, y: 8 },
-    }).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     resetBtn.on('pointerdown', () => {
       settingsManager.resetToDefaults();
       this.updateAllDisplays();
@@ -159,6 +216,16 @@ export class Settings extends Scene {
       fontSize: '12px',
       color: '#888888',
     }).setOrigin(1, 1);
+  }
+
+  private updateLearningModeDisplay(): void {
+    const current = settingsManager.getLearningMode();
+    this.learnButtons.forEach((btn, mode) => {
+      const active = mode === current;
+      btn.setColor(active ? '#0a0a2a' : '#ffffff');
+      btn.setBackgroundColor(active ? '#00ffcc' : '#2a2a4a');
+    });
+    this.learnDesc.setText(this.learnDescriptions[current]);
   }
 
   private updateControlModeDisplay(): void {
@@ -184,6 +251,7 @@ export class Settings extends Scene {
   }
 
   private updateAllDisplays(): void {
+    this.updateLearningModeDisplay();
     this.updateControlModeDisplay();
     this.updateSoundDisplay();
     this.updateMusicDisplay();

@@ -8,7 +8,7 @@
 // - Полная обратная совместимость
 // ============================================================================
 
-import { Command, ControlMode } from '../types/index';
+import { Command, ControlMode, LearningMode } from '../types/index';
 
 interface CommandGroup {
   title: string;
@@ -25,6 +25,7 @@ export class CommandPanel {
   private commandElements: Map<number, HTMLDivElement> = new Map();
   private allowedCommands: Command[] = [];
   private controlMode: ControlMode = ControlMode.SEPARATE; // по умолчанию новый режим
+  private learningMode: LearningMode = 'scholar'; // режим обучения — влияет на вид меток
 
   private readonly allGroups: CommandGroup[] = [
     // ---------- НОВЫЕ ГРУППЫ ДЛЯ ПАТЧА 2.0 ----------
@@ -108,6 +109,13 @@ export class CommandPanel {
     this.refreshPanel(); // перестроить панель (скрыть/показать группы)
   }
 
+  // Режим обучения: kiddo (только иконки), scholar (иконка + текст),
+  // dev_student / developer (иконка + текст + синтаксис Python).
+  public setLearningMode(mode: LearningMode): void {
+    this.learningMode = mode;
+    this.refreshPanel();
+  }
+
   // --------------------------------------------------------------------------
   // ПЕРЕСТРОЙКА ПАНЕЛИ
   // --------------------------------------------------------------------------
@@ -187,51 +195,155 @@ export class CommandPanel {
     return this.allowedCommands.includes(cmd);
   }
 
+  // Иконка (эмодзи) для каждой команды
+  private static readonly CMD_ICON: Partial<Record<Command, string>> = {
+    [Command.MOVE_FORWARD]: '⬆️',
+    [Command.MOVE_BACKWARD]: '⬇️',
+    [Command.TURN_LEFT]: '⬅️',
+    [Command.TURN_RIGHT]: '➡️',
+    [Command.TURN_AROUND]: '🔄',
+    [Command.SYNC_BODY]: '🧭',
+    [Command.SET_ANGLE]: '🎯',
+    [Command.RELATIVE_TURN]: '🔁',
+    [Command.SHOW_AIM]: '🎯',
+    [Command.IF_ANGLE]: '❓',
+    [Command.WHILE_NOT_FACING]: '🔄',
+    [Command.UP]: '↑',
+    [Command.DOWN]: '↓',
+    [Command.LEFT]: '←',
+    [Command.RIGHT]: '→',
+    [Command.PUSH]: '📦',
+    [Command.USE_KEY]: '🔑',
+    [Command.PICKUP]: '📥',
+    [Command.DROP]: '🗑',
+    [Command.DRILL]: '🔧',
+    [Command.HOOK]: '🪝',
+    [Command.WING]: '🪽',
+    [Command.BAIT]: '🐟',
+    [Command.THROW]: '🎯',
+    [Command.FEED]: '🌽',
+    [Command.TIME_SLOW]: '🐢',
+    [Command.TIME_FAST]: '🐇',
+    [Command.WAIT]: '⏳',
+    [Command.CALL]: '📞',
+    [Command.RETURN]: '↩️',
+    [Command.PARAM]: '📥',
+    [Command.CLASS]: '🏛️',
+    [Command.NEW]: '✨',
+    [Command.METHOD]: '⚙️',
+    [Command.CLONE]: '👥',
+    [Command.JOIN]: '🤝',
+    [Command.SCAN]: '🔍',
+    [Command.RIDE]: '🐎',
+    [Command.BLACK_BOX]: '📦',
+  };
+
+  // Текстовая подпись (RU/EN) для каждой команды
+  private static readonly CMD_TEXT: Partial<Record<Command, string>> = {
+    [Command.MOVE_FORWARD]: 'Move Forward',
+    [Command.MOVE_BACKWARD]: 'Move Backward',
+    [Command.TURN_LEFT]: 'Turn Turret Left',
+    [Command.TURN_RIGHT]: 'Turn Turret Right',
+    [Command.TURN_AROUND]: 'Turn Turret 180°',
+    [Command.SYNC_BODY]: 'Sync Body',
+    [Command.SET_ANGLE]: 'Set Angle',
+    [Command.RELATIVE_TURN]: 'Relative Turn',
+    [Command.SHOW_AIM]: 'Show Aim',
+    [Command.IF_ANGLE]: 'IF Angle ==',
+    [Command.WHILE_NOT_FACING]: 'WHILE not facing target',
+    [Command.UP]: 'Up',
+    [Command.DOWN]: 'Down',
+    [Command.LEFT]: 'Left',
+    [Command.RIGHT]: 'Right',
+    [Command.PUSH]: 'Push',
+    [Command.USE_KEY]: 'Use Key',
+    [Command.PICKUP]: 'Pickup',
+    [Command.DROP]: 'Drop',
+    [Command.DRILL]: 'Drill',
+    [Command.HOOK]: 'Hook',
+    [Command.WING]: 'Wing',
+    [Command.BAIT]: 'Bait',
+    [Command.THROW]: 'Throw',
+    [Command.FEED]: 'Feed',
+    [Command.TIME_SLOW]: 'Time Slow',
+    [Command.TIME_FAST]: 'Time Fast',
+    [Command.WAIT]: 'Wait',
+    [Command.CALL]: 'Call',
+    [Command.RETURN]: 'Return',
+    [Command.PARAM]: 'Param',
+    [Command.CLASS]: 'Class',
+    [Command.NEW]: 'New',
+    [Command.METHOD]: 'Method',
+    [Command.CLONE]: 'Clone',
+    [Command.JOIN]: 'Join',
+    [Command.SCAN]: 'Scan',
+    [Command.RIDE]: 'Ride',
+    [Command.BLACK_BOX]: 'Black Box',
+  };
+
+  // Python/JS синтаксис для продвинутых режимов
+  private static readonly CMD_PY: Partial<Record<Command, string>> = {
+    [Command.MOVE_FORWARD]: 'move_forward()',
+    [Command.MOVE_BACKWARD]: 'move_backward()',
+    [Command.TURN_LEFT]: 'turn_left()',
+    [Command.TURN_RIGHT]: 'turn_right()',
+    [Command.TURN_AROUND]: 'turn_around()',
+    [Command.SYNC_BODY]: 'sync_body()',
+    [Command.SET_ANGLE]: 'set_angle(deg)',
+    [Command.RELATIVE_TURN]: 'relative_turn(deg)',
+    [Command.SHOW_AIM]: 'show_aim()',
+    [Command.IF_ANGLE]: 'if angle ==:',
+    [Command.WHILE_NOT_FACING]: 'while not facing(target):',
+    [Command.UP]: 'up()',
+    [Command.DOWN]: 'down()',
+    [Command.LEFT]: 'left()',
+    [Command.RIGHT]: 'right()',
+    [Command.PUSH]: 'push()',
+    [Command.USE_KEY]: 'use_key()',
+    [Command.PICKUP]: 'pickup()',
+    [Command.DROP]: 'drop()',
+    [Command.DRILL]: 'drill()',
+    [Command.HOOK]: 'hook()',
+    [Command.WING]: 'wing()',
+    [Command.BAIT]: 'bait()',
+    [Command.THROW]: 'throw()',
+    [Command.FEED]: 'feed()',
+    [Command.TIME_SLOW]: 'time_slow()',
+    [Command.TIME_FAST]: 'time_fast()',
+    [Command.WAIT]: 'wait()',
+    [Command.CALL]: 'call(fn)',
+    [Command.RETURN]: 'return',
+    [Command.PARAM]: 'param(x)',
+    [Command.CLASS]: 'class:',
+    [Command.NEW]: 'new()',
+    [Command.METHOD]: 'def method():',
+    [Command.CLONE]: 'clone()',
+    [Command.JOIN]: 'join()',
+    [Command.SCAN]: 'scan()',
+    [Command.RIDE]: 'ride()',
+    [Command.BLACK_BOX]: 'black_box()',
+  };
+
   private getButtonLabel(cmd: Command): string {
-    const labels: Partial<Record<Command, string>> = {
-      // Новые команды
-      [Command.MOVE_FORWARD]: '⬆️ Move Forward',
-      [Command.MOVE_BACKWARD]: '⬇️ Move Backward',
-      [Command.TURN_LEFT]: '⬅️ Turn Turret Left',
-      [Command.TURN_RIGHT]: '➡️ Turn Turret Right',
-      [Command.TURN_AROUND]: '🔄 Turn Turret 180°',
-      [Command.SYNC_BODY]: '🧭 Sync Body',
-      [Command.SET_ANGLE]: '🎯 Set Angle',
-      [Command.RELATIVE_TURN]: '🔁 Relative Turn',
-      [Command.SHOW_AIM]: '🎯 Show Aim',
-      [Command.IF_ANGLE]: '❓ IF Angle ==',
-      [Command.WHILE_NOT_FACING]: '🔄 WHILE not facing target',
-      // Старые
-      [Command.UP]: '↑ Up',
-      [Command.DOWN]: '↓ Down',
-      [Command.LEFT]: '← Left',
-      [Command.RIGHT]: '→ Right',
-      [Command.PUSH]: '📦 Push',
-      [Command.USE_KEY]: '🔑 Use Key',
-      [Command.PICKUP]: '📥 Pickup',
-      [Command.DROP]: '🗑 Drop',
-      [Command.DRILL]: '🔧 Drill',
-      [Command.HOOK]: '🪝 Hook',
-      [Command.WING]: '🪽 Wing',
-      [Command.BAIT]: '🐟 Bait',
-      [Command.THROW]: '🎯 Throw',
-      [Command.FEED]: '🌽 Feed',
-      [Command.TIME_SLOW]: '🐢 Time Slow',
-      [Command.TIME_FAST]: '🐇 Time Fast',
-      [Command.WAIT]: '⏳ Wait',
-      [Command.CALL]: '📞 Call',
-      [Command.RETURN]: '↩️ Return',
-      [Command.PARAM]: '📥 Param',
-      [Command.CLASS]: '🏛️ Class',
-      [Command.NEW]: '✨ New',
-      [Command.METHOD]: '⚙️ Method',
-      [Command.CLONE]: '👥 Clone',
-      [Command.JOIN]: '🤝 Join',
-      [Command.SCAN]: '🔍 Scan',
-      [Command.RIDE]: '🐎 Ride',
-      [Command.BLACK_BOX]: '📦 Black Box',
-    };
-    return labels[cmd] || cmd;
+    const icon = CommandPanel.CMD_ICON[cmd] || '';
+    const text = CommandPanel.CMD_TEXT[cmd] || cmd;
+    const py = CommandPanel.CMD_PY[cmd] || '';
+
+    switch (this.learningMode) {
+      case 'kiddo':
+        // Только иконки (3–5 лет)
+        return icon || text;
+      case 'developer':
+        // Только синтаксис (15+), Script Mode
+        return py || `${icon} ${text}`.trim();
+      case 'dev_student':
+        // Текст + синтаксис (10–14)
+        return py ? `${icon} ${text}  · ${py}`.trim() : `${icon} ${text}`.trim();
+      case 'scholar':
+      default:
+        // Иконки + текст (6–9)
+        return `${icon} ${text}`.trim();
+    }
   }
 
   private addCommandButtonToContainer(label: string, cmd: Command, container: HTMLDivElement): void {

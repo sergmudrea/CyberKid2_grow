@@ -21,6 +21,7 @@ import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { InventoryUI } from '../modules/InventoryUI';
 import { LevelData, TileType, Command, ControlMode, Point } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
+import { settingsManager } from '../managers/SettingsManager';
 import { progressManager } from '../managers/ProgressManager';
 import { tileTextureKey, monsterTextureKey, itemTextureKey } from '../managers/AssetManager';
 import { ExecutionEngine } from '../modules/execution';
@@ -231,6 +232,7 @@ export class GameScene extends Scene {
     );
     this.commandPanel.setAllowedCommands(this.level?.allowedCommands || []);
     this.commandPanel.setControlMode(this.controlMode);
+    this.commandPanel.setLearningMode(settingsManager.getLearningMode());
     this.updateVisualizer();
 
     if (this.player) {

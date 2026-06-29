@@ -69,6 +69,15 @@ export class SettingsManager {
     this.setControlMode(next);
   }
 
+  // --- Режим обучения (Kiddo / Scholar / Dev Student / Developer) ---
+  public getLearningMode(): LearningMode {
+    return this.settings.learningMode;
+  }
+
+  public setLearningMode(mode: LearningMode): void {
+    this.set('learningMode', mode);
+  }
+
   // --- Язык ---
   public getLanguage(): string {
     return this.settings.language;
