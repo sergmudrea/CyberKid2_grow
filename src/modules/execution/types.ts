@@ -47,17 +47,23 @@ export interface CallFrame {
 // ----------------------------------------------------------------------------
 // 3. ООП: КЛАССЫ И ЭКЗЕМПЛЯРЫ
 // ----------------------------------------------------------------------------
+// Определение метода (тело и параметры)
+export interface MethodDef {
+  nodes: ASTNode[];
+  paramNames: string[];
+}
+
 export interface ClassDef {
   name: string;
   properties: Map<string, any>;
-  methods: Map<string, ASTNode[]>;
+  methods: Map<string, MethodDef>;
   parentClass?: string;
 }
 
 export interface Instance {
   classId: string;
   properties: Map<string, any>;
-  methods: Map<string, ASTNode[]>;
+  methods: Map<string, MethodDef>;
 }
 
 // ----------------------------------------------------------------------------
@@ -66,8 +72,8 @@ export interface Instance {
 export interface CloneInfo {
   id: string;
   position: Point;
-  turretAngle: number;
-  hullDirection: 'up' | 'down' | 'left' | 'right';
+  turretAngle?: number;
+  hullDirection?: 'up' | 'down' | 'left' | 'right';
   inventory: Inventory;
   ast: ASTNode[];
   nodeIndex: number;

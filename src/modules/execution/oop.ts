@@ -11,15 +11,13 @@
 // Для вызова метода нужно создать экземпляр, затем вызвать метод через специальный синтаксис.
 // ============================================================================
 
-import { ASTNode, ClassDef, Instance } from './types';
-import { log, logInfo, logError } from './helpers';
+import { ASTNode, ClassDef, Instance, MethodDef } from './types';
+import { Command } from '../../types/index';
+import { logInfo, logError } from './helpers';
 import { gameEvents as eventBus } from '../../core/EventBus';
 
-// Определение метода (тело и параметры)
-export interface MethodDef {
-  nodes: ASTNode[];
-  paramNames: string[];
-}
+// MethodDef перенесён в ./types и реэкспортируется для обратной совместимости
+export type { MethodDef };
 
 export class OOPExecutor {
   private classDefinitions: Map<string, ClassDef> = new Map();
@@ -40,14 +38,14 @@ export class OOPExecutor {
         const paramNames: string[] = [];
         if (node.children) {
           for (const child of node.children) {
-            if (child.type === 'command' && child.command === 'PARAM' && child.functionName) {
+            if (child.type === 'command' && child.command === Command.PARAM && child.functionName) {
               paramNames.push(child.functionName);
             }
           }
         }
         methods.set(node.methodName, { nodes: node.children || [], paramNames });
       }
-      if (node.type === 'command' && node.command === 'PARAM' && node.functionName) {
+      if (node.type === 'command' && node.command === Command.PARAM && node.functionName) {
         // Свойство класса (объявленное как PARAM вне метода)
         properties.set(node.functionName, null);
       }

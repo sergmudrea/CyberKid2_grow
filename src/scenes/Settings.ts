@@ -151,7 +151,7 @@ export class Settings extends Scene {
     resetBtn.on('pointerdown', () => {
       settingsManager.resetToDefaults();
       this.updateAllDisplays();
-      logger.info('Settings', 'reset to defaults');
+      logger.info('Settings', 'resetToDefaults', 'Settings reset to defaults');
     });
 
     // Подпись версии

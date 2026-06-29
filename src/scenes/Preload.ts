@@ -95,7 +95,7 @@ export class Preload extends Scene {
       ctx.fillStyle = '#fff';
       ctx.font = '32px Arial';
       ctx.fillText(icon, 16, 48);
-      textureManager.addImage(key, canvas);
+      textureManager.addCanvas(key, canvas);
     };
     
     const generatePlayerPlaceholder = (key: string, color: string, icon: string) => {
@@ -107,7 +107,7 @@ export class Preload extends Scene {
       ctx.fillStyle = '#fff';
       ctx.font = '40px Arial';
       ctx.fillText(icon, 12, 52);
-      textureManager.addImage(key, canvas);
+      textureManager.addCanvas(key, canvas);
     };
     
     generateTilePlaceholder('tile_platform', '#8B5A2B', '⬜');

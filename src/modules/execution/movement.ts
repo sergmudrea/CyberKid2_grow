@@ -360,12 +360,12 @@ export class MovementExecutor {
   // МАГНИТ
   // --------------------------------------------------------------------------
   private async processMagnet(pos: Point): Promise<void> {
-    const magnet = this.level.objects?.magnets?.find((m: any) => m.position.x === pos.x && m.position.y === pos.y);
+    const magnet = this.level.objects?.magnets?.find((m: any) => m.position.col === pos.col && m.position.row === pos.row);
     if (!magnet) return;
 
     // Направление от танка к магниту
-    const dx = magnet.position.x - this.player.getPosition().col;
-    const dy = magnet.position.y - this.player.getPosition().row;
+    const dx = magnet.position.col - this.player.getPosition().col;
+    const dy = magnet.position.row - this.player.getPosition().row;
     const turretAngle = this.player.getTurretAngle();
     let expectedTurret = 0;
     if (dx > 0) expectedTurret = 90;

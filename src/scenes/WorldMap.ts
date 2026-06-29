@@ -304,7 +304,7 @@ export class WorldMap extends Scene {
       });
 
       const icon = this.add.text(0, -25, world.icon, { fontSize: '36px' }).setOrigin(0.5);
-      const name = this.add.text(0, 8, world.name, { fontSize: '11px', color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold' }).setOrigin(0.5);
+      const name = this.add.text(0, 8, world.name, { fontSize: '11px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold' }).setOrigin(0.5);
 
       const starPercent = world.maxStars > 0 ? (world.totalStars / world.maxStars) * 100 : 0;
       const starCount = Math.floor(starPercent / 20);

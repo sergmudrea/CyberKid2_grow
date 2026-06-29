@@ -13,8 +13,11 @@ import { GameEvent } from '../types/index';
 import Phaser from 'phaser';
 
 // Вспомогательные типы для строгой типизации событий (опционально)
-type EventType = GameEvent['type'];
-type EventPayload<T extends EventType> = Extract<GameEvent, { type: T }>['payload'];
+// GameEvent.type — это string, поэтому тип события строковый, а payload — произвольные данные.
+// Извлечение payload через Extract<GameEvent, {type: T}> давало бы never для строковых литералов,
+// поэтому payload типизируется как любой объект/значение события.
+type EventType = string;
+type EventPayload = GameEvent['payload'];
 
 export class EventBus {
   private static instance: EventBus;
@@ -39,7 +42,7 @@ export class EventBus {
 
   // Отправить событие (оповещает всех подписчиков)
   // Тип события – строка, payload – любые данные (обычно объект)
-  public emit<T extends EventType>(type: T, payload?: EventPayload<T>): void {
+  public emit<T extends EventType>(type: T, payload?: EventPayload): void {
     if (this.debugMode) console.log(`[EventBus] EMIT: ${type}`, payload);
     this.emitter.emit(type, payload);
   }
@@ -48,7 +51,7 @@ export class EventBus {
   // Можно передать контекст (this) для правильной привязки
   public on<T extends EventType>(
     type: T,
-    callback: (payload?: EventPayload<T>) => void,
+    callback: (payload?: EventPayload) => void,
     context?: any
   ): void {
     this.emitter.on(type, callback, context);
@@ -57,7 +60,7 @@ export class EventBus {
   // Отписаться от события (если передан callback – удалить конкретный, иначе все)
   public off<T extends EventType>(
     type: T,
-    callback?: (payload?: EventPayload<T>) => void,
+    callback?: (payload?: EventPayload) => void,
     context?: any
   ): void {
     this.emitter.off(type, callback, context);
@@ -66,7 +69,7 @@ export class EventBus {
   // Подписаться, но только на одно срабатывание (автоотписка после первого вызова)
   public once<T extends EventType>(
     type: T,
-    callback: (payload?: EventPayload<T>) => void,
+    callback: (payload?: EventPayload) => void,
     context?: any
   ): void {
     this.emitter.once(type, callback, context);

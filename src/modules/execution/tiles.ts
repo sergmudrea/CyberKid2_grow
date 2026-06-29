@@ -340,12 +340,12 @@ export class TilesExecutor {
   // 7. МАГНИТ (НОВОЕ ДЛЯ ПАТЧА 2.0)
   // ==========================================================================
   public processMagnet(pos: Point): void {
-    const magnet = this.level.objects?.magnets?.find((m: any) => m.position.x === pos.x && m.position.y === pos.y);
+    const magnet = this.level.objects?.magnets?.find((m: any) => m.position.col === pos.col && m.position.row === pos.row);
     if (!magnet) return;
 
     const playerPos = this.player.getPosition();
-    const dx = magnet.position.x - playerPos.x;
-    const dy = magnet.position.y - playerPos.y;
+    const dx = magnet.position.col - playerPos.col;
+    const dy = magnet.position.row - playerPos.row;
     const turretAngle = this.player.getTurretAngle();
 
     let requiredAngle = 0;
@@ -376,7 +376,7 @@ export class TilesExecutor {
   // 8. ЗАМЕДЛЯЮЩЕЕ ПОЛЕ (НОВОЕ ДЛЯ ПАТЧА 2.0)
   // ==========================================================================
   public processSlowField(pos: Point): void {
-    const slowField = this.level.objects?.slowFields?.find((s: any) => s.position.x === pos.x && s.position.y === pos.y);
+    const slowField = this.level.objects?.slowFields?.find((s: any) => s.position.col === pos.col && s.position.row === pos.row);
     if (slowField) {
       this.player.setSlowFactor(2);
       logInfo('TilesExecutor', 'processSlowField', `Slow field activated at (${pos.col},${pos.row})`);

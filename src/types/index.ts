@@ -112,7 +112,8 @@ export enum TileType {
   GEM = 46,
   // НОВЫЕ ДЛЯ ПАТЧА 2.0
   MAGNET = 50,
-  SLOW_FIELD = 51
+  SLOW_FIELD = 51,
+  FAKE_WALL = 52
 }
 
 export interface Point {
@@ -197,12 +198,19 @@ export interface PlayerProgress {
   settings: any;
 }
 
+export type LearningMode = 'kiddo' | 'scholar' | 'dev_student' | 'developer';
+
 export interface UserSettings {
   language: string;
   soundEnabled: boolean;
   musicEnabled: boolean;
   controlMode: ControlMode;
-  classicModeCompatibility: boolean;
+  learningMode: LearningMode;
+  tutorialEnabled: boolean;
+  autoHints: boolean;
+  vibrationEnabled: boolean;
+  developerMode: boolean;
+  classicModeCompatibility?: boolean;
 }
 
 export interface ExecutionResult {

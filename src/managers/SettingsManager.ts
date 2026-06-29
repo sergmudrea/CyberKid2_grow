@@ -10,7 +10,7 @@
 // - Режим разработчика (Developer Mode)
 // ============================================================================
 
-import { UserSettings, ControlMode } from '../types/index';
+import { UserSettings, ControlMode, LearningMode } from '../types/index';
 import { gameEvents } from '../core/EventBus';
 
 const STORAGE_KEY = 'cyberkid_settings';
@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   soundEnabled: true,
   musicEnabled: true,
   controlMode: ControlMode.SEPARATE,   // по умолчанию новый режим (раздельное управление)
-  learningMode: 'scholar',              // kiddo, scholar, dev_student, developer
+  learningMode: 'scholar' as LearningMode, // kiddo, scholar, dev_student, developer
   tutorialEnabled: true,
   autoHints: true,
   vibrationEnabled: true,
@@ -60,6 +60,40 @@ export class SettingsManager {
 
   public getControlMode(): ControlMode {
     return this.settings.controlMode;
+  }
+
+  public toggleControlMode(): void {
+    const next = this.settings.controlMode === ControlMode.SEPARATE
+      ? ControlMode.CLASSIC
+      : ControlMode.SEPARATE;
+    this.setControlMode(next);
+  }
+
+  // --- Язык ---
+  public getLanguage(): string {
+    return this.settings.language;
+  }
+
+  public setLanguage(lang: string): void {
+    this.set('language', lang);
+  }
+
+  // --- Звук ---
+  public isSoundEnabled(): boolean {
+    return this.settings.soundEnabled;
+  }
+
+  public setSoundEnabled(enabled: boolean): void {
+    this.set('soundEnabled', enabled);
+  }
+
+  // --- Музыка ---
+  public isMusicEnabled(): boolean {
+    return this.settings.musicEnabled;
+  }
+
+  public setMusicEnabled(enabled: boolean): void {
+    this.set('musicEnabled', enabled);
   }
 
   private loadFromLocalStorage(): UserSettings {

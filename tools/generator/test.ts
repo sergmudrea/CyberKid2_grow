@@ -5,7 +5,8 @@
 // Запуск: npx tsx tools/generator/test.ts
 // ============================================================================
 
-import { LevelGenerator, GenerationRequest, ControlMode } from './levelGenerator';
+import { LevelGenerator, GenerationRequest } from './levelGenerator';
+import { ControlMode } from '../../src/types/index';
 import { InventoryAwareBFS } from './pathfinder';
 
 async function testGeneratorAndBFS() {

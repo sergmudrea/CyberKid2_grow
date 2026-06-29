@@ -16,7 +16,7 @@ import { Scene } from 'phaser';
 import { CommandPanel } from '../modules/CommandPanel';
 import { ProgramVisualizer } from '../modules/ProgramVisualizer';
 import { InventoryUI } from '../modules/InventoryUI';
-import { LevelData, TileType, Command, ControlMode } from '../types/index';
+import { LevelData, TileType, Command, ControlMode, Point } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
 import { ExecutionEngine } from '../modules/execution';
@@ -103,24 +103,25 @@ export class GameScene extends Scene {
       return;
     }
     this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
-    this.level = JSON.parse(JSON.stringify(loadedLevel));
+    const level: LevelData = JSON.parse(JSON.stringify(loadedLevel));
+    this.level = level;
 
     // Определяем режим управления (из уровня или настроек)
-    this.controlMode = this.level.controlMode || ControlMode.SEPARATE;
+    this.controlMode = level.controlMode || ControlMode.SEPARATE;
 
     // Создаём игрока (с начальным углом башни, направлением корпуса)
     const tileGetter = (col: number, row: number): number => {
       if (!this.level) return 0;
       return this.level.map[row]?.[col] ?? 0;
     };
-    const startTurretAngle = this.level.startTurretAngle !== undefined ? this.level.startTurretAngle : 0;
-    const startHullDir = this.level.startHullDirection || 'right';
+    const startTurretAngle = level.startTurretAngle !== undefined ? level.startTurretAngle : 0;
+    const startHullDir = level.startHullDirection || 'right';
 
     this.player = new Player(
-      this.level.startPos,
+      level.startPos,
       startHullDir,
-      this.level.width,
-      this.level.height,
+      level.width,
+      level.height,
       tileGetter,
       this.controlMode,
       startTurretAngle
@@ -129,8 +130,8 @@ export class GameScene extends Scene {
     // Контейнер для игровых объектов (сдвинут вправо)
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
     this.gameBounds = {
-      width: this.level.width * this.gridSize,
-      height: this.level.height * this.gridSize,
+      width: level.width * this.gridSize,
+      height: level.height * this.gridSize,
     };
 
     this.drawGrid();
@@ -417,14 +418,15 @@ export class GameScene extends Scene {
 
   private resetLevel(): void {
     if (!this.originalLevelData) return;
-    this.level = JSON.parse(JSON.stringify(this.originalLevelData));
+    const level: LevelData = JSON.parse(JSON.stringify(this.originalLevelData));
+    this.level = level;
     if (this.player) {
-      this.player.teleport(this.level.startPos);
+      this.player.teleport(level.startPos);
       this.player.resetInventory();
       this.player.setTrapped(false);
       this.player.setGlued(false, 0);
       this.player.setSlowFactor(1);
-      this.player.setTurretAngle(this.level.startTurretAngle || 0);
+      this.player.setTurretAngle(level.startTurretAngle || 0);
       this.player.syncBodyWithTurret();
     }
     if (this.inventoryUI && this.player) {
