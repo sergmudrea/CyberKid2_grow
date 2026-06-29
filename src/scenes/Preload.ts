@@ -1,139 +1,90 @@
 import { Scene } from 'phaser';
 import { levelManager } from '../managers/LevelManager';
 import { logger } from '../core/Logger';
+import { ASSET_DEFS, generateFallbackCanvas, TILE_SIZE } from '../managers/AssetManager';
 
 export class Preload extends Scene {
+  // Ключи, которые не удалось загрузить из public/ -> нужен рисованный фолбэк
+  private failedKeys: Set<string> = new Set();
+
   constructor() {
     super('Preload');
   }
 
   async create(): Promise<void> {
     logger.info('Preload', 'create', 'Starting preload');
-    
+
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
-    
+
     const progressBar = this.add.graphics();
     const progressBox = this.add.graphics();
     progressBox.fillStyle(0x222222, 0.8);
     progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
-    
-    const loadingText = this.add.text(width / 2, height / 2 - 50, 'Loading...', {
+
+    this.add.text(width / 2, height / 2 - 50, 'Loading...', {
       fontSize: '20px',
       color: '#ffffff',
       fontFamily: 'monospace',
     }).setOrigin(0.5);
-    
+
     const percentText = this.add.text(width / 2, height / 2 + 5, '0%', {
       fontSize: '18px',
       color: '#ffffff',
       fontFamily: 'monospace',
     }).setOrigin(0.5);
-    
+
     this.load.on('progress', (value: number) => {
       progressBar.clear();
       progressBar.fillStyle(0x00ffcc, 1);
       progressBar.fillRect(width / 2 - 150, height / 2 - 15, 300 * value, 30);
       percentText.setText(`${Math.floor(value * 100)}%`);
     });
-    
+
+    // Если файл из public/ не найден — запоминаем ключ, позже нарисуем фолбэк.
     this.load.on('loaderror', (file: any) => {
-      logger.warn('Preload', 'loaderror', `Failed to load: ${file.key}`);
+      logger.warn('Preload', 'loaderror', `Asset not found in public/, will draw fallback: ${file.key}`);
+      this.failedKeys.add(file.key);
     });
-    
-    // Загрузка тайлов
-    this.load.image('tile_platform', '/assets/tiles/platform.png');
-    this.load.image('tile_wall', '/assets/tiles/wall.png');
-    this.load.image('tile_hole', '/assets/tiles/hole.png');
-    this.load.image('tile_coin', '/assets/tiles/coin.png');
-    this.load.image('tile_start', '/assets/tiles/start.png');
-    
-    // Загрузка спрайтов игрока
-    this.load.image('player_up', '/assets/player/player_up.png');
-    this.load.image('player_down', '/assets/player/player_down.png');
-    this.load.image('player_left', '/assets/player/player_left.png');
-    this.load.image('player_right', '/assets/player/player_right.png');
-    this.load.image('player', '/assets/player/player.png');
-    
-    // Загрузка монстров
-    this.load.image('monster_patrol', '/assets/monsters/monster_patrol.png');
-    this.load.image('monster_chase', '/assets/monsters/monster_chase.png');
-    this.load.image('monster_tameable', '/assets/monsters/monster_tameable.png');
-    
-    // Загрузка UI (опционально)
-    this.load.image('ui_button_run', '/assets/UI/button_run.png').on('loaderror', () => {});
-    this.load.image('ui_button_clear', '/assets/UI/button_clear.png').on('loaderror', () => {});
-    this.load.image('ui_button_save', '/assets/UI/button_save.png').on('loaderror', () => {});
-    this.load.image('ui_button_load', '/assets/UI/button_load.png').on('loaderror', () => {});
-    
-    // Эффекты (опционально)
-    this.load.image('effect_teleport', '/assets/effects/teleport.png').on('loaderror', () => {});
-    this.load.image('effect_death', '/assets/effects/death.png').on('loaderror', () => {});
-    this.load.image('effect_victory', '/assets/effects/victory.png').on('loaderror', () => {});
-    
+
+    // Пытаемся загрузить из public/ только те ассеты, у которых задан path.
+    for (const def of ASSET_DEFS) {
+      if (def.path) {
+        this.load.image(def.key, def.path);
+      }
+    }
+
     this.load.on('complete', () => {
-      this.generatePlaceholders();
+      this.ensureAllTextures();
       this.startGame();
     });
-    
+
     this.load.start();
   }
-  
-  private generatePlaceholders(): void {
-    const textureManager = this.textures;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    
-    const generateTilePlaceholder = (key: string, color: string, icon: string) => {
-      if (textureManager.exists(key)) return;
-      canvas.width = 64;
-      canvas.height = 64;
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.strokeStyle = '#aaa';
-      ctx.strokeRect(0, 0, 64, 64);
-      ctx.fillStyle = '#fff';
-      ctx.font = '32px Arial';
-      ctx.fillText(icon, 16, 48);
-      textureManager.addCanvas(key, canvas);
-    };
-    
-    const generatePlayerPlaceholder = (key: string, color: string, icon: string) => {
-      if (textureManager.exists(key)) return;
-      canvas.width = 64;
-      canvas.height = 64;
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = '#fff';
-      ctx.font = '40px Arial';
-      ctx.fillText(icon, 12, 52);
-      textureManager.addCanvas(key, canvas);
-    };
-    
-    generateTilePlaceholder('tile_platform', '#8B5A2B', '⬜');
-    generateTilePlaceholder('tile_wall', '#555555', '🧱');
-    generateTilePlaceholder('tile_hole', '#000000', '🕳️');
-    generateTilePlaceholder('tile_coin', '#FFD700', '💰');
-    generateTilePlaceholder('tile_start', '#00AA00', '🚀');
-    
-    generatePlayerPlaceholder('player', '#00BFFF', '🤖');
-    generatePlayerPlaceholder('player_up', '#00BFFF', '↑');
-    generatePlayerPlaceholder('player_down', '#00BFFF', '↓');
-    generatePlayerPlaceholder('player_left', '#00BFFF', '←');
-    generatePlayerPlaceholder('player_right', '#00BFFF', '→');
-    
-    generateTilePlaceholder('monster_patrol', '#8B008B', '👾');
-    generateTilePlaceholder('monster_chase', '#DC143C', '👾⚡');
-    generateTilePlaceholder('monster_tameable', '#228B22', '👾❤️');
-    
-    generateTilePlaceholder('ui_button_run', '#00AA44', '▶');
-    generateTilePlaceholder('ui_button_clear', '#AA4444', '🗑');
-    generateTilePlaceholder('ui_button_save', '#4444AA', '💾');
-    generateTilePlaceholder('ui_button_load', '#AA8844', '📂');
-    
-    logger.info('Preload', 'generatePlaceholders', 'Placeholder textures generated');
+
+  /**
+   * Гарантирует, что текстура существует для КАЖДОГО ключа реестра:
+   *  - если PNG из public/ загрузился — используем его;
+   *  - если файла нет (loaderror) или у ассета нет path — рисуем лёгкий спрайт.
+   * Каждый фолбэк рисуется на отдельном canvas (иначе Phaser покажет один кадр).
+   */
+  private ensureAllTextures(): void {
+    let drawn = 0;
+    for (const def of ASSET_DEFS) {
+      const loaded = this.textures.exists(def.key) && !this.failedKeys.has(def.key);
+      if (loaded) continue;
+
+      // На всякий случай убираем «битую» текстуру с тем же ключом
+      if (this.textures.exists(def.key)) {
+        this.textures.remove(def.key);
+      }
+      const canvas = generateFallbackCanvas(def, TILE_SIZE);
+      this.textures.addCanvas(def.key, canvas);
+      drawn++;
+    }
+    logger.info('Preload', 'ensureAllTextures', `Drawn fallback sprites: ${drawn} / ${ASSET_DEFS.length}`);
   }
-  
+
   private async startGame(): Promise<void> {
     logger.info('Preload', 'startGame', 'Initializing level manager');
     await levelManager.initialize();

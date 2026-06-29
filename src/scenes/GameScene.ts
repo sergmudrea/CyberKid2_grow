@@ -19,6 +19,7 @@ import { InventoryUI } from '../modules/InventoryUI';
 import { LevelData, TileType, Command, ControlMode, Point } from '../types/index';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
+import { tileTextureKey, monsterTextureKey, itemTextureKey } from '../managers/AssetManager';
 import { ExecutionEngine } from '../modules/execution';
 import { Player } from '../modules/Player';
 import { logger } from '../core/Logger';
@@ -30,7 +31,8 @@ export class GameScene extends Scene {
   private levelId: string = '';
   private player: Player | null = null;
   private gridSize: number = 48;
-  private playerSprite: Phaser.GameObjects.Text | null = null;
+  private playerSprite: Phaser.GameObjects.Image | null = null;
+  private turretSprite: Phaser.GameObjects.Image | null = null;
   private commandPanel: CommandPanel | null = null;
   private visualizer: ProgramVisualizer | null = null;
   private inventoryUI: InventoryUI | null = null;
@@ -492,6 +494,17 @@ export class GameScene extends Scene {
     this.time.delayedCall(500, () => this.resetLevel());
   }
 
+  // Размещает спрайт по ключу текстуры в центре клетки, масштабируя под gridSize.
+  private placeSprite(key: string, col: number, row: number, scale = 1): Phaser.GameObjects.Image {
+    const cx = col * this.gridSize + this.gridSize / 2;
+    const cy = row * this.gridSize + this.gridSize / 2;
+    const img = this.add.image(cx, cy, key);
+    const target = this.gridSize * scale;
+    img.setDisplaySize(target, target);
+    this.gameContainer?.add(img);
+    return img;
+  }
+
   private drawGrid(): void {
     if (!this.level) return;
     const { width, height, map } = this.level;
@@ -503,104 +516,63 @@ export class GameScene extends Scene {
         const x = col * this.gridSize;
         const y = row * this.gridSize;
         const tile = map[row][col];
-        let icon = '';
-        let bgColor = '#2d2d3a';
 
-        switch (tile) {
-          case TileType.PLATFORM:      icon = '⬜'; bgColor = '#8B5A2B'; break;
-          case TileType.WALL:          icon = '🧱'; bgColor = '#555555'; break;
-          case TileType.HOLE:          icon = '🕳️'; bgColor = '#000000'; break;
-          case TileType.GOAL:          icon = '💰'; bgColor = '#ffcc00'; break;
-          case TileType.KEY:           icon = '🔑'; bgColor = '#ffaa00'; break;
-          case TileType.DOOR_LOCKED:   icon = '🔒'; bgColor = '#8B0000'; break;
-          case TileType.DOOR_UNLOCKED: icon = '🔓'; bgColor = '#228B22'; break;
-          case TileType.CONVEYOR_UP:   icon = '⬆️'; bgColor = '#666666'; break;
-          case TileType.CONVEYOR_DOWN: icon = '⬇️'; bgColor = '#666666'; break;
-          case TileType.CONVEYOR_LEFT: icon = '⬅️'; bgColor = '#666666'; break;
-          case TileType.CONVEYOR_RIGHT:icon = '➡️'; bgColor = '#666666'; break;
-          case TileType.SPRING:        icon = '⬆️⬆️'; bgColor = '#ff6600'; break;
-          case TileType.TELEPORT_IN:   icon = '🌀'; bgColor = '#9932CC'; break;
-          case TileType.TELEPORT_OUT:  icon = '🌀'; bgColor = '#9932CC'; break;
-          case TileType.LAVA:          icon = '🌋'; bgColor = '#ff4500'; break;
-          case TileType.WATER:         icon = '💧'; bgColor = '#1E90FF'; break;
-          case TileType.GLUE:          icon = '🩹'; bgColor = '#88cc88'; break;
-          case TileType.CAGE:          icon = '🔐'; bgColor = '#cd7f32'; break;
-          case TileType.TRAP:          icon = '⚠️'; bgColor = '#8b4513'; break;
-          case TileType.GEM:           icon = '💎'; bgColor = '#00ffcc'; break;
-          case TileType.BRICK:         icon = '🧱'; bgColor = '#A52A2A'; break;
-          case TileType.BLACK_BOX:     icon = '📦'; bgColor = '#2F4F4F'; break;
-          case TileType.BUTTON:        icon = '🔘'; bgColor = '#DC143C'; break;
-          case TileType.LEVER:         icon = '🎚️'; bgColor = '#D2691E'; break;
-          case TileType.TIMER:         icon = '⏲️'; bgColor = '#FFD700'; break;
-          case TileType.SENSOR:        icon = '📡'; bgColor = '#00CED1'; break;
-          case TileType.SORTER:        icon = '📊'; bgColor = '#4B0082'; break;
-          case TileType.MAGNET:        icon = '🧲'; bgColor = '#C0C0C0'; break;
-          case TileType.SLOW_FIELD:    icon = '⏱️'; bgColor = '#88AACC'; break;
-          default: icon = '⬜'; bgColor = '#8B5A2B'; break;
-        }
-
-        const monsterHere = monsters.find((m: any) => m.position.x === col && m.position.y === row);
-        if (monsterHere) {
-          if (monsterHere.type === 'patrol') icon = '👾';
-          else if (monsterHere.type === 'chase') icon = '👾⚡';
-          else if (monsterHere.type === 'tameable') icon = '👾❤️';
-          else if (monsterHere.type === 'phased') icon = '👾🌫️';
-          else if (monsterHere.type === 'zombie') icon = '🧟';
-          else if (monsterHere.type === 'boss') icon = '👾👑';
-          else icon = '👾';
-          bgColor = '#4a1a4a';
-        }
-
-        const itemHere = items.find((it: any) => it.pos.x === col && it.pos.y === row);
-        if (itemHere) {
-          if (itemHere.id === 'key1') icon = '🔑';
-          else if (itemHere.id === 'corn1') icon = '🌽';
-          else if (itemHere.id === 'core1') icon = '💎';
-          else if (itemHere.id === 'drill') icon = '🔧';
-          else if (itemHere.id === 'hook') icon = '🪝';
-          else if (itemHere.id === 'wing') icon = '🪽';
-          else if (itemHere.id === 'bait') icon = '🐟';
-          else if (itemHere.id === 'cage_key') icon = '🔑';
-          else if (itemHere.id === 'gem1') icon = '💎';
-          bgColor = '#2a5a2a';
-        }
-
-        const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, Phaser.Display.Color.HexStringToColor(bgColor).color, 0.8);
+        // Фон клетки (лёгкая сетка)
+        const bgRect = this.add.rectangle(x, y, this.gridSize, this.gridSize, 0x2d2d3a, 0.35);
         bgRect.setOrigin(0, 0);
-        bgRect.setStrokeStyle(1, 0xaaaaaa);
+        bgRect.setStrokeStyle(1, 0x44445a);
         this.gameContainer?.add(bgRect);
 
-        const iconText = this.add.text(x + this.gridSize / 2, y + this.gridSize / 2, icon, {
-          fontSize: `${Math.floor(this.gridSize * 0.6)}px`,
-          fontFamily: 'Arial',
-          color: '#ffffff',
-          align: 'center',
-        }).setOrigin(0.5);
-        this.gameContainer?.add(iconText);
+        // Спрайт тайла (из public/ или рисованный фолбэк); PLATFORM оставляем пустым фоном
+        if (tile !== TileType.PLATFORM) {
+          this.placeSprite(tileTextureKey(tile), col, row, 0.92);
+        }
+
+        // Спрайт предмета (поверх тайла)
+        const itemHere = items.find((it: any) => it.pos?.col === col && it.pos?.row === row);
+        if (itemHere) {
+          this.placeSprite(itemTextureKey(itemHere.id), col, row, 0.7);
+        }
+
+        // Спрайт монстра (поверх всего)
+        const monsterHere = monsters.find((m: any) => m.position?.col === col && m.position?.row === row);
+        if (monsterHere) {
+          this.placeSprite(monsterTextureKey(monsterHere.type), col, row, 0.85);
+        }
       }
     }
   }
 
   private drawPlayer(): void {
-    if (this.playerSprite) {
-      this.playerSprite.destroy();
-      this.playerSprite = null;
-    }
+    if (this.playerSprite) { this.playerSprite.destroy(); this.playerSprite = null; }
+    if (this.turretSprite) { this.turretSprite.destroy(); this.turretSprite = null; }
     if (!this.level || !this.player) return;
+
     const pos = this.player.getPosition();
     const x = pos.col * this.gridSize + this.gridSize / 2;
     const y = pos.row * this.gridSize + this.gridSize / 2;
-    // Иконка танка + маленькая стрелка, показывающая угол башни
     const angle = this.player.getTurretAngle();
-    const arrow = angle === 0 ? '⬆️' : angle === 90 ? '➡️' : angle === 180 ? '⬇️' : '⬅️';
-    this.playerSprite = this.add.text(x, y, `🤖${arrow}`, {
-      fontSize: `${Math.floor(this.gridSize * 0.7)}px`,
-      fontFamily: 'Arial',
-      color: '#00ffcc',
-      backgroundColor: '#000000aa',
-      padding: { x: 4, y: 2 },
-    }).setOrigin(0.5);
+
+    // Корпус танка: выбираем спрайт по направлению корпуса (фолбэк — player)
+    const hullDir = this.player.getHullDirection();
+    const hullKey = `player_${hullDir}`;
+    const bodyKey = this.textures.exists(hullKey) ? hullKey : 'player';
+    this.playerSprite = this.add.image(x, y, bodyKey);
+    this.playerSprite.setDisplaySize(this.gridSize * 0.92, this.gridSize * 0.92);
     this.gameContainer?.add(this.playerSprite);
+
+    // Ствол/башня: отдельный индикатор угла башни (раздельное управление)
+    // Рисуем маленький треугольник-стрелку поверх корпуса, повёрнутый на угол башни.
+    const aim = this.add.triangle(
+      x, y,
+      0, -this.gridSize * 0.42,
+      -this.gridSize * 0.1, -this.gridSize * 0.22,
+      this.gridSize * 0.1, -this.gridSize * 0.22,
+      0x00ffcc, 1
+    );
+    aim.setAngle(angle); // 0=вверх, 90=вправо, 180=вниз, 270=влево
+    this.gameContainer?.add(aim);
+
     if (this.cameraFollowEnabled) {
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     }
