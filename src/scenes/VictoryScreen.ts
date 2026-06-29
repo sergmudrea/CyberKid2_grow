@@ -2,6 +2,8 @@ import { Scene } from 'phaser';
 import { logger } from '../core/Logger';
 import { progressManager } from '../managers/ProgressManager';
 import { levelManager } from '../managers/LevelManager';
+import { Pathfinder } from '../modules/Pathfinder';
+import { ControlMode } from '../types/index';
 
 export class VictoryScreen extends Scene {
   private levelId: string = '';
@@ -21,7 +23,7 @@ export class VictoryScreen extends Scene {
     logger.info('VictoryScreen', 'init', `Level ${this.levelId} completed with ${this.stars} stars, next level: ${this.nextLevelId || 'none'}`);
   }
 
-  create(): void {
+  async create(): Promise<void> {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
@@ -46,7 +48,7 @@ export class VictoryScreen extends Scene {
     }
 
     // Заголовок
-    const title = this.add.text(width / 2, 100, 'VICTORY!', {
+    const title = this.add.text(width / 2, 80, 'VICTORY!', {
       fontSize: '48px',
       color: '#ffcc00',
       stroke: '#ff6600',
@@ -54,36 +56,90 @@ export class VictoryScreen extends Scene {
       fontFamily: 'monospace',
     }).setOrigin(0.5);
 
-    // Звёзды
-    const starsY = 180;
+    this.tweens.add({
+      targets: title,
+      scale: 1.1,
+      duration: 600,
+      yoyo: true,
+      repeat: 2,
+    });
+
+    // Звёзды с анимацией pulse
+    const starsY = 170;
     for (let i = 0; i < 3; i++) {
       const x = width / 2 - 80 + i * 80;
+      const earned = i < this.stars;
       const star = this.add.text(x, starsY, '★', {
-        fontSize: '48px',
-        color: i < this.stars ? '#ffcc00' : '#444444',
+        fontSize: '52px',
+        color: earned ? '#ffcc00' : '#444444',
       }).setOrigin(0.5);
-      
-      if (i < this.stars) {
-        this.tweens.add({
-          targets: star,
-          scale: 1.3,
-          duration: 300,
-          yoyo: true,
-          repeat: 2,
+
+      if (earned) {
+        this.time.delayedCall(i * 200, () => {
+          this.tweens.add({
+            targets: star,
+            scale: 1.4,
+            duration: 250,
+            yoyo: true,
+            repeat: 1,
+            ease: 'Back.easeOut',
+          });
         });
       }
     }
 
-    // Статистика
-    const stats = this.add.text(width / 2, 260, `Steps: ${this.stepsUsed}`, {
-      fontSize: '20px',
+    // Эффективность
+    let optimalSteps: number | null = null;
+    try {
+      const level = await levelManager.loadLevel(this.levelId);
+      if (level) {
+        if (level.optimalSteps) {
+          optimalSteps = level.optimalSteps;
+        } else {
+          const pf = new Pathfinder(level);
+          const controlMode = level.controlMode || ControlMode.SEPARATE;
+          const solution = pf.findCommandSolution(controlMode);
+          if (solution) optimalSteps = solution.length;
+        }
+      }
+    } catch (e) {
+      logger.warn('VictoryScreen', 'create', 'Could not compute optimal steps');
+    }
+
+    let statsText = `Шагов: ${this.stepsUsed}`;
+    if (optimalSteps !== null && optimalSteps > 0) {
+      const efficiency = Math.round((optimalSteps / Math.max(this.stepsUsed, 1)) * 100);
+      statsText += `  |  Оптимум: ${optimalSteps}  |  Эффективность: ${efficiency}%`;
+    }
+
+    this.add.text(width / 2, 255, statsText, {
+      fontSize: '16px',
       color: '#cccccc',
       fontFamily: 'monospace',
     }).setOrigin(0.5);
 
+    // Уведомление о разблокировке мира (если только что разблокировали)
+    const progress = progressManager.get();
+    const justUnlocked = this.checkNewWorldUnlocked(progress.unlockedWorlds);
+    if (justUnlocked) {
+      const unlockBanner = this.add.text(width / 2, 295, `🌍 Новый мир разблокирован: ${justUnlocked}!`, {
+        fontSize: '16px',
+        color: '#00ffcc',
+        backgroundColor: '#000000aa',
+        padding: { x: 12, y: 6 },
+      }).setOrigin(0.5);
+      this.tweens.add({
+        targets: unlockBanner,
+        alpha: 0.3,
+        duration: 600,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
+
     // Кнопки
-    const buttonY = 350;
-    const spacing = 180;
+    const buttonY = 355;
+    const spacing = 190;
 
     const nextButton = this.add.text(width / 2 - spacing / 2, buttonY, '▶ NEXT LEVEL', {
       fontSize: '20px',
@@ -91,7 +147,7 @@ export class VictoryScreen extends Scene {
       backgroundColor: this.nextLevelId ? '#2a2a4a' : '#444444',
       padding: { x: 20, y: 10 },
     }).setOrigin(0.5);
-    
+
     if (this.nextLevelId) {
       nextButton.setInteractive({ useHandCursor: true });
       nextButton.on('pointerdown', () => {
@@ -128,5 +184,13 @@ export class VictoryScreen extends Scene {
     });
     menuButton.on('pointerover', () => menuButton.setColor('#00ffcc'));
     menuButton.on('pointerout', () => menuButton.setColor('#ffffff'));
+  }
+
+  // Простая эвристика: если в прогрессе есть миры кроме meadow — показываем последний
+  private checkNewWorldUnlocked(unlockedWorlds: string[]): string | null {
+    const known = ['meadow'];
+    const extras = unlockedWorlds.filter(w => !known.includes(w));
+    if (extras.length > 0) return extras[extras.length - 1];
+    return null;
   }
 }

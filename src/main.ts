@@ -5,6 +5,9 @@ import { WorldMap } from './scenes/WorldMap';
 import { LevelSelect } from './scenes/LevelSelect';
 import { GameScene } from './scenes/GameScene';
 import { VictoryScreen } from './scenes/VictoryScreen';
+import { SandboxScene } from './scenes/SandboxScene';
+import { Stats } from './scenes/Stats';
+import { Paywall } from './scenes/Paywall';
 
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -13,8 +16,7 @@ const config: Phaser.Types.Core.GameConfig = {
   height: window.innerHeight,
   backgroundColor: '#0a0a2a',
   parent: 'game-container',
-  // В массив scene добавить VictoryScreen:
-  scene: [Preload, MainMenu, WorldMap, LevelSelect, GameScene, VictoryScreen],
+  scene: [Preload, MainMenu, WorldMap, LevelSelect, GameScene, VictoryScreen, SandboxScene, Stats, Paywall],
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -10,6 +10,9 @@
 // - Полное управление камерой (мышь/клавиши)
 // - Интеграция с CommandPanel, InventoryUI, ProgramVisualizer
 // - Обработка событий выполнения (победа, поражение, остановка)
+// - AutoSolve через Pathfinder
+// - HintSystem (подсказки)
+// - Sandbox/тест-режим (testLevel)
 // ============================================================================
 
 import { Scene } from 'phaser';
@@ -22,6 +25,8 @@ import { progressManager } from '../managers/ProgressManager';
 import { tileTextureKey, monsterTextureKey, itemTextureKey } from '../managers/AssetManager';
 import { ExecutionEngine } from '../modules/execution';
 import { Player } from '../modules/Player';
+import { Pathfinder } from '../modules/Pathfinder';
+import { HintSystem } from '../modules/HintSystem';
 import { logger } from '../core/Logger';
 import { gameEvents as eventBus } from '../core/EventBus';
 
@@ -29,6 +34,7 @@ export class GameScene extends Scene {
   private level: LevelData | null = null;
   private originalLevelData: LevelData | null = null;
   private levelId: string = '';
+  private isSandboxMode: boolean = false;
   private player: Player | null = null;
   private gridSize: number = 48;
   private playerSprite: Phaser.GameObjects.Image | null = null;
@@ -50,13 +56,29 @@ export class GameScene extends Scene {
   private slowIndicator: Phaser.GameObjects.Text | null = null;
   private controlMode: ControlMode = ControlMode.SEPARATE;
 
+  // Pathfinder + HintSystem
+  private pathfinder: Pathfinder | null = null;
+  private hintSystem: HintSystem | null = null;
+
   constructor() {
     super('GameScene');
   }
 
-  init(data: { levelId: string }): void {
-    this.levelId = data.levelId;
-    logger.debug('GameScene', 'init', `levelId = ${this.levelId}`);
+  init(data: { levelId?: string; testLevel?: LevelData }): void {
+    // Поддержка sandbox-режима
+    if (data.testLevel) {
+      this.isSandboxMode = true;
+      this.level = data.testLevel;
+      this.originalLevelData = JSON.parse(JSON.stringify(data.testLevel));
+      this.levelId = 'sandbox_test';
+    } else {
+      this.isSandboxMode = false;
+      this.levelId = data.levelId || '';
+      this.level = null;
+      this.originalLevelData = null;
+    }
+
+    logger.debug('GameScene', 'init', `levelId = ${this.levelId}, sandbox = ${this.isSandboxMode}`);
 
     // Уничтожаем старые панели и спрайты
     if (this.commandPanel) {
@@ -88,6 +110,10 @@ export class GameScene extends Scene {
       this.slowIndicator.destroy();
       this.slowIndicator = null;
     }
+    if (this.hintSystem) {
+      this.hintSystem.destroy();
+      this.hintSystem = null;
+    }
     this.isExecuting = false;
     if (this.executionEngine) {
       this.executionEngine.stop();
@@ -96,17 +122,21 @@ export class GameScene extends Scene {
   }
 
   async create(): Promise<void> {
-    logger.info('GameScene', 'create', `Loading level: ${this.levelId}`);
+    logger.info('GameScene', 'create', `Loading level: ${this.levelId}, sandbox=${this.isSandboxMode}`);
 
-    const loadedLevel = await levelManager.loadLevel(this.levelId);
-    if (!loadedLevel) {
-      logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
-      this.scene.start('MainMenu');
-      return;
+    // В sandbox-режиме уровень уже задан через init; в обычном — загружаем
+    if (!this.isSandboxMode) {
+      const loadedLevel = await levelManager.loadLevel(this.levelId);
+      if (!loadedLevel) {
+        logger.error('GameScene', 'create', `Level not found: ${this.levelId}`);
+        this.scene.start('MainMenu');
+        return;
+      }
+      this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
+      this.level = JSON.parse(JSON.stringify(loadedLevel));
     }
-    this.originalLevelData = JSON.parse(JSON.stringify(loadedLevel));
-    const level: LevelData = JSON.parse(JSON.stringify(loadedLevel));
-    this.level = level;
+
+    const level = this.level!;
 
     // Определяем режим управления (из уровня или настроек)
     this.controlMode = level.controlMode || ControlMode.SEPARATE;
@@ -128,6 +158,9 @@ export class GameScene extends Scene {
       this.controlMode,
       startTurretAngle
     );
+
+    // Pathfinder
+    this.pathfinder = new Pathfinder(level);
 
     // Контейнер для игровых объектов (сдвинут вправо)
     this.gameContainer = this.add.container(this.COMMAND_PANEL_WIDTH, 0);
@@ -190,6 +223,7 @@ export class GameScene extends Scene {
         this.cameraFollowEnabled = true;
         this.aimLine?.clear();
         this.aimLine?.setVisible(false);
+        this.hintSystem?.reset();
       },
       (commands: Command[]) => {
         this.updateVisualizer();
@@ -223,20 +257,26 @@ export class GameScene extends Scene {
     this.slowIndicator.setVisible(false);
 
     // Кнопка BACK
-    const backButton = this.add.text(10, 10, '← BACK', {
+    const backLabel = this.isSandboxMode ? '← EDITOR' : '← BACK';
+    const backButton = this.add.text(10, 10, backLabel, {
       fontSize: '16px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 12, y: 6 },
     }).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(100);
     backButton.on('pointerdown', () => {
+      this.hintSystem?.destroy();
       this.inventoryUI?.destroy();
       this.commandPanel?.destroy();
       if (this.executionEngine) this.executionEngine.stop();
-      this.scene.start('MainMenu');
+      if (this.isSandboxMode) {
+        this.scene.start('SandboxScene');
+      } else {
+        this.scene.start('MainMenu');
+      }
     });
 
-    // AutoSolve (заглушка)
+    // AutoSolve (реальный, через Pathfinder)
     const autoSolveBtn = this.add.text(10, this.cameras.main.height - 40, '🧠 AutoSolve', {
       fontSize: '14px',
       color: '#00ff00',
@@ -246,6 +286,14 @@ export class GameScene extends Scene {
     autoSolveBtn.on('pointerdown', () => {
       this.autoSolve();
     });
+
+    // HintSystem
+    this.hintSystem = new HintSystem(
+      this,
+      () => this.player?.getPosition() || { col: 0, row: 0 },
+      this.pathfinder
+    );
+    this.hintSystem.start();
 
     this.setupExecutionListeners();
     logger.info('GameScene', 'create', 'Scene ready');
@@ -273,15 +321,41 @@ export class GameScene extends Scene {
   }
 
   private autoSolve(): void {
-    if (!this.level || !this.player) return;
-    logger.warn('GameScene', 'autoSolve', 'Pathfinder not implemented yet');
+    if (!this.level || !this.player || !this.pathfinder) return;
+
+    logger.info('GameScene', 'autoSolve', 'Running Pathfinder...');
+    const solution = this.pathfinder.findCommandSolution(this.controlMode);
+
+    if (!solution || solution.length === 0) {
+      logger.warn('GameScene', 'autoSolve', 'No solution found');
+      const msg = this.add.text(
+        this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
+        this.cameras.main.centerY,
+        '🤷 Решение не найдено',
+        { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
+      ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+      this.time.delayedCall(2000, () => msg.destroy());
+      return;
+    }
+
+    logger.info('GameScene', 'autoSolve', `Solution: ${solution.length} commands`);
+
+    // Загружаем команды в панель если есть setCommands
+    if (this.commandPanel) {
+      this.commandPanel.setCommands(solution);
+    }
+
+    // Показываем тост
     const msg = this.add.text(
       this.cameras.main.centerX + this.COMMAND_PANEL_WIDTH,
       this.cameras.main.centerY,
-      '🧪 AutoSolve: coming soon',
-      { fontSize: '18px', color: '#ffaa00', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
+      `🧠 Найдено: ${solution.length} команд`,
+      { fontSize: '18px', color: '#00ff88', backgroundColor: '#000000aa', padding: { x: 15, y: 8 } }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
+
+    // Запускаем решение
+    this.runProgram(solution);
   }
 
   private setupExecutionListeners(): void {
@@ -312,7 +386,9 @@ export class GameScene extends Scene {
       if (payload?.success && onCoin) {
         const stars = payload.result?.stars || 0;
         const steps = payload.result?.steps || 0;
-        progressManager.completeLevel(this.levelId, stars, steps);
+        if (!this.isSandboxMode) {
+          progressManager.completeLevel(this.levelId, stars, steps);
+        }
         this.showVictoryMessage(stars, steps);
       } else {
         logger.info('GameScene', 'EXECUTION_FINISHED', 'Program finished without victory');
@@ -463,6 +539,10 @@ export class GameScene extends Scene {
     this.isExecuting = true;
     this.commandPanel?.clearHighlight();
     if (!this.player) return;
+
+    // Сброс подсказок при старте выполнения
+    this.hintSystem?.reset();
+
     this.executionEngine = new ExecutionEngine(this.level!, this.player, this.controlMode);
     this.executionEngine.loadProgram(commands);
     await this.executionEngine.start();
@@ -477,9 +557,14 @@ export class GameScene extends Scene {
     ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
     this.time.delayedCall(2000, () => msg.destroy());
     this.time.delayedCall(500, () => {
+      this.hintSystem?.stop();
       this.inventoryUI?.destroy();
       this.commandPanel?.destroy();
-      this.scene.start('VictoryScreen', { levelId: this.levelId, stars: stars, stepsUsed: steps });
+      if (this.isSandboxMode) {
+        this.scene.start('SandboxScene');
+      } else {
+        this.scene.start('VictoryScreen', { levelId: this.levelId, stars: stars, stepsUsed: steps });
+      }
     });
   }
 
@@ -562,7 +647,6 @@ export class GameScene extends Scene {
     this.gameContainer?.add(this.playerSprite);
 
     // Ствол/башня: отдельный индикатор угла башни (раздельное управление)
-    // Рисуем маленький треугольник-стрелку поверх корпуса, повёрнутый на угол башни.
     const aim = this.add.triangle(
       x, y,
       0, -this.gridSize * 0.42,

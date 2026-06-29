@@ -27,14 +27,14 @@ export class MainMenu extends Scene {
     }
 
     // Логотип
-    const title = this.add.text(width / 2, height / 3, 'CYBERKID', {
+    const title = this.add.text(width / 2, height / 3 - 20, 'CYBERKID', {
       fontSize: '72px',
       color: '#00ffcc',
       stroke: '#0066ff',
       strokeThickness: 6,
       fontFamily: 'monospace',
     }).setOrigin(0.5);
-    
+
     this.tweens.add({
       targets: title,
       scale: 1.05,
@@ -43,8 +43,11 @@ export class MainMenu extends Scene {
       repeat: -1,
     });
 
-    // Кнопки
-    const startButton = this.add.text(width / 2, height / 2, '▶ START', {
+    const buttonBaseY = height / 2 - 20;
+    const buttonSpacing = 65;
+
+    // START
+    const startButton = this.add.text(width / 2, buttonBaseY, '▶ START', {
       fontSize: '28px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
@@ -56,32 +59,47 @@ export class MainMenu extends Scene {
     startButton.on('pointerover', () => startButton.setColor('#00ffcc'));
     startButton.on('pointerout', () => startButton.setColor('#ffffff'));
 
-    const editorButton = this.add.text(width / 2, height / 2 + 70, '✏️ EDITOR', {
+    // EDITOR
+    const editorButton = this.add.text(width / 2, buttonBaseY + buttonSpacing, '✏️ EDITOR', {
       fontSize: '24px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 32, y: 12 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     editorButton.on('pointerdown', () => {
-      console.log('Editor - coming soon');
+      this.scene.start('SandboxScene');
     });
     editorButton.on('pointerover', () => editorButton.setColor('#00ffcc'));
     editorButton.on('pointerout', () => editorButton.setColor('#ffffff'));
 
-    const settingsButton = this.add.text(width / 2, height / 2 + 140, '⚙️ SETTINGS', {
+    // SETTINGS
+    const settingsButton = this.add.text(width / 2, buttonBaseY + buttonSpacing * 2, '⚙️ SETTINGS', {
       fontSize: '24px',
       color: '#ffffff',
       backgroundColor: '#2a2a4a',
       padding: { x: 32, y: 12 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     settingsButton.on('pointerdown', () => {
-      console.log('Settings - coming soon');
+      this.scene.start('Settings');
     });
     settingsButton.on('pointerover', () => settingsButton.setColor('#00ffcc'));
     settingsButton.on('pointerout', () => settingsButton.setColor('#ffffff'));
 
+    // STATS
+    const statsButton = this.add.text(width / 2, buttonBaseY + buttonSpacing * 3, '📊 STATS', {
+      fontSize: '24px',
+      color: '#ffffff',
+      backgroundColor: '#2a2a4a',
+      padding: { x: 32, y: 12 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    statsButton.on('pointerdown', () => {
+      this.scene.start('Stats');
+    });
+    statsButton.on('pointerover', () => statsButton.setColor('#00ffcc'));
+    statsButton.on('pointerout', () => statsButton.setColor('#ffffff'));
+
     // Версия
-    this.add.text(width - 20, height - 20, 'v0.3.0-alpha', {
+    this.add.text(width - 20, height - 20, 'v0.4.0-alpha', {
       fontSize: '12px',
       color: '#888888',
       fontFamily: 'monospace',

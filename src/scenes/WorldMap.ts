@@ -10,6 +10,7 @@
 import { Scene } from 'phaser';
 import { levelManager } from '../managers/LevelManager';
 import { progressManager } from '../managers/ProgressManager';
+import { unlockManager } from '../managers/UnlockManager';
 import { logger } from '../core/Logger';
 
 interface WorldNode {
@@ -314,7 +315,27 @@ export class WorldMap extends Scene {
 
       container.add([bg, icon, name, stars, levelsText]);
 
-      if (world.isLocked) {
+      // Список миров с платным доступом
+      const premiumWorlds = ['ocean', 'clouds', 'fairytale', 'volcano', 'bonus'];
+      const isPremium = premiumWorlds.includes(world.id);
+
+      if (world.isLocked && isPremium) {
+        // Платный мир — клик ведёт в Paywall
+        const lock = this.add.text(0, 0, '🔒', { fontSize: '22px' }).setOrigin(0.5);
+        container.add(lock);
+        container.setInteractive(new Phaser.Geom.Rectangle(-60, -70, 120, 140), Phaser.Geom.Rectangle.Contains);
+        container.on('pointerdown', () => {
+          logger.info('WorldMap', 'drawWorlds', `Opening Paywall for world: ${world.id}`);
+          this.scene.start('Paywall', { worldId: world.id });
+        });
+        container.on('pointerover', () => {
+          bg.setStrokeStyle(3, 0xffaa00);
+        });
+        container.on('pointerout', () => {
+          bg.setStrokeStyle(2, 0x888888);
+        });
+      } else if (world.isLocked) {
+        // Заблокированный нижний мир без Paywall
         const lock = this.add.text(0, 0, '🔒', { fontSize: '22px' }).setOrigin(0.5);
         container.add(lock);
       } else {
