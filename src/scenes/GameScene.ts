@@ -28,6 +28,7 @@ import { ExecutionEngine } from '../modules/execution';
 import { Player } from '../modules/Player';
 import { Pathfinder } from '../modules/Pathfinder';
 import { HintSystem } from '../modules/HintSystem';
+import { TutorialOverlay } from '../modules/TutorialOverlay';
 import { logger } from '../core/Logger';
 import { gameEvents as eventBus } from '../core/EventBus';
 
@@ -289,15 +290,20 @@ export class GameScene extends Scene {
       this.autoSolve();
     });
 
-    // HintSystem
+    // HintSystem (подробность и тайминги зависят от режима обучения)
     this.hintSystem = new HintSystem(
       this,
       () => this.player?.getPosition() || { col: 0, row: 0 },
-      this.pathfinder
+      this.pathfinder,
+      settingsManager.getLearningMode()
     );
     this.hintSystem.start();
 
     this.setupExecutionListeners();
+
+    // Обучающий оверлей (forced/optional/off в зависимости от режима обучения)
+    new TutorialOverlay(this, settingsManager.getLearningMode()).maybeShow();
+
     logger.info('GameScene', 'create', 'Scene ready');
   }
 
